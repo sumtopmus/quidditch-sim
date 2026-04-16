@@ -111,17 +111,27 @@ POLE_RGBA = (0.55, 0.55, 0.55, 1.0)
 # ---------------------------------------------------------------------------
 ARENA_WALL_SEGS: int = 60  # number of pillars around the perimeter
 ARENA_WALL_HEIGHT: float = 4.0  # m — taller than the hoop (2 m) to frame the volume
-ARENA_WALL_PILLAR_R: float = 0.025  # m — radius of each pillar
-ARENA_WALL_RGBA = (0.95, 0.1, 0.95, 0.45)  # semi-transparent magenta
+ARENA_WALL_PILLAR_R: float = 0.010  # m — radius of each pillar
+ARENA_WALL_RGBA = (0.6, 0.85, 1.0, 0.40)  # semi-transparent light sky-blue
 
 # ---------------------------------------------------------------------------
-# rgb_array camera — elevated side view covering the full start→hoop path
+# Camera — shared position used for rgb_array render, GUI initial view, and
+# training videos.  Eye at (-2, 1, 2), looking at (0, 0, 1).
+#
+# Derived GUI params (for resetDebugVisualizerCamera):
+#   distance = |eye - target| = sqrt(4+1+1) = sqrt(6) ≈ 2.45 m
+#   yaw      = -atan(2/1) ≈ 297° (camera is WNW of the target)
+#   pitch    = -atan(1/√5) ≈ -24° (camera is 1 m above target)
 # ---------------------------------------------------------------------------
 VIDEO_WIDTH: int = 640
 VIDEO_HEIGHT: int = 480
-VIDEO_CAM_EYE = (1.0, -4.0, 3.0)  # to the side and above
-VIDEO_CAM_TARGET = (1.0, 0.0, 1.5)  # midpoint of arena at mid-hoop height
+VIDEO_CAM_EYE = (-2.0, 1.0, 2.0)
+VIDEO_CAM_TARGET = (0.0, 0.0, 1.0)
 VIDEO_CAM_UP = (0.0, 0.0, 1.0)
+
+GUI_CAM_DISTANCE: float = 2.45
+GUI_CAM_YAW: float = 297.0
+GUI_CAM_PITCH: float = -24.0
 
 
 # ---------------------------------------------------------------------------
@@ -195,6 +205,9 @@ class QuidditchSimpleEnv(gym.Env):
         self._takeoff_grace = TAKEOFF_GRACE_STEPS
         drone_pos = self._drone_pos()
         self._prev_signed_dist = self._signed_dist(drone_pos)
+
+        if self.render_mode == "human":
+            self._reset_gui_camera()
 
         if self.render_mode in ("human", "rgb_array"):
             self._draw_hoop()
@@ -370,11 +383,20 @@ class QuidditchSimpleEnv(gym.Env):
             basePosition=pole_pos,
         )
 
+    def _reset_gui_camera(self) -> None:
+        """Position the PyBullet GUI camera at the shared eye/target defined above."""
+        self._aviary.resetDebugVisualizerCamera(
+            cameraDistance=GUI_CAM_DISTANCE,
+            cameraYaw=GUI_CAM_YAW,
+            cameraPitch=GUI_CAM_PITCH,
+            cameraTargetPosition=list(VIDEO_CAM_TARGET),
+        )
+
     def _draw_arena(self) -> None:
         """Draw the arena boundary as a ring of vertical magenta pillars.
 
         60 evenly-spaced cylinders at 3 m radius, 3 m tall, semi-transparent
-        magenta — clearly marks the flyable volume without obstructing the view.
+        light blue — clearly marks the flyable volume without obstructing the view.
         """
         av = self._aviary
         half_h = ARENA_WALL_HEIGHT / 2.0
