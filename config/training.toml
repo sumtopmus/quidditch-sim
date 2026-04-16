@@ -21,6 +21,6 @@ eval_freq_steps  = 50_000
 n_eval_episodes  = 10
 
 [callbacks]
-checkpoint_freq_steps = 10_000
-video_freq_steps      = 10_000
+checkpoint_freq_steps = 50_000
+video_freq_steps      = 100_000
 video_fps             = 20
