@@ -80,6 +80,13 @@ HOOP_SEG_RADIUS: float = 0.04      # m — radius of each visual sphere
 HOOP_RGBA = (1.0, 0.45, 0.0, 1.0)  # orange
 POLE_RGBA = (0.55, 0.55, 0.55, 1.0)
 
+# rgb_array camera — elevated side view covering the full start→hoop path
+VIDEO_WIDTH: int = 640
+VIDEO_HEIGHT: int = 480
+VIDEO_CAM_EYE = (20.0, -55.0, 22.0)   # to the side and above
+VIDEO_CAM_TARGET = (20.0, 0.0, 4.0)   # midpoint of arena at hoop height
+VIDEO_CAM_UP = (0.0, 0.0, 1.0)
+
 
 # ---------------------------------------------------------------------------
 # Environment
@@ -88,7 +95,7 @@ POLE_RGBA = (0.55, 0.55, 0.55, 1.0)
 class QuidditchHoopEnv(gym.Env):
     """Gymnasium environment: fly a single QuadX through one vertical hoop."""
 
-    metadata = {"render_modes": ["human"]}
+    metadata = {"render_modes": ["human", "rgb_array"]}
 
     def __init__(self, render_mode: str | None = None) -> None:
         super().__init__()
@@ -152,7 +159,7 @@ class QuidditchHoopEnv(gym.Env):
         drone_pos = self._drone_pos()
         self._prev_signed_dist = self._signed_dist(drone_pos)
 
-        if self.render_mode == "human":
+        if self.render_mode in ("human", "rgb_array"):
             self._draw_hoop()
 
         return self._obs(), {}
@@ -211,9 +218,23 @@ class QuidditchHoopEnv(gym.Env):
         }
         return self._obs(), float(reward), terminated, truncated, info
 
-    def render(self) -> None:
-        # PyBullet GUI is live whenever render_mode=="human"; nothing to do here
-        pass
+    def render(self) -> np.ndarray | None:
+        if self.render_mode != "rgb_array" or self._aviary is None:
+            return None
+        view = self._aviary.computeViewMatrix(
+            VIDEO_CAM_EYE, VIDEO_CAM_TARGET, VIDEO_CAM_UP
+        )
+        proj = self._aviary.computeProjectionMatrixFOV(
+            fov=60,
+            aspect=VIDEO_WIDTH / VIDEO_HEIGHT,
+            nearVal=0.1,
+            farVal=200.0,
+        )
+        _, _, rgba, _, _ = self._aviary.getCameraImage(
+            VIDEO_WIDTH, VIDEO_HEIGHT, view, proj,
+            renderer=p.ER_TINY_RENDERER,   # CPU renderer, works in DIRECT mode
+        )
+        return np.array(rgba, dtype=np.uint8)[:, :, :3]
 
     def close(self) -> None:
         if self._aviary is not None:

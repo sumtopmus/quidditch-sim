@@ -17,6 +17,9 @@ import os
 import sys
 import argparse
 
+# macOS conda ships multiple copies of libomp; suppress the duplicate-init abort.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.callbacks import (
@@ -25,6 +28,7 @@ from stable_baselines3.common.callbacks import (
 )
 
 from envs.quidditch_env import QuidditchHoopEnv
+from callbacks import VideoRecorderCallback
 
 
 # ---------------------------------------------------------------------------
@@ -48,7 +52,9 @@ DEFAULTS = {
     "eval_freq_steps": 50_000,
     "n_eval_episodes": 10,
     # Checkpoint frequency (independent of eval)
-    "checkpoint_freq_steps": 50_000,
+    "checkpoint_freq_steps": 10_000,
+    # Video recording frequency (one episode per checkpoint by default)
+    "video_freq_steps": 10_000,
 }
 
 
@@ -66,6 +72,7 @@ def main() -> None:
 
     run_dir = os.path.join("runs", args.run_name)
     ckpt_dir = os.path.join(run_dir, "checkpoints")
+    video_dir = os.path.join(run_dir, "videos")
     tb_dir = os.path.join(run_dir, "tb")
     os.makedirs(ckpt_dir, exist_ok=True)
 
@@ -85,6 +92,7 @@ def main() -> None:
     # the correct call cadence for VecEnv (e.g. 50_000 // 4 = 12_500 calls).
     eval_freq = max(DEFAULTS["eval_freq_steps"] // args.n_envs, 1)
     checkpoint_freq = max(DEFAULTS["checkpoint_freq_steps"] // args.n_envs, 1)
+    video_freq = max(DEFAULTS["video_freq_steps"] // args.n_envs, 1)
 
     checkpoint_cb = CheckpointCallback(
         save_freq=checkpoint_freq,
@@ -94,11 +102,18 @@ def main() -> None:
     )
     eval_cb = EvalCallback(
         eval_env,
-        best_model_save_path=run_dir,         # saves best_model.zip here
+        best_model_save_path=run_dir,  # saves best_model.zip here
         log_path=run_dir,
         eval_freq=eval_freq,
         n_eval_episodes=DEFAULTS["n_eval_episodes"],
         deterministic=True,
+        verbose=1,
+    )
+    video_cb = VideoRecorderCallback(
+        env_fn=lambda: QuidditchHoopEnv(render_mode="rgb_array"),
+        video_dir=video_dir,
+        record_freq=video_freq,
+        fps=20,
         verbose=1,
     )
 
@@ -118,14 +133,16 @@ def main() -> None:
         ent_coef=DEFAULTS["ent_coef"],
     )
 
-    print(f"Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)")
+    print(
+        f"Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)"
+    )
     print(f"Logs  : {tb_dir}")
     print(f"Models: {run_dir}")
     print()
 
     model.learn(
         total_timesteps=args.timesteps,
-        callback=[checkpoint_cb, eval_cb],
+        callback=[checkpoint_cb, eval_cb, video_cb],
         progress_bar=True,
     )
 
