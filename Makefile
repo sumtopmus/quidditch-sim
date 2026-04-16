@@ -1,14 +1,25 @@
 # Quidditch-Sim Makefile
-# Usage:  make <target>  [RUN_NAME=ppo_hoop_v1]
+# Usage:  make <target>  [RUN_NAME=ppo_hoop]  [TRIAL=20240416_143022]
+#
+# Run layout:  runs/<RUN_NAME>/<trial>/   (trial = auto-timestamp per training run)
 
 CONDA_ENV  ?= uav
-RUN_NAME   ?= ppo_hoop_v1
+RUN_NAME   ?= ppo_hoop
+TRIAL      ?=
 RUNS_DIR   := runs
 MODELS_DIR := models
 
-# Use RUN_NAME if passed on the command line, otherwise pick the
-# most-recently-modified subdirectory of RUNS_DIR automatically.
-_LATEST_RUN = $(if $(filter command line,$(origin RUN_NAME)),$(RUN_NAME),$(shell ls -t $(RUNS_DIR) 2>/dev/null | head -1))
+# Resolve the trial directory for eval / promote:
+#   TRIAL= given on CLI          → runs/$(RUN_NAME)/$(TRIAL)
+#   RUN_NAME= given on CLI only  → latest trial inside that run
+#   nothing given                → latest trial across all runs
+_LATEST_IN_RUN  = $(shell ls -dt $(RUNS_DIR)/$(RUN_NAME)/* 2>/dev/null | head -1)
+_LATEST_OVERALL = $(shell ls -dt $(RUNS_DIR)/*/* 2>/dev/null | head -1)
+_TRIAL_DIR      = $(if $(TRIAL),\
+                    $(RUNS_DIR)/$(RUN_NAME)/$(TRIAL),\
+                    $(if $(filter command line,$(origin RUN_NAME)),\
+                      $(_LATEST_IN_RUN),\
+                      $(_LATEST_OVERALL)))
 
 # Run a command inside the conda env, streaming output in real time.
 CONDA_RUN := conda run --no-capture-output -n $(CONDA_ENV)
@@ -33,34 +44,35 @@ check: ## ✅ Validate env headless (fast, no window)
 check-gui: ## 🪟 Validate env with PyBullet GUI (interactive camera)
 	$(PYTHON) check_env.py --gui
 
-train: ## 🚀 Run PPO training  [RUN_NAME=auto-timestamped]
-	$(PYTHON) train_ppo.py $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
+train: ## 🚀 Run PPO training  [RUN_NAME=ppo_hoop]
+	$(PYTHON) train_ppo.py --run-name $(RUN_NAME)
 
-eval: ## 🎯 Evaluate best model visually  [RUN_NAME=latest] [EPISODES=10]
-	$(PYTHON) eval_ppo.py --model $(RUNS_DIR)/$(_LATEST_RUN)/best_model --episodes $(or $(EPISODES),10)
+eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES=10]
+	$(PYTHON) eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)
 
-eval-headless: ## 📈 Evaluate best model headless (stats only)  [RUN_NAME=latest] [EPISODES=50]
-	$(PYTHON) eval_ppo.py --model $(RUNS_DIR)/$(_LATEST_RUN)/best_model --no-render --episodes $(or $(EPISODES),50)
+eval-headless: ## 📈 Evaluate best model headless  [RUN_NAME=...] [TRIAL=...] [EPISODES=50]
+	$(PYTHON) eval_ppo.py --model $(_TRIAL_DIR)/best_model --no-render --episodes $(or $(EPISODES),50)
 
-tensorboard: ## 📊 Launch TensorBoard for RUN_NAME  [RUN_NAME=ppo_hoop_v1]
-	$(CONDA_RUN) tensorboard --logdir $(RUNS_DIR)/$(RUN_NAME)/tb
+tensorboard: ## 📊 Launch TensorBoard — all runs, or RUN_NAME=... for one config
+	$(CONDA_RUN) tensorboard --logdir $(if $(filter command line,$(origin RUN_NAME)),$(RUNS_DIR)/$(RUN_NAME),$(RUNS_DIR))
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-promote: ## 🏆 Promote best model to models/ (latest run or RUN_NAME=...)
-	@run="$(_LATEST_RUN)"; \
-	 [ -n "$$run" ] || { echo "ERROR: no runs found in $(RUNS_DIR)/"; exit 1; }; \
-	 src="$(RUNS_DIR)/$$run/best_model.zip"; \
+promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
+	@dir="$(_TRIAL_DIR)"; \
+	 [ -n "$$dir" ] || { echo "ERROR: no trials found in $(RUNS_DIR)/"; exit 1; }; \
+	 src="$$dir/best_model.zip"; \
 	 test -f "$$src" || { echo "ERROR: $$src not found — run 'make train' first"; exit 1; }; \
 	 mkdir -p $(MODELS_DIR); \
-	 dest="$(MODELS_DIR)/$${run}_best.zip"; \
+	 label=$$(echo "$$dir" | sed 's|$(RUNS_DIR)/||'); \
+	 dest="$(MODELS_DIR)/$$(echo $$label | tr '/' '_')_best.zip"; \
 	 cp "$$src" "$$dest"; \
 	 echo ""; \
-	 echo "  Run:      $$run"; \
+	 echo "  Trial:    $$dir"; \
 	 echo "  Promoted  $$src  →  $$dest"; \
 	 echo ""; \
 	 echo "  To commit:"; \
-	 echo "    git add $$dest && git commit -m 'model: promote $$run best model'"
+	 echo "    git add $$dest && git commit -m 'model: promote $$label best model'"
 
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -68,10 +80,14 @@ install: ## 📦 Create or update the $(CONDA_ENV) conda env from environment.ym
 	conda env create -f environment.yml 2>/dev/null || conda env update -f environment.yml --prune
 	@echo "Done. Verify with: make check"
 
-list-runs: ## 🗂️  List available training runs and their saved models
+list-runs: ## 🗂️  List training runs grouped by config name
 	@echo "=== $(RUNS_DIR)/ ==="; \
-	 runs=$$(ls -1 $(RUNS_DIR) 2>/dev/null); \
-	 if [ -n "$$runs" ]; then echo "$$runs"; else echo "  (none)"; fi; \
+	 configs=$$(ls -1 $(RUNS_DIR) 2>/dev/null); \
+	 if [ -z "$$configs" ]; then echo "  (none)"; \
+	 else for cfg in $$configs; do \
+	   echo "  $$cfg/"; \
+	   ls -1t "$(RUNS_DIR)/$$cfg" 2>/dev/null | sed 's/^/    /'; \
+	 done; fi; \
 	 echo ""; \
 	 echo "=== $(MODELS_DIR)/ ==="; \
 	 zips=$$(find $(MODELS_DIR) -maxdepth 1 -name "*.zip" 2>/dev/null); \

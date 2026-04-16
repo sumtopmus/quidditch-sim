@@ -3,14 +3,22 @@
 Usage:
     conda activate uav
     cd quidditch-sim
-    python train_ppo.py
+    python train_ppo.py                        # uses RUN_NAME=ppo_hoop
+    python train_ppo.py --run-name ppo_hoop_v2
 
-Checkpoints and TensorBoard logs are written to ./runs/ppo_hoop_v1/.
-To watch training progress:
-    tensorboard --logdir runs/ppo_hoop_v1/tb
+Run layout:
+    runs/<run-name>/<YYYYMMDD_HHMMSS>/         ← one trial per training run
+        checkpoints/
+        videos/
+        PPO_1/                                 ← TensorBoard event files (SB3)
+        best_model.zip
+        final_model.zip
+
+To watch all training runs in TensorBoard:
+    tensorboard --logdir runs
 
 To evaluate the best model visually (PyBullet GUI):
-    python eval_ppo.py --model runs/ppo_hoop_v1/best_model
+    python eval_ppo.py --model runs/ppo_hoop/20240416_143022/best_model
 """
 
 import os
@@ -62,8 +70,9 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train PPO on QuidditchSimpleEnv")
     p.add_argument(
         "--run-name",
-        default=None,
-        help="Name for this run (default: ppo_hoop_YYYYMMDD_HHMMSS).",
+        default="ppo_hoop",
+        help="Config/experiment label (default: ppo_hoop). A timestamp trial "
+             "subdirectory is always created automatically.",
     )
     p.add_argument("--timesteps", type=int, default=DEFAULTS["total_timesteps"])
     p.add_argument("--n-envs", type=int, default=DEFAULTS["n_envs"])
@@ -79,12 +88,11 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     verbose = 1 if args.verbose else 0
-    run_name = args.run_name or f"ppo_hoop_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
-
-    run_dir = os.path.join("runs", run_name)
-    ckpt_dir = os.path.join(run_dir, "checkpoints")
-    video_dir = os.path.join(run_dir, "videos")
-    tb_dir = os.path.join(run_dir, "tb")
+    trial = datetime.now().strftime('%Y%m%d_%H%M%S')
+    trial_dir = os.path.join("runs", args.run_name, trial)
+    ckpt_dir = os.path.join(trial_dir, "checkpoints")
+    video_dir = os.path.join(trial_dir, "videos")
+    # SB3 writes TB events to trial_dir/PPO_1/ automatically — no separate tb/ subdir needed.
     os.makedirs(ckpt_dir, exist_ok=True)
 
     # ---- environments ----
@@ -113,8 +121,8 @@ def main() -> None:
     )
     eval_cb = EvalCallback(
         eval_env,
-        best_model_save_path=run_dir,  # saves best_model.zip here
-        log_path=run_dir,
+        best_model_save_path=trial_dir,  # saves best_model.zip here
+        log_path=trial_dir,
         eval_freq=eval_freq,
         n_eval_episodes=DEFAULTS["n_eval_episodes"],
         deterministic=True,
@@ -133,7 +141,7 @@ def main() -> None:
         "MlpPolicy",
         train_env,
         verbose=verbose,
-        tensorboard_log=tb_dir,
+        tensorboard_log=trial_dir,
         n_steps=DEFAULTS["n_steps"],
         batch_size=DEFAULTS["batch_size"],
         n_epochs=DEFAULTS["n_epochs"],
@@ -147,8 +155,8 @@ def main() -> None:
     print(
         f"Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)"
     )
-    print(f"Logs  : {tb_dir}")
-    print(f"Models: {run_dir}")
+    print(f"Trial : {trial_dir}")
+    print(f"TB    : {trial_dir}/PPO_1  (tensorboard --logdir runs)")
     print()
 
     model.learn(
@@ -157,7 +165,7 @@ def main() -> None:
         progress_bar=not args.verbose,
     )
 
-    final_path = os.path.join(run_dir, "final_model")
+    final_path = os.path.join(trial_dir, "final_model")
     model.save(final_path)
     print(f"\nTraining done. Final model saved to {final_path}.zip")
 
