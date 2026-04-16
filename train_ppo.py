@@ -22,9 +22,10 @@ To evaluate the best model visually (PyBullet GUI):
 """
 
 import os
-import sys
 import argparse
+import tomllib
 from datetime import datetime
+from pathlib import Path
 
 # macOS conda ships multiple copies of libomp; suppress the duplicate-init abort.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
@@ -41,29 +42,13 @@ from callbacks import VideoRecorderCallback
 
 
 # ---------------------------------------------------------------------------
-# Defaults (can be overridden with CLI flags)
+# Config — loaded from config/training.toml at startup
 # ---------------------------------------------------------------------------
 
-DEFAULTS = {
-    "total_timesteps": 2_000_000,
-    "n_envs": 4,
-    # PPO hyperparams — sensible starting point; tune after first run
-    "n_steps": 2048,
-    "batch_size": 64,
-    "n_epochs": 10,
-    "lr": 3e-4,
-    "gamma": 0.99,
-    "gae_lambda": 0.95,
-    "clip_range": 0.2,
-    "ent_coef": 0.01,
-    # Evaluation during training
-    "eval_freq_steps": 50_000,
-    "n_eval_episodes": 10,
-    # Checkpoint frequency (independent of eval)
-    "checkpoint_freq_steps": 10_000,
-    # Video recording frequency (one episode per checkpoint by default)
-    "video_freq_steps": 10_000,
-}
+_CONFIG_PATH = Path(__file__).parent / "config" / "training.toml"
+
+with _CONFIG_PATH.open("rb") as _f:
+    cfg = tomllib.load(_f)
 
 
 def parse_args() -> argparse.Namespace:
@@ -72,11 +57,11 @@ def parse_args() -> argparse.Namespace:
         "--run-name",
         default="ppo_hoop",
         help="Config/experiment label (default: ppo_hoop). A timestamp trial "
-             "subdirectory is always created automatically.",
+        "subdirectory is always created automatically.",
     )
-    p.add_argument("--timesteps", type=int, default=DEFAULTS["total_timesteps"])
-    p.add_argument("--n-envs", type=int, default=DEFAULTS["n_envs"])
-    p.add_argument("--lr", type=float, default=DEFAULTS["lr"])
+    p.add_argument("--timesteps", type=int, default=cfg["training"]["total_timesteps"])
+    p.add_argument("--n-envs", type=int, default=cfg["training"]["n_envs"])
+    p.add_argument("--lr", type=float, default=cfg["ppo"]["lr"])
     p.add_argument(
         "--verbose",
         action="store_true",
@@ -88,7 +73,7 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     verbose = 1 if args.verbose else 0
-    trial = datetime.now().strftime('%Y%m%d_%H%M%S')
+    trial = datetime.now().strftime("%Y%m%d_%H%M%S")
     trial_dir = os.path.join("runs", args.run_name, trial)
     ckpt_dir = os.path.join(trial_dir, "checkpoints")
     video_dir = os.path.join(trial_dir, "videos")
@@ -109,9 +94,9 @@ def main() -> None:
     # ---- callbacks ----
     # SB3 callback frequencies are in per-env steps; divide by n_envs to get
     # the correct call cadence for VecEnv (e.g. 50_000 // 4 = 12_500 calls).
-    eval_freq = max(DEFAULTS["eval_freq_steps"] // args.n_envs, 1)
-    checkpoint_freq = max(DEFAULTS["checkpoint_freq_steps"] // args.n_envs, 1)
-    video_freq = max(DEFAULTS["video_freq_steps"] // args.n_envs, 1)
+    eval_freq = max(cfg["eval"]["eval_freq_steps"] // args.n_envs, 1)
+    checkpoint_freq = max(cfg["callbacks"]["checkpoint_freq_steps"] // args.n_envs, 1)
+    video_freq = max(cfg["callbacks"]["video_freq_steps"] // args.n_envs, 1)
 
     checkpoint_cb = CheckpointCallback(
         save_freq=checkpoint_freq,
@@ -124,7 +109,7 @@ def main() -> None:
         best_model_save_path=trial_dir,  # saves best_model.zip here
         log_path=trial_dir,
         eval_freq=eval_freq,
-        n_eval_episodes=DEFAULTS["n_eval_episodes"],
+        n_eval_episodes=cfg["eval"]["n_eval_episodes"],
         deterministic=True,
         verbose=verbose,
     )
@@ -132,7 +117,7 @@ def main() -> None:
         env_fn=lambda: QuidditchSimpleEnv(render_mode="rgb_array"),
         video_dir=video_dir,
         record_freq=video_freq,
-        fps=20,
+        fps=cfg["callbacks"]["video_fps"],
         verbose=verbose,
     )
 
@@ -142,14 +127,14 @@ def main() -> None:
         train_env,
         verbose=verbose,
         tensorboard_log=trial_dir,
-        n_steps=DEFAULTS["n_steps"],
-        batch_size=DEFAULTS["batch_size"],
-        n_epochs=DEFAULTS["n_epochs"],
+        n_steps=cfg["ppo"]["n_steps"],
+        batch_size=cfg["ppo"]["batch_size"],
+        n_epochs=cfg["ppo"]["n_epochs"],
         learning_rate=args.lr,
-        gamma=DEFAULTS["gamma"],
-        gae_lambda=DEFAULTS["gae_lambda"],
-        clip_range=DEFAULTS["clip_range"],
-        ent_coef=DEFAULTS["ent_coef"],
+        gamma=cfg["ppo"]["gamma"],
+        gae_lambda=cfg["ppo"]["gae_lambda"],
+        clip_range=cfg["ppo"]["clip_range"],
+        ent_coef=cfg["ppo"]["ent_coef"],
     )
 
     print(
