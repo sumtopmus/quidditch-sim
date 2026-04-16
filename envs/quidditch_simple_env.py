@@ -112,6 +112,11 @@ CRASH_PENALTY: float = -2.0
 DIST_REWARD_SCALE: float = 0.01  # multiplied by −(dist/ARENA_RADIUS) per step
 TAKEOFF_GRACE_STEPS: int = 30  # skip crash check while drone lifts off from ground
 
+# Scoring geometry: how far past the hoop plane (in meters) the drone's center
+# must travel before a crossing is confirmed as a score.  This ensures the
+# drone actually flies *through* the hoop rather than merely touching the plane.
+HOOP_CROSSING_MARGIN: float = 0.1  # m — 10 cm past the plane
+
 # ---------------------------------------------------------------------------
 # Hoop visualization
 # ---------------------------------------------------------------------------
@@ -176,6 +181,11 @@ class QuidditchSimpleEnv(gym.Env):
         self._step_count: int = 0
         self._max_steps: int = 0  # set after first Aviary reset
         self._prev_signed_dist: float = 0.0
+        # Two-phase hoop scoring: True once the drone crosses the plane (signed dist
+        # goes negative→non-negative) while inside the aperture.  Score is confirmed
+        # only when signed dist reaches HOOP_CROSSING_MARGIN past the plane.
+        # Reset to False if the drone retreats back to the approach side.
+        self._crossing_started: bool = False
         # Drone starts on the ground; skip the crash check for the first
         # TAKEOFF_GRACE_STEPS steps so it has time to climb above the threshold.
         self._takeoff_grace: int = 0
@@ -218,6 +228,7 @@ class QuidditchSimpleEnv(gym.Env):
 
         self._step_count = 0
         self._takeoff_grace = TAKEOFF_GRACE_STEPS
+        self._crossing_started = False
         drone_pos = self._drone_pos()
         self._prev_signed_dist = self._signed_dist(drone_pos)
 
@@ -347,21 +358,42 @@ class QuidditchSimpleEnv(gym.Env):
         return float(np.dot(pos - HOOP_CENTER, HOOP_OUTWARD_NORMAL))
 
     def _detect_score(self, drone_pos: np.ndarray, curr_signed_dist: float) -> bool:
-        """Return True if the drone just flew through the hoop aperture.
+        """Return True when the drone has completely flown through the hoop aperture.
 
-        Conditions:
-          1. Signed distance crossed from negative (inside) to non-negative (outside).
-          2. The drone's lateral position (y, z) at the moment of crossing falls
-             within the hoop aperture (radial distance from hoop center ≤ hoop radius).
+        Two-phase detection:
+          Phase 1 — Arm: the drone crosses the hoop plane (signed dist goes
+            negative→non-negative) while its lateral (y, z) position is inside
+            the aperture.  Sets _crossing_started = True.
+          Phase 2 — Confirm: the drone's signed distance reaches
+            HOOP_CROSSING_MARGIN past the plane.  Returns True.
+
+        If the drone retreats back through the plane before reaching the margin,
+        _crossing_started is reset — the approach side must be re-entered and
+        the crossing repeated.  This prevents oscillation at the plane boundary
+        from triggering a spurious score.
         """
-        if not (self._prev_signed_dist < 0.0 and curr_signed_dist >= 0.0):
+        if not self._crossing_started:
+            # Phase 1: detect the initial plane crossing
+            if self._prev_signed_dist < 0.0 and curr_signed_dist >= 0.0:
+                radial = np.sqrt(
+                    (drone_pos[1] - HOOP_CENTER[1]) ** 2
+                    + (drone_pos[2] - HOOP_CENTER[2]) ** 2
+                )
+                if radial <= HOOP_RADIUS:
+                    self._crossing_started = True
             return False
 
-        # Radial distance from hoop axis in the hoop plane (y-z plane at x=4)
-        radial = np.sqrt(
-            (drone_pos[1] - HOOP_CENTER[1]) ** 2 + (drone_pos[2] - HOOP_CENTER[2]) ** 2
-        )
-        return bool(radial <= HOOP_RADIUS)
+        # Phase 2: crossing is in progress — wait for the drone to clear the margin
+        if curr_signed_dist < 0.0:
+            # Drone retreated; reset and require a clean re-crossing
+            self._crossing_started = False
+            return False
+
+        if curr_signed_dist >= HOOP_CROSSING_MARGIN:
+            self._crossing_started = False
+            return True
+
+        return False
 
     @staticmethod
     def _make_torus_mesh(
