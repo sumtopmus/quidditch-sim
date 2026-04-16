@@ -37,8 +37,12 @@ Flight mode: PyFlyt mode 7 — position setpoint [x, y, yaw, z].
 from __future__ import annotations
 
 import contextlib
+import ctypes
 import os
 import time
+
+# Used in _silence_c_stdout() to flush C's stdio buffers.
+_libc = ctypes.CDLL(None)
 
 import numpy as np
 import pybullet as p
@@ -55,16 +59,26 @@ def _silence_c_stdout():
     Python's sys.stdout redirection cannot suppress printf() calls from C
     extensions (e.g. PyBullet's 'argv[0]=' startup message).  We must dup2
     the real file descriptor instead.
+
+    When stdout is not a TTY (e.g. with a rich progress bar), C's stdio is
+    block-buffered.  printf() data accumulates in the buffer without being
+    written to the OS fd.  If we restore FD 1 before flushing, the buffer
+    drains to the now-live terminal later (typically at process exit), causing
+    a flood of deferred prints.  fflush(NULL) inside the finally block — while
+    FD 1 still points to /dev/null — drains all C-buffered output to /dev/null
+    before the restore happens.
     """
+    _libc.fflush(None)                  # drain any pre-existing C-level output first
     devnull_fd = os.open(os.devnull, os.O_WRONLY)
     saved_fd = os.dup(1)
+    os.dup2(devnull_fd, 1)
+    os.close(devnull_fd)                # FD 1 is now a dup; original handle not needed
     try:
-        os.dup2(devnull_fd, 1)
         yield
     finally:
+        _libc.fflush(None)              # flush C buffers → /dev/null before restoring
         os.dup2(saved_fd, 1)
         os.close(saved_fd)
-        os.close(devnull_fd)
 
 
 # ---------------------------------------------------------------------------
