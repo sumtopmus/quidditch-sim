@@ -100,8 +100,9 @@ TAKEOFF_GRACE_STEPS: int = 30  # skip crash check while drone lifts off from gro
 # ---------------------------------------------------------------------------
 # Hoop visualization
 # ---------------------------------------------------------------------------
-HOOP_SEGS: int = 24  # sphere segments in the ring visual
-HOOP_SEG_RADIUS: float = 0.004  # m — radius of each visual sphere
+HOOP_TUBE_RADIUS: float = 0.012  # m — radius of the ring tube
+HOOP_MAJOR_SEGS: int = 32        # segments around the ring circumference
+HOOP_MINOR_SEGS: int = 10        # segments around the tube cross-section
 POLE_RADIUS: float = 0.005  # m — radius of the support pole
 HOOP_RGBA = (1.0, 0.45, 0.0, 1.0)  # orange
 POLE_RGBA = (0.55, 0.55, 0.55, 1.0)
@@ -345,27 +346,59 @@ class QuidditchSimpleEnv(gym.Env):
         )
         return bool(radial <= HOOP_RADIUS)
 
-    def _draw_hoop(self) -> None:
-        """Draw the hoop and pole as static visual bodies in PyBullet.
+    @staticmethod
+    def _make_torus_mesh(
+        R: float, r: float, n_major: int, n_minor: int
+    ) -> tuple[list, list]:
+        """Generate vertices and triangle indices for a torus.
 
-        Uses small spheres arranged in a ring (no URDF needed).
+        The torus ring lies in the Y-Z plane (tube axis along X), matching the
+        hoop's outward normal [1, 0, 0].  Place the resulting body at HOOP_CENTER.
+
+        Args:
+            R: major radius (center of tube to center of ring)
+            r: minor radius (tube cross-section radius)
+            n_major: segments around the ring circumference
+            n_minor: segments around the tube cross-section
         """
+        verts, tris = [], []
+        for i in range(n_major):
+            for j in range(n_minor):
+                theta = 2.0 * np.pi * i / n_major  # around the ring
+                phi   = 2.0 * np.pi * j / n_minor  # around the tube
+                verts.append([
+                    r * np.sin(phi),
+                    (R + r * np.cos(phi)) * np.cos(theta),
+                    (R + r * np.cos(phi)) * np.sin(theta),
+                ])
+        for i in range(n_major):
+            for j in range(n_minor):
+                a = i * n_minor + j
+                b = i * n_minor + (j + 1) % n_minor
+                c = ((i + 1) % n_major) * n_minor + j
+                d = ((i + 1) % n_major) * n_minor + (j + 1) % n_minor
+                tris += [a, b, c, b, d, c]
+        return verts, tris
+
+    def _draw_hoop(self) -> None:
+        """Draw the hoop and pole as static visual bodies in PyBullet."""
+        assert self._aviary is not None
         av = self._aviary
 
-        # Ring of spheres
-        for i in range(HOOP_SEGS):
-            angle = 2.0 * np.pi * i / HOOP_SEGS
-            pos = [
-                HOOP_CENTER[0],
-                HOOP_CENTER[1] + HOOP_RADIUS * np.cos(angle),
-                HOOP_CENTER[2] + HOOP_RADIUS * np.sin(angle),
-            ]
-            vis = av.createVisualShape(
-                p.GEOM_SPHERE,
-                radius=HOOP_SEG_RADIUS,
-                rgbaColor=list(HOOP_RGBA),
-            )
-            av.createMultiBody(baseMass=0, baseVisualShapeIndex=vis, basePosition=pos)
+        # Torus mesh — single body, smooth continuous ring
+        verts, tris = self._make_torus_mesh(
+            HOOP_RADIUS, HOOP_TUBE_RADIUS, HOOP_MAJOR_SEGS, HOOP_MINOR_SEGS
+        )
+        vis = av.createVisualShape(
+            p.GEOM_MESH,
+            vertices=verts,
+            indices=tris,
+            meshScale=[1, 1, 1],
+            rgbaColor=list(HOOP_RGBA),
+        )
+        av.createMultiBody(
+            baseMass=0, baseVisualShapeIndex=vis, basePosition=list(HOOP_CENTER)
+        )
 
         # Support pole: cylinder from ground to hoop base
         pole_length = HOOP_CENTER[2] - HOOP_RADIUS   # ground → bottom of ring
