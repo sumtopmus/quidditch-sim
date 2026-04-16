@@ -3,11 +3,16 @@
 from __future__ import annotations
 
 import os
+from datetime import datetime
 from typing import Callable
 
 import numpy as np
 
 from stable_baselines3.common.callbacks import BaseCallback
+
+
+def _ts() -> str:
+    return datetime.now().strftime("[%H:%M:%S]")
 
 
 class VideoRecorderCallback(BaseCallback):
@@ -41,10 +46,8 @@ class VideoRecorderCallback(BaseCallback):
             self._imageio_ok = True
         except ImportError:
             self._imageio_ok = False
-            print(
-                "⚠️  [VideoRecorder] imageio not found. "
-                "Install with: pip install imageio imageio-ffmpeg"
-            )
+            print(f"{_ts()} ⚠️  [VideoRecorder] imageio not found. "
+                  "Install with: pip install imageio imageio-ffmpeg")
 
     def _on_step(self) -> bool:
         if not self._imageio_ok:
@@ -79,5 +82,5 @@ class VideoRecorderCallback(BaseCallback):
                 writer.append_data(frame)  # type: ignore[attr-defined]
 
         if self.verbose:
-            print(f"🎬 [VideoRecorder] {len(frames)} frames → {path}")
+            print(f"{_ts()} 🎬 [VideoRecorder] {len(frames)} frames → {path}")
         return True

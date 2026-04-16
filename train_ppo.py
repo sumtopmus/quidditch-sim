@@ -52,6 +52,10 @@ from envs.quidditch_simple_env import QuidditchSimpleEnv
 from callbacks import VideoRecorderCallback
 
 
+def _ts() -> str:
+    return datetime.now().strftime("[%H:%M:%S]")
+
+
 # ---------------------------------------------------------------------------
 # Config — loaded from config/training.toml at startup
 # ---------------------------------------------------------------------------
@@ -60,6 +64,99 @@ _CONFIG_PATH = Path(__file__).parent / "config" / "training.toml"
 
 with _CONFIG_PATH.open("rb") as _f:
     cfg = tomllib.load(_f)
+
+
+# ---------------------------------------------------------------------------
+# Run-info helpers — write a human-readable TOML snapshot per trial
+# ---------------------------------------------------------------------------
+
+def _fmt_elapsed(seconds: float) -> str:
+    h, rem = divmod(int(seconds), 3600)
+    m, s = divmod(rem, 60)
+    if h:
+        return f"{h}h {m:02d}m {s:02d}s"
+    if m:
+        return f"{m}m {s:02d}s"
+    return f"{s}s"
+
+
+def _write_run_info(
+    path: str,
+    *,
+    name: str,
+    trial: str,
+    started: datetime,
+    args: argparse.Namespace,
+    elapsed_s: float | None = None,
+    best: dict | None = None,
+) -> None:
+    """Write (or overwrite) a human-readable TOML summary of this trial.
+
+    Written once before training (elapsed/best are absent) and again after
+    (elapsed + best eval metrics filled in).  The file is never read by any
+    training code — it exists purely for human inspection.
+    """
+    elapsed_line = (
+        f'elapsed     = "{_fmt_elapsed(elapsed_s)}"  # {elapsed_s:.0f} s total'
+        if elapsed_s is not None
+        else 'elapsed     = "in progress"'
+    )
+
+    if best:
+        best_block = (
+            f"\n[best]\n"
+            f"mean_reward = {best['mean_reward']:.4f}\n"
+            f"std_reward  = {best['std_reward']:.4f}\n"
+            f"at_step     = {best['at_timestep']}\n"
+        )
+    else:
+        best_block = "\n[best]\n# filled in after training completes\n"
+
+    content = (
+        "# Run info — written by train_ppo.py.  Not read by any script.\n"
+        "\n"
+        "[run]\n"
+        f'name    = "{name}"\n'
+        f'trial   = "{trial}"\n'
+        f'started = "{started.isoformat(timespec="seconds")}"\n'
+        f"{elapsed_line}\n"
+        "\n"
+        "[params]\n"
+        f"total_timesteps = {args.timesteps}\n"
+        f"n_envs          = {args.n_envs}\n"
+        f"lr              = {args.lr}\n"
+        f"n_steps         = {cfg['ppo']['n_steps']}\n"
+        f"batch_size      = {cfg['ppo']['batch_size']}\n"
+        f"n_epochs        = {cfg['ppo']['n_epochs']}\n"
+        f"gamma           = {cfg['ppo']['gamma']}\n"
+        f"gae_lambda      = {cfg['ppo']['gae_lambda']}\n"
+        f"clip_range      = {cfg['ppo']['clip_range']}\n"
+        f"ent_coef        = {cfg['ppo']['ent_coef']}\n"
+        f"{best_block}"
+    )
+
+    with open(path, "w") as fh:
+        fh.write(content)
+
+
+def _load_best_metrics(trial_dir: str) -> dict | None:
+    """Read the best eval result from EvalCallback's evaluations.npz."""
+    import numpy as np
+
+    npz_path = os.path.join(trial_dir, "evaluations.npz")
+    if not os.path.exists(npz_path):
+        return None
+    try:
+        data = np.load(npz_path)
+        means = data["results"].mean(axis=1)
+        idx = int(means.argmax())
+        return {
+            "mean_reward": float(means[idx]),
+            "std_reward": float(data["results"][idx].std()),
+            "at_timestep": int(data["timesteps"][idx]),
+        }
+    except Exception:
+        return None
 
 
 def parse_args() -> argparse.Namespace:
@@ -84,10 +181,12 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     verbose = 1 if args.verbose else 0
-    trial = datetime.now().strftime("%Y%m%d_%H%M%S")
+    start_time = datetime.now()
+    trial = start_time.strftime("%Y%m%d_%H%M%S")
     trial_dir = os.path.join("runs", args.run_name, trial)
     ckpt_dir = os.path.join(trial_dir, "checkpoints")
     video_dir = os.path.join(trial_dir, "videos")
+    run_info_path = os.path.join(trial_dir, "run_info.toml")
     # SB3 writes TB events to trial_dir/PPO_1/ automatically — no separate tb/ subdir needed.
     os.makedirs(ckpt_dir, exist_ok=True)
 
@@ -154,11 +253,12 @@ def main() -> None:
         ent_coef=cfg["ppo"]["ent_coef"],
     )
 
-    print(
-        f"🚀 Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)"
-    )
-    print(f"📁 Trial : {trial_dir}")
-    print(f"📊 TB    : {trial_dir}/PPO_1  (tensorboard --logdir runs)")
+    _write_run_info(run_info_path, name=args.run_name, trial=trial,
+                    started=start_time, args=args)
+
+    print(f"{_ts()} 🚀 Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)")
+    print(f"{_ts()} 📁 Trial       : {trial_dir}")
+    print(f"{_ts()} 📊 Tensorboard : {trial_dir}/PPO_1")
     print()
 
     model.learn(
@@ -169,7 +269,14 @@ def main() -> None:
 
     final_path = os.path.join(trial_dir, "final_model")
     model.save(final_path)
-    print(f"\n✅ Training done. Final model saved to {final_path}.zip")
+
+    elapsed_s = (datetime.now() - start_time).total_seconds()
+    _write_run_info(run_info_path, name=args.run_name, trial=trial,
+                    started=start_time, args=args,
+                    elapsed_s=elapsed_s,
+                    best=_load_best_metrics(trial_dir))
+
+    print(f"\n{_ts()} ✅ Training done in {_fmt_elapsed(elapsed_s)}. Final model saved to {final_path}.zip")
 
 
 if __name__ == "__main__":

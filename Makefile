@@ -39,22 +39,22 @@ help: ## 📋 Show available targets
 # ──────────────────────────────────────────────────────────────────────────────
 
 check: ## ✅ Validate env headless (fast, no window)
-	$(PYTHON) check_env.py
+	@$(PYTHON) check_env.py
 
 check-gui: ## 🪟 Validate env with PyBullet GUI (interactive camera)
-	$(PYTHON) check_env.py --gui
+	@$(PYTHON) check_env.py --gui
 
 train: ## 🚀 Run PPO training  [RUN_NAME=ppo_hoop]
-	$(PYTHON) train_ppo.py --run-name $(RUN_NAME)
+	@$(PYTHON) train_ppo.py --run-name $(RUN_NAME)
 
 eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES=10]
-	$(PYTHON) eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)
+	@$(PYTHON) eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)
 
 eval-headless: ## 📈 Evaluate best model headless  [RUN_NAME=...] [TRIAL=...] [EPISODES=50]
-	$(PYTHON) eval_ppo.py --model $(_TRIAL_DIR)/best_model --no-render --episodes $(or $(EPISODES),50)
+	@$(PYTHON) eval_ppo.py --model $(_TRIAL_DIR)/best_model --no-render --episodes $(or $(EPISODES),50)
 
 tensorboard: ## 📊 Launch TensorBoard — all runs, or RUN_NAME=... for one config
-	$(CONDA_RUN) tensorboard --logdir $(if $(filter command line,$(origin RUN_NAME)),$(RUNS_DIR)/$(RUN_NAME),$(RUNS_DIR))
+	@$(CONDA_RUN) tensorboard --logdir $(if $(filter command line,$(origin RUN_NAME)),$(RUNS_DIR)/$(RUN_NAME),$(RUNS_DIR))
 
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -77,7 +77,7 @@ promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
 # ──────────────────────────────────────────────────────────────────────────────
 
 install: ## 📦 Create or update the $(CONDA_ENV) conda env from environment.yml
-	conda env create -f environment.yml 2>/dev/null || conda env update -f environment.yml --prune
+	@conda env create -f environment.yml 2>/dev/null || conda env update -f environment.yml --prune
 	@echo "Done. Verify with: make check"
 
 list-runs: ## 🗂️  List training runs grouped by config name
@@ -95,6 +95,6 @@ list-runs: ## 🗂️  List training runs grouped by config name
 	 else echo "  (none — run 'make promote' after a successful training run)"; fi
 
 clean: ## 🧹 Remove __pycache__ and .pyc files
-	find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
-	find . -name "*.pyc" -delete 2>/dev/null || true
+	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
+	@find . -name "*.pyc" -delete 2>/dev/null || true
 	@echo "Clean."
