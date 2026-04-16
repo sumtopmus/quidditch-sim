@@ -1,0 +1,14 @@
+name: uav
+# PyBullet MUST come from conda-forge — PyPI wheels are incompatible with macOS 26.
+# Do NOT add pybullet to requirements.txt.
+channels:
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11
+  - numpy
+  - wheel
+  - pip
+  - pybullet
+  - pip:
+    - -r requirements.txt

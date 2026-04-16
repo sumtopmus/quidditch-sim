@@ -1,0 +1,7 @@
+# Do NOT add pybullet here — install via conda-forge (see environment.yml).
+# Do NOT use stable-baselines3[extra] — stale numpy constraint causes conflicts.
+PyFlyt
+stable-baselines3
+tensorboard
+imageio
+imageio-ffmpeg
