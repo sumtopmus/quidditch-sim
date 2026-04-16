@@ -1,4 +1,4 @@
-"""Sanity check: spin up PyFlyt, hover a QuadX drone for a few seconds in the GUI."""
+"""Smoke test: spin up PyFlyt, hover a QuadX drone for a few seconds in the GUI."""
 
 import time
 import numpy as np
