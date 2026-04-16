@@ -16,6 +16,7 @@ To evaluate the best model visually (PyBullet GUI):
 import os
 import sys
 import argparse
+from datetime import datetime
 
 # macOS conda ships multiple copies of libomp; suppress the duplicate-init abort.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
@@ -36,7 +37,6 @@ from callbacks import VideoRecorderCallback
 # ---------------------------------------------------------------------------
 
 DEFAULTS = {
-    "run_name": "ppo_hoop_v1",
     "total_timesteps": 2_000_000,
     "n_envs": 4,
     # PPO hyperparams — sensible starting point; tune after first run
@@ -60,7 +60,11 @@ DEFAULTS = {
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train PPO on QuidditchSimpleEnv")
-    p.add_argument("--run-name", default=DEFAULTS["run_name"])
+    p.add_argument(
+        "--run-name",
+        default=None,
+        help="Name for this run (default: ppo_hoop_YYYYMMDD_HHMMSS).",
+    )
     p.add_argument("--timesteps", type=int, default=DEFAULTS["total_timesteps"])
     p.add_argument("--n-envs", type=int, default=DEFAULTS["n_envs"])
     p.add_argument("--lr", type=float, default=DEFAULTS["lr"])
@@ -75,8 +79,9 @@ def parse_args() -> argparse.Namespace:
 def main() -> None:
     args = parse_args()
     verbose = 1 if args.verbose else 0
+    run_name = args.run_name or f"ppo_hoop_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
 
-    run_dir = os.path.join("runs", args.run_name)
+    run_dir = os.path.join("runs", run_name)
     ckpt_dir = os.path.join(run_dir, "checkpoints")
     video_dir = os.path.join(run_dir, "videos")
     tb_dir = os.path.join(run_dir, "tb")
