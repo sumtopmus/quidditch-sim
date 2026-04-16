@@ -326,13 +326,19 @@ class QuidditchSimpleEnv(gym.Env):
     # Internal helpers
     # -----------------------------------------------------------------------
 
+    @property
+    def _av(self) -> Aviary:
+        """Aviary accessor that asserts initialisation once, in one place."""
+        assert self._aviary is not None, "Call reset() before using the aviary."
+        return self._aviary
+
     def _drone_pos(self) -> np.ndarray:
         """Return the drone's ground-frame position as a (3,) float64 array."""
-        return self._aviary.state(0)[3].copy()  # state[3] = lin_pos
+        return self._av.state(0)[3].copy()  # state[3] = lin_pos
 
     def _obs(self) -> np.ndarray:
         """Build the 16-dim observation vector."""
-        state = self._aviary.state(0)  # (4, 3) array
+        state = self._av.state(0)  # (4, 3) array
         ang_vel = state[0]  # body-frame angular velocity
         ang_pos = state[1]  # ground-frame euler attitude
         lin_vel = state[2]  # body-frame linear velocity
@@ -431,8 +437,7 @@ class QuidditchSimpleEnv(gym.Env):
 
     def _draw_hoop(self) -> None:
         """Draw the hoop and pole as static visual bodies in PyBullet."""
-        assert self._aviary is not None
-        av = self._aviary
+        av = self._av
 
         # Torus mesh — single body, smooth continuous ring
         verts, tris = self._make_torus_mesh(
@@ -467,7 +472,7 @@ class QuidditchSimpleEnv(gym.Env):
 
     def _reset_gui_camera(self) -> None:
         """Position the PyBullet GUI camera at the shared eye/target defined above."""
-        self._aviary.resetDebugVisualizerCamera(
+        self._av.resetDebugVisualizerCamera(
             cameraDistance=GUI_CAM_DISTANCE,
             cameraYaw=GUI_CAM_YAW,
             cameraPitch=GUI_CAM_PITCH,
@@ -510,7 +515,7 @@ class QuidditchSimpleEnv(gym.Env):
         One GEOM_MESH cylinder at ARENA_RADIUS, ARENA_WALL_HEIGHT tall, semi-transparent
         light blue — clearly marks the flyable volume without obstructing the view.
         """
-        av = self._aviary
+        av = self._av
         verts, tris = self._make_cylinder_wall_mesh(
             ARENA_RADIUS, ARENA_WALL_HEIGHT, ARENA_WALL_SEGS
         )
