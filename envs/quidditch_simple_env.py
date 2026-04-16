@@ -142,22 +142,27 @@ ARENA_WALL_RGBA = (0.6, 0.85, 1.0, 0.40)  # semi-transparent light sky-blue
 
 # ---------------------------------------------------------------------------
 # Camera — shared position used for rgb_array render, GUI initial view, and
-# training videos.  Eye at (-2, 1, 2), looking at (0, 0, 1).
+# training videos.  Eye at (-2, 1, 2), looking at (0, 0, 1.3).
+#
+# Target z=1.3 tilts the view upward vs. the old z=1.0 so the hoop at (2,0,2)
+# sits closer to frame centre.  (0,0,0) stays in frame: the angular distance
+# from frame centre to the origin ray is ≈ 24.5°, within the 30° vertical
+# half-FOV of the 60° lens.
 #
 # Derived GUI params (for resetDebugVisualizerCamera):
-#   distance = |eye - target| = sqrt(4+1+1) = sqrt(6) ≈ 2.45 m
-#   yaw      = -atan(2/1) ≈ 297° (camera is WNW of the target)
-#   pitch    = -atan(1/√5) ≈ -24° (camera is 1 m above target)
+#   distance = |eye - target| = sqrt(4+1+0.49) ≈ 2.34 m
+#   yaw      = atan2(-1, 2) + 360 ≈ 297° (camera is WNW of the target, unchanged)
+#   pitch    = -atan(0.7/√5) ≈ -17° (eye is 0.7 m above target)
 # ---------------------------------------------------------------------------
 VIDEO_WIDTH: int = 640
 VIDEO_HEIGHT: int = 480
 VIDEO_CAM_EYE = (-2.0, 1.0, 2.0)
-VIDEO_CAM_TARGET = (0.0, 0.0, 1.0)
+VIDEO_CAM_TARGET = (0.0, 0.0, 1.3)
 VIDEO_CAM_UP = (0.0, 0.0, 1.0)
 
-GUI_CAM_DISTANCE: float = 2.45
+GUI_CAM_DISTANCE: float = 2.34
 GUI_CAM_YAW: float = 297.0
-GUI_CAM_PITCH: float = -24.0
+GUI_CAM_PITCH: float = -17.0
 
 
 # ---------------------------------------------------------------------------
