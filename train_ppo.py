@@ -64,11 +64,17 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--timesteps", type=int, default=DEFAULTS["total_timesteps"])
     p.add_argument("--n-envs", type=int, default=DEFAULTS["n_envs"])
     p.add_argument("--lr", type=float, default=DEFAULTS["lr"])
+    p.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print SB3 training logs instead of showing a rich progress bar.",
+    )
     return p.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    verbose = 1 if args.verbose else 0
 
     run_dir = os.path.join("runs", args.run_name)
     ckpt_dir = os.path.join(run_dir, "checkpoints")
@@ -98,7 +104,7 @@ def main() -> None:
         save_freq=checkpoint_freq,
         save_path=ckpt_dir,
         name_prefix="ppo_hoop",
-        verbose=1,
+        verbose=verbose,
     )
     eval_cb = EvalCallback(
         eval_env,
@@ -107,21 +113,21 @@ def main() -> None:
         eval_freq=eval_freq,
         n_eval_episodes=DEFAULTS["n_eval_episodes"],
         deterministic=True,
-        verbose=1,
+        verbose=verbose,
     )
     video_cb = VideoRecorderCallback(
         env_fn=lambda: QuidditchSimpleEnv(render_mode="rgb_array"),
         video_dir=video_dir,
         record_freq=video_freq,
         fps=20,
-        verbose=1,
+        verbose=verbose,
     )
 
     # ---- model ----
     model = PPO(
         "MlpPolicy",
         train_env,
-        verbose=1,
+        verbose=verbose,
         tensorboard_log=tb_dir,
         n_steps=DEFAULTS["n_steps"],
         batch_size=DEFAULTS["batch_size"],
@@ -143,7 +149,7 @@ def main() -> None:
     model.learn(
         total_timesteps=args.timesteps,
         callback=[checkpoint_cb, eval_cb, video_cb],
-        progress_bar=True,
+        progress_bar=not args.verbose,
     )
 
     final_path = os.path.join(run_dir, "final_model")

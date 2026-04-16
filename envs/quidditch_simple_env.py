@@ -36,12 +36,34 @@ Flight mode: PyFlyt mode 7 — position setpoint [x, y, yaw, z].
 
 from __future__ import annotations
 
+import contextlib
+import os
+
 import numpy as np
 import pybullet as p
 import gymnasium as gym
 from gymnasium import spaces
 
 from PyFlyt.core import Aviary
+
+
+@contextlib.contextmanager
+def _silence_c_stdout():
+    """Redirect C-level stdout to /dev/null for the duration of the block.
+
+    Python's sys.stdout redirection cannot suppress printf() calls from C
+    extensions (e.g. PyBullet's 'argv[0]=' startup message).  We must dup2
+    the real file descriptor instead.
+    """
+    devnull_fd = os.open(os.devnull, os.O_WRONLY)
+    saved_fd = os.dup(1)
+    try:
+        os.dup2(devnull_fd, 1)
+        yield
+    finally:
+        os.dup2(saved_fd, 1)
+        os.close(saved_fd)
+        os.close(devnull_fd)
 
 
 # ---------------------------------------------------------------------------
@@ -146,14 +168,16 @@ class QuidditchSimpleEnv(gym.Env):
         super().reset(seed=seed)
 
         if self._aviary is None:
-            # First call — create the Aviary (opens the PyBullet physics server)
-            self._aviary = Aviary(
-                start_pos=DRONE_START_POS,
-                start_orn=DRONE_START_ORN,
-                render=(self.render_mode == "human"),
-                drone_type="quadx",
-                seed=seed,
-            )
+            # First call — create the Aviary (opens the PyBullet physics server).
+            # PyBullet prints "argv[0]=..." at C level on connect; suppress it.
+            with _silence_c_stdout():
+                self._aviary = Aviary(
+                    start_pos=DRONE_START_POS,
+                    start_orn=DRONE_START_ORN,
+                    render=(self.render_mode == "human"),
+                    drone_type="quadx",
+                    seed=seed,
+                )
         else:
             # Subsequent calls — reset physics and re-spawn drone in-place
             self._aviary.reset()
