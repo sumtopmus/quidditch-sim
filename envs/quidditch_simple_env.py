@@ -41,15 +41,9 @@ import ctypes
 import os
 import time
 
-# Used in _silence_c_stdout() to flush C's stdio buffers.
+# _silence_c_stdout must be defined before any C-extension import so that
+# module-level imports in subprocess workers can be silenced immediately.
 _libc = ctypes.CDLL(None)
-
-import numpy as np
-import pybullet as p
-import gymnasium as gym
-from gymnasium import spaces
-
-from PyFlyt.core import Aviary
 
 
 @contextlib.contextmanager
@@ -57,8 +51,8 @@ def _silence_c_stdout():
     """Redirect C-level stdout to /dev/null for the duration of the block.
 
     Python's sys.stdout redirection cannot suppress printf() calls from C
-    extensions (e.g. PyBullet's 'argv[0]=' startup message).  We must dup2
-    the real file descriptor instead.
+    extensions (e.g. PyBullet's 'pybullet build time:' or 'argv[0]=' messages).
+    We must dup2 the real file descriptor instead.
 
     When stdout is not a TTY (e.g. with a rich progress bar), C's stdio is
     block-buffered.  printf() data accumulates in the buffer without being
@@ -79,6 +73,18 @@ def _silence_c_stdout():
         _libc.fflush(None)              # flush C buffers → /dev/null before restoring
         os.dup2(saved_fd, 1)
         os.close(saved_fd)
+
+
+# Suppress "pybullet build time: ..." printed by the C extension on first import.
+# Each SubprocVecEnv worker spawns a fresh Python process and re-imports this
+# module, so without this guard the message appears once per worker.
+with _silence_c_stdout():
+    import pybullet as p  # noqa: E402
+    from PyFlyt.core import Aviary  # noqa: E402
+
+import numpy as np
+import gymnasium as gym
+from gymnasium import spaces
 
 
 # ---------------------------------------------------------------------------

@@ -37,11 +37,12 @@ class VideoRecorderCallback(BaseCallback):
         # Lazy import so training still works if imageio is missing
         try:
             import imageio  # noqa: F401
+
             self._imageio_ok = True
         except ImportError:
             self._imageio_ok = False
             print(
-                "[VideoRecorder] WARNING: imageio not found. "
+                "⚠️  [VideoRecorder] imageio not found. "
                 "Install with: pip install imageio imageio-ffmpeg"
             )
 
@@ -73,12 +74,10 @@ class VideoRecorderCallback(BaseCallback):
 
         total_steps = self.n_calls * self.model.n_envs
         path = os.path.join(self.video_dir, f"step_{total_steps:08d}.mp4")
-        with imageio.get_writer(path, fps=self.fps, macro_block_size=None) as writer:
+        with imageio.v2.get_writer(path, fps=self.fps, macro_block_size=None) as writer:
             for frame in frames:
-                writer.append_data(frame)
+                writer.append_data(frame)  # type: ignore[attr-defined]
 
         if self.verbose:
-            print(
-                f"[VideoRecorder] {len(frames)} frames → {path}"
-            )
+            print(f"🎬 [VideoRecorder] {len(frames)} frames → {path}")
         return True

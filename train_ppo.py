@@ -24,8 +24,18 @@ To evaluate the best model visually (PyBullet GUI):
 import os
 import argparse
 import tomllib
+import warnings
 from datetime import datetime
 from pathlib import Path
+
+# SB3 warns when train and eval vec envs are different types (SubprocVecEnv vs
+# DummyVecEnv).  Using DummyVecEnv for the single-instance eval env is
+# intentional — no subprocess overhead needed for n_envs=1.
+warnings.filterwarnings(
+    "ignore",
+    message="Training and eval env are not of the same type",
+    category=UserWarning,
+)
 
 # macOS conda ships multiple copies of libomp; suppress the duplicate-init abort.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
@@ -145,10 +155,10 @@ def main() -> None:
     )
 
     print(
-        f"Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)"
+        f"🚀 Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)"
     )
-    print(f"Trial : {trial_dir}")
-    print(f"TB    : {trial_dir}/PPO_1  (tensorboard --logdir runs)")
+    print(f"📁 Trial : {trial_dir}")
+    print(f"📊 TB    : {trial_dir}/PPO_1  (tensorboard --logdir runs)")
     print()
 
     model.learn(
@@ -159,7 +169,7 @@ def main() -> None:
 
     final_path = os.path.join(trial_dir, "final_model")
     model.save(final_path)
-    print(f"\nTraining done. Final model saved to {final_path}.zip")
+    print(f"\n✅ Training done. Final model saved to {final_path}.zip")
 
 
 if __name__ == "__main__":
