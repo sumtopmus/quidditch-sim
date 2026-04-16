@@ -32,6 +32,7 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
+from stable_baselines3.common.vec_env import SubprocVecEnv
 from stable_baselines3.common.callbacks import (
     CheckpointCallback,
     EvalCallback,
@@ -81,14 +82,20 @@ def main() -> None:
     os.makedirs(ckpt_dir, exist_ok=True)
 
     # ---- environments ----
-    # render_mode=None for all envs during training (no GUI = much faster)
+    # SubprocVecEnv spawns one OS process per env so physics steps run in
+    # parallel across CPU cores.  Use class + env_kwargs (not a lambda) so
+    # the factory is picklable under macOS's "spawn" multiprocessing start method.
     train_env = make_vec_env(
-        lambda: QuidditchSimpleEnv(render_mode=None),
+        QuidditchSimpleEnv,
         n_envs=args.n_envs,
+        env_kwargs={"render_mode": None},
+        vec_env_cls=SubprocVecEnv,
     )
+    # Eval env: single instance, DummyVecEnv is sufficient (no subprocess overhead).
     eval_env = make_vec_env(
-        lambda: QuidditchSimpleEnv(render_mode=None),
+        QuidditchSimpleEnv,
         n_envs=1,
+        env_kwargs={"render_mode": None},
     )
 
     # ---- callbacks ----
