@@ -6,16 +6,16 @@ RUN_NAME   ?= ppo_hoop_v1
 RUNS_DIR   := runs
 MODELS_DIR := models
 
-# promote: use RUN_NAME if passed on the command line, otherwise pick the
+# Use RUN_NAME if passed on the command line, otherwise pick the
 # most-recently-modified subdirectory of RUNS_DIR automatically.
-_PROMOTE_RUN = $(if $(filter command line,$(origin RUN_NAME)),$(RUN_NAME),$(shell ls -t $(RUNS_DIR) 2>/dev/null | head -1))
+_LATEST_RUN = $(if $(filter command line,$(origin RUN_NAME)),$(RUN_NAME),$(shell ls -t $(RUNS_DIR) 2>/dev/null | head -1))
 
 # Run a command inside the conda env, streaming output in real time.
 CONDA_RUN := conda run --no-capture-output -n $(CONDA_ENV)
 PYTHON    := $(CONDA_RUN) python
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check train tensorboard promote install clean list-runs
+.PHONY: help check train eval eval-headless tensorboard promote install clean list-runs
 
 .DEFAULT_GOAL := help
 
@@ -33,13 +33,19 @@ check: ## ✅ Validate the Gymnasium env before training (runs check_env.py)
 train: ## 🚀 Run PPO training  [RUN_NAME=ppo_hoop_v1]
 	$(PYTHON) train_ppo.py --run-name $(RUN_NAME)
 
+eval: ## 🎯 Evaluate best model visually  [RUN_NAME=latest] [EPISODES=10]
+	$(PYTHON) eval_ppo.py --model $(RUNS_DIR)/$(_LATEST_RUN)/best_model --episodes $(or $(EPISODES),10)
+
+eval-headless: ## 📈 Evaluate best model headless (stats only)  [RUN_NAME=latest] [EPISODES=50]
+	$(PYTHON) eval_ppo.py --model $(RUNS_DIR)/$(_LATEST_RUN)/best_model --no-render --episodes $(or $(EPISODES),50)
+
 tensorboard: ## 📊 Launch TensorBoard for RUN_NAME  [RUN_NAME=ppo_hoop_v1]
 	$(CONDA_RUN) tensorboard --logdir $(RUNS_DIR)/$(RUN_NAME)/tb
 
 # ──────────────────────────────────────────────────────────────────────────────
 
 promote: ## 🏆 Promote best model to models/ (latest run or RUN_NAME=...)
-	@run="$(_PROMOTE_RUN)"; \
+	@run="$(_LATEST_RUN)"; \
 	 [ -n "$$run" ] || { echo "ERROR: no runs found in $(RUNS_DIR)/"; exit 1; }; \
 	 src="$(RUNS_DIR)/$$run/best_model.zip"; \
 	 test -f "$$src" || { echo "ERROR: $$src not found — run 'make train' first"; exit 1; }; \
