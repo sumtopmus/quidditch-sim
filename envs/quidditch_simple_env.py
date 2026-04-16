@@ -38,6 +38,7 @@ from __future__ import annotations
 
 import contextlib
 import os
+import time
 
 import numpy as np
 import pybullet as p
@@ -108,11 +109,10 @@ HOOP_RGBA = (1.0, 0.45, 0.0, 1.0)  # orange
 POLE_RGBA = (0.55, 0.55, 0.55, 1.0)
 
 # ---------------------------------------------------------------------------
-# Arena boundary visualization — ring of magenta vertical pillars
+# Arena boundary visualization — single translucent cylinder wall
 # ---------------------------------------------------------------------------
-ARENA_WALL_SEGS: int = 60  # number of pillars around the perimeter
+ARENA_WALL_SEGS: int = 64  # polygon segments around the cylinder circumference
 ARENA_WALL_HEIGHT: float = 4.0  # m — taller than the hoop (2 m) to frame the volume
-ARENA_WALL_PILLAR_R: float = 0.010  # m — radius of each pillar
 ARENA_WALL_RGBA = (0.6, 0.85, 1.0, 0.40)  # semi-transparent light sky-blue
 
 # ---------------------------------------------------------------------------
@@ -213,6 +213,9 @@ class QuidditchSimpleEnv(gym.Env):
         if self.render_mode in ("human", "rgb_array"):
             self._draw_hoop()
             self._draw_arena()
+
+        if self.render_mode == "human":
+            time.sleep(10)  # pause so the arena can be examined before the episode starts
 
         return self._obs(), {}
 
@@ -425,26 +428,55 @@ class QuidditchSimpleEnv(gym.Env):
             cameraTargetPosition=list(VIDEO_CAM_TARGET),
         )
 
-    def _draw_arena(self) -> None:
-        """Draw the arena boundary as a ring of vertical magenta pillars.
+    @staticmethod
+    def _make_cylinder_wall_mesh(
+        R: float, height: float, n_segs: int
+    ) -> tuple[list, list]:
+        """Generate an open cylindrical wall mesh at radius R, from z=0 to z=height.
 
-        60 evenly-spaced cylinders at 3 m radius, 3 m tall, semi-transparent
+        Both inner and outer faces are included (reversed winding) so the wall is
+        visible from either side regardless of PyBullet's face-culling behaviour.
+        """
+        verts = []
+        for i in range(n_segs):
+            theta = 2.0 * np.pi * i / n_segs
+            x = R * np.cos(theta)
+            y = R * np.sin(theta)
+            verts.append([x, y, 0.0])       # bottom ring vertex
+            verts.append([x, y, height])    # top ring vertex
+
+        tris = []
+        for i in range(n_segs):
+            b0 = 2 * i
+            t0 = 2 * i + 1
+            b1 = 2 * ((i + 1) % n_segs)
+            t1 = 2 * ((i + 1) % n_segs) + 1
+            # Outer face
+            tris += [b0, b1, t0, t0, b1, t1]
+            # Inner face (reversed winding)
+            tris += [b0, t0, b1, t0, t1, b1]
+
+        return verts, tris
+
+    def _draw_arena(self) -> None:
+        """Draw the arena boundary as a single translucent cylinder wall.
+
+        One GEOM_MESH cylinder at ARENA_RADIUS, ARENA_WALL_HEIGHT tall, semi-transparent
         light blue — clearly marks the flyable volume without obstructing the view.
         """
         av = self._aviary
-        half_h = ARENA_WALL_HEIGHT / 2.0
-        for i in range(ARENA_WALL_SEGS):
-            angle = 2.0 * np.pi * i / ARENA_WALL_SEGS
-            x = ARENA_RADIUS * np.cos(angle)
-            y = ARENA_RADIUS * np.sin(angle)
-            vis = av.createVisualShape(
-                p.GEOM_CYLINDER,
-                radius=ARENA_WALL_PILLAR_R,
-                length=ARENA_WALL_HEIGHT,
-                rgbaColor=list(ARENA_WALL_RGBA),
-            )
-            av.createMultiBody(
-                baseMass=0,
-                baseVisualShapeIndex=vis,
-                basePosition=[x, y, half_h],
-            )
+        verts, tris = self._make_cylinder_wall_mesh(
+            ARENA_RADIUS, ARENA_WALL_HEIGHT, ARENA_WALL_SEGS
+        )
+        vis = av.createVisualShape(
+            p.GEOM_MESH,
+            vertices=verts,
+            indices=tris,
+            meshScale=[1, 1, 1],
+            rgbaColor=list(ARENA_WALL_RGBA),
+        )
+        av.createMultiBody(
+            baseMass=0,
+            baseVisualShapeIndex=vis,
+            basePosition=[0.0, 0.0, 0.0],
+        )
