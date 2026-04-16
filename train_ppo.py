@@ -1,4 +1,4 @@
-"""Train a PPO agent on QuidditchHoopEnv using Stable-Baselines3.
+"""Train a PPO agent on QuidditchSimpleEnv using Stable-Baselines3.
 
 Usage:
     conda activate uav
@@ -27,7 +27,7 @@ from stable_baselines3.common.callbacks import (
     EvalCallback,
 )
 
-from envs.quidditch_env import QuidditchHoopEnv
+from envs.quidditch_simple_env import QuidditchSimpleEnv
 from callbacks import VideoRecorderCallback
 
 
@@ -59,7 +59,7 @@ DEFAULTS = {
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Train PPO on QuidditchHoopEnv")
+    p = argparse.ArgumentParser(description="Train PPO on QuidditchSimpleEnv")
     p.add_argument("--run-name", default=DEFAULTS["run_name"])
     p.add_argument("--timesteps", type=int, default=DEFAULTS["total_timesteps"])
     p.add_argument("--n-envs", type=int, default=DEFAULTS["n_envs"])
@@ -79,11 +79,11 @@ def main() -> None:
     # ---- environments ----
     # render_mode=None for all envs during training (no GUI = much faster)
     train_env = make_vec_env(
-        lambda: QuidditchHoopEnv(render_mode=None),
+        lambda: QuidditchSimpleEnv(render_mode=None),
         n_envs=args.n_envs,
     )
     eval_env = make_vec_env(
-        lambda: QuidditchHoopEnv(render_mode=None),
+        lambda: QuidditchSimpleEnv(render_mode=None),
         n_envs=1,
     )
 
@@ -110,7 +110,7 @@ def main() -> None:
         verbose=1,
     )
     video_cb = VideoRecorderCallback(
-        env_fn=lambda: QuidditchHoopEnv(render_mode="rgb_array"),
+        env_fn=lambda: QuidditchSimpleEnv(render_mode="rgb_array"),
         video_dir=video_dir,
         record_freq=video_freq,
         fps=20,

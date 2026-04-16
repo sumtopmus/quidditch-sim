@@ -1,4 +1,4 @@
-"""Evaluate a trained PPO model on QuidditchHoopEnv.
+"""Evaluate a trained PPO model on QuidditchSimpleEnv.
 
 Usage:
     conda activate uav
@@ -23,11 +23,11 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 from stable_baselines3 import PPO
 
-from envs.quidditch_env import QuidditchHoopEnv
+from envs.quidditch_env import QuidditchSimpleEnv
 
 
 def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Evaluate a PPO model on QuidditchHoopEnv")
+    p = argparse.ArgumentParser(description="Evaluate a PPO model on QuidditchSimpleEnv")
     p.add_argument(
         "--model",
         default="runs/ppo_hoop_v1/best_model",
@@ -59,7 +59,7 @@ def parse_args() -> argparse.Namespace:
     return p.parse_args()
 
 
-def run_episode(env: QuidditchHoopEnv, model: PPO, deterministic: bool) -> dict:
+def run_episode(env: QuidditchSimpleEnv, model: PPO, deterministic: bool) -> dict:
     obs, _ = env.reset()
     total_reward = 0.0
     scored = False
@@ -108,7 +108,7 @@ def main() -> None:
     print()
 
     render_mode = None if args.no_render else "human"
-    env = QuidditchHoopEnv(render_mode=render_mode)
+    env = QuidditchSimpleEnv(render_mode=render_mode)
     model = PPO.load(model_path, env=env)
 
     results = []

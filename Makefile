@@ -15,7 +15,7 @@ CONDA_RUN := conda run --no-capture-output -n $(CONDA_ENV)
 PYTHON    := $(CONDA_RUN) python
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check train eval eval-headless tensorboard promote install clean list-runs
+.PHONY: help check check-gui train eval eval-headless tensorboard promote install clean list-runs
 
 .DEFAULT_GOAL := help
 
@@ -27,8 +27,11 @@ help: ## 📋 Show available targets
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-check: ## ✅ Validate the Gymnasium env before training (runs check_env.py)
+check: ## ✅ Validate env headless (fast, no window)
 	$(PYTHON) check_env.py
+
+check-gui: ## 🪟 Validate env with PyBullet GUI (interactive camera)
+	$(PYTHON) check_env.py --gui
 
 train: ## 🚀 Run PPO training  [RUN_NAME=ppo_hoop_v1]
 	$(PYTHON) train_ppo.py --run-name $(RUN_NAME)

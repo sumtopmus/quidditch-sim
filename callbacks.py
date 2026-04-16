@@ -1,4 +1,4 @@
-"""Custom SB3 callbacks for QuidditchHoopEnv training."""
+"""Custom SB3 callbacks for QuidditchSimpleEnv training."""
 
 from __future__ import annotations
 

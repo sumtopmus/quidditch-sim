@@ -1,3 +1,3 @@
-from .quidditch_env import QuidditchHoopEnv
+from .quidditch_simple_env import QuidditchSimpleEnv
 
-__all__ = ["QuidditchHoopEnv"]
+__all__ = ["QuidditchSimpleEnv"]
