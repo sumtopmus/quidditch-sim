@@ -64,7 +64,7 @@ def _silence_c_stdout():
     both FDs still point to /dev/null — drains all C-buffered output to
     /dev/null before the restore happens.
     """
-    _libc.fflush(None)                  # drain any pre-existing C-level output first
+    _libc.fflush(None)  # drain any pre-existing C-level output first
     devnull_fd = os.open(os.devnull, os.O_WRONLY)
     saved_out = os.dup(1)
     saved_err = os.dup(2)
@@ -74,7 +74,7 @@ def _silence_c_stdout():
     try:
         yield
     finally:
-        _libc.fflush(None)              # flush C buffers → /dev/null before restoring
+        _libc.fflush(None)  # flush C buffers → /dev/null before restoring
         os.dup2(saved_out, 1)
         os.dup2(saved_err, 2)
         os.close(saved_out)
@@ -124,7 +124,7 @@ ACTION_SCALE = np.array([0.2, 0.2, 0.5, 0.1], dtype=np.float32)  # yaw (rad) not
 
 # Reward
 SCORE_REWARD: float = 10.0
-CRASH_PENALTY: float = -2.0
+CRASH_PENALTY: float = -20.0
 DIST_REWARD_SCALE: float = 0.01  # multiplied by −(dist/ARENA_RADIUS) per step
 TAKEOFF_GRACE_STEPS: int = 30  # skip crash check while drone lifts off from ground
 
@@ -137,8 +137,8 @@ HOOP_CROSSING_MARGIN: float = 0.1  # m — 10 cm past the plane
 # Hoop visualization
 # ---------------------------------------------------------------------------
 HOOP_TUBE_RADIUS: float = 0.012  # m — radius of the ring tube
-HOOP_MAJOR_SEGS: int = 32        # segments around the ring circumference
-HOOP_MINOR_SEGS: int = 10        # segments around the tube cross-section
+HOOP_MAJOR_SEGS: int = 32  # segments around the ring circumference
+HOOP_MINOR_SEGS: int = 10  # segments around the tube cross-section
 POLE_RADIUS: float = 0.005  # m — radius of the support pole
 HOOP_RGBA = (1.0, 0.45, 0.0, 1.0)  # orange
 POLE_RGBA = (0.55, 0.55, 0.55, 1.0)
@@ -230,8 +230,10 @@ class QuidditchSimpleEnv(gym.Env):
 
         # Sample or fix start pose — must happen after super().reset() so
         # self.np_random is seeded.
-        start_pos, start_orn = self._sample_start() if self.randomise_start else (
-            DRONE_START_POS[0].copy(), DRONE_START_ORN[0].copy()
+        start_pos, start_orn = (
+            self._sample_start()
+            if self.randomise_start
+            else (DRONE_START_POS[0].copy(), DRONE_START_ORN[0].copy())
         )
 
         if self._aviary is None:
@@ -239,8 +241,8 @@ class QuidditchSimpleEnv(gym.Env):
             # PyBullet prints "argv[0]=..." at C level on connect; suppress it.
             with _silence_c_stdout():
                 self._aviary = Aviary(
-                    start_pos=start_pos[np.newaxis],   # (1, 3)
-                    start_orn=start_orn[np.newaxis],   # (1, 3)
+                    start_pos=start_pos[np.newaxis],  # (1, 3)
+                    start_orn=start_orn[np.newaxis],  # (1, 3)
                     render=(self.render_mode == "human"),
                     drone_type="quadx",
                     seed=seed,
@@ -278,7 +280,9 @@ class QuidditchSimpleEnv(gym.Env):
             self._draw_arena()
 
         if self.render_mode == "human":
-            time.sleep(10)  # pause so the arena can be examined before the episode starts
+            time.sleep(
+                10
+            )  # pause so the arena can be examined before the episode starts
 
         return self._obs(), {}
 
@@ -472,12 +476,14 @@ class QuidditchSimpleEnv(gym.Env):
         for i in range(n_major):
             for j in range(n_minor):
                 theta = 2.0 * np.pi * i / n_major  # around the ring
-                phi   = 2.0 * np.pi * j / n_minor  # around the tube
-                verts.append([
-                    r * np.sin(phi),
-                    (R + r * np.cos(phi)) * np.cos(theta),
-                    (R + r * np.cos(phi)) * np.sin(theta),
-                ])
+                phi = 2.0 * np.pi * j / n_minor  # around the tube
+                verts.append(
+                    [
+                        r * np.sin(phi),
+                        (R + r * np.cos(phi)) * np.cos(theta),
+                        (R + r * np.cos(phi)) * np.sin(theta),
+                    ]
+                )
         for i in range(n_major):
             for j in range(n_minor):
                 a = i * n_minor + j
@@ -507,7 +513,7 @@ class QuidditchSimpleEnv(gym.Env):
         )
 
         # Support pole: cylinder from ground to hoop base
-        pole_length = HOOP_CENTER[2] - HOOP_RADIUS   # ground → bottom of ring
+        pole_length = HOOP_CENTER[2] - HOOP_RADIUS  # ground → bottom of ring
         pole_half = pole_length / 2.0
         pole_pos = [HOOP_CENTER[0], HOOP_CENTER[1], pole_half]
         pole_vis = av.createVisualShape(
@@ -545,8 +551,8 @@ class QuidditchSimpleEnv(gym.Env):
             theta = 2.0 * np.pi * i / n_segs
             x = R * np.cos(theta)
             y = R * np.sin(theta)
-            verts.append([x, y, 0.0])       # bottom ring vertex
-            verts.append([x, y, height])    # top ring vertex
+            verts.append([x, y, 0.0])  # bottom ring vertex
+            verts.append([x, y, height])  # top ring vertex
 
         tris = []
         for i in range(n_segs):
