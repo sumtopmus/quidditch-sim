@@ -7,6 +7,7 @@ CONDA_ENV  ?= uav
 RUN_NAME   ?= ppo_hoop
 TRIAL      ?=
 PRETRAIN   ?=
+CHECKPOINT ?=
 RUNS_DIR   := runs
 MODELS_DIR := models
 
@@ -14,20 +15,23 @@ MODELS_DIR := models
 #   TRIAL= given on CLI          → runs/$(RUN_NAME)/$(TRIAL)
 #   RUN_NAME= given on CLI only  → latest trial inside that run
 #   nothing given                → latest trial across all runs
-_LATEST_IN_RUN  = $(shell ls -d $(RUNS_DIR)/$(RUN_NAME)/* 2>/dev/null | sort | tail -1)
-_LATEST_OVERALL = $(shell ls -d $(RUNS_DIR)/*/* 2>/dev/null | sort | tail -1)
+_LATEST_IN_RUN  = $(shell ls -d $(RUNS_DIR)/$(RUN_NAME)/* 2>/dev/null | sort -t/ -k3 | tail -1)
+_LATEST_OVERALL = $(shell ls -d $(RUNS_DIR)/*/* 2>/dev/null | sort -t/ -k3 | tail -1)
 _TRIAL_DIR      = $(strip $(if $(TRIAL),\
                     $(RUNS_DIR)/$(RUN_NAME)/$(TRIAL),\
                     $(if $(filter command line,$(origin RUN_NAME)),\
                       $(_LATEST_IN_RUN),\
                       $(_LATEST_OVERALL))))
+_LATEST_CKPT    = $(shell ls -1 "$(_TRIAL_DIR)/checkpoints/"*.zip 2>/dev/null | sort -V | tail -1 | sed 's/\.zip$$//')
+# Run name extracted from the resolved trial dir (e.g. runs/ppo_hoop_randstart/... → ppo_hoop_randstart)
+_RESUME_RUN     = $(word 2,$(subst /, ,$(_TRIAL_DIR)))
 
 # Run a command inside the conda env, streaming output in real time.
 CONDA_RUN := conda run --no-capture-output -n $(CONDA_ENV)
 PYTHON    := $(CONDA_RUN) python
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check check-gui train eval eval-headless tensorboard promote repro install clean list-runs
+.PHONY: help check check-gui train resume eval eval-headless tensorboard promote repro install clean list-runs
 
 .DEFAULT_GOAL := help
 
@@ -50,6 +54,11 @@ train: ## 🚀 Run PPO training  [RUN_NAME=...] [PRETRAIN=models/...] [overrides
 	  $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME)) \
 	  $(if $(PRETRAIN),--pretrain $(PRETRAIN)/best_model)
 
+resume: ## ▶️  Resume from latest checkpoint  [RUN_NAME=...] [TRIAL=...] [CHECKPOINT=path/to/ckpt]
+	@ckpt="$(or $(CHECKPOINT),$(_LATEST_CKPT))"; \
+	 test -n "$$ckpt" || { echo "ERROR: no checkpoint found in $(_TRIAL_DIR)/checkpoints/ — check RUN_NAME= and TRIAL="; exit 1; }; \
+	 $(PYTHON) scripts/train_ppo.py --run-name "$(_RESUME_RUN)" --resume "$$ckpt"
+
 eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES=10]
 	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)
 
@@ -57,7 +66,9 @@ eval-headless: ## 📈 Evaluate best model headless  [RUN_NAME=...] [TRIAL=...] 
 	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --no-render --episodes $(or $(EPISODES),50)
 
 tensorboard: ## 📊 Launch TensorBoard — all runs, or [RUN_NAME=...] for one config
-	@$(CONDA_RUN) tensorboard --logdir $(if $(filter command line,$(origin RUN_NAME)),$(RUNS_DIR)/$(RUN_NAME),$(RUNS_DIR))
+	@PYTHONWARNINGS=ignore $(CONDA_RUN) tensorboard \
+	  --logdir $(if $(filter command line,$(origin RUN_NAME)),$(RUNS_DIR)/$(RUN_NAME),$(RUNS_DIR)) \
+	  2>&1 | grep --line-buffered -v "pkg_resources\|TensorFlow installation not found\|experimental fast data\|--load_fast\|issues on GitHub\|tensorflow/tensorboard\|^[[:space:]]*$$"
 
 # ──────────────────────────────────────────────────────────────────────────────
 

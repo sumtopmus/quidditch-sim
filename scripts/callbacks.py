@@ -11,6 +11,34 @@ import numpy as np
 from stable_baselines3.common.callbacks import BaseCallback
 
 
+class ResumeProgressCallback(BaseCallback):
+    """Progress bar that shows absolute step counts when resuming (e.g. 10.8M → 20M)."""
+
+    def __init__(self, total_timesteps: int) -> None:
+        super().__init__()
+        self._total = total_timesteps
+        self.pbar = None
+
+    def _on_training_start(self) -> None:
+        try:
+            from tqdm.rich import tqdm
+        except ImportError:
+            from tqdm import tqdm
+        self.pbar = tqdm(total=self._total, initial=self.model.num_timesteps, unit="step")
+
+    def _on_step(self) -> bool:
+        if self.pbar is not None:
+            self.pbar.n = self.model.num_timesteps
+            self.pbar.update(0)
+        return True
+
+    def _on_training_end(self) -> None:
+        if self.pbar is not None:
+            self.pbar.n = self._total
+            self.pbar.update(0)
+            self.pbar.close()
+
+
 def _ts() -> str:
     return datetime.now().strftime("[%H:%M:%S]")
 
@@ -75,8 +103,7 @@ class VideoRecorderCallback(BaseCallback):
         if not frames:
             return True
 
-        total_steps = self.n_calls * self.model.n_envs
-        path = os.path.join(self.video_dir, f"step_{total_steps:08d}.mp4")
+        path = os.path.join(self.video_dir, f"step_{self.model.num_timesteps:08d}.mp4")
         with imageio.v2.get_writer(path, fps=self.fps, macro_block_size=None) as writer:
             for frame in frames:
                 writer.append_data(frame)  # type: ignore[attr-defined]

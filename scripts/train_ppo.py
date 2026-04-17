@@ -54,7 +54,7 @@ from stable_baselines3.common.callbacks import (
 )
 
 from envs.quidditch_simple_env import QuidditchSimpleEnv
-from callbacks import VideoRecorderCallback
+from callbacks import VideoRecorderCallback, ResumeProgressCallback
 
 
 def _ts() -> str:
@@ -98,6 +98,7 @@ def _write_run_info(
     started: datetime,
     elapsed_s: float | None = None,
     best: dict | None = None,
+    resume: dict | None = None,
 ) -> None:
     """Write (or overwrite) a human-readable TOML summary of this trial.
 
@@ -122,6 +123,12 @@ def _write_run_info(
     else:
         best_block = "\n[best]\n# filled in after training completes\n"
 
+    resume_block = (
+        f"\n[resume]\n"
+        f'checkpoint  = "{resume["checkpoint"]}"\n'
+        f"resumed_at  = {resume['resumed_at']}\n"
+    ) if resume else ""
+
     content = (
         "# Run info — written by train_ppo.py.  Not read by any script.\n"
         "\n"
@@ -131,6 +138,7 @@ def _write_run_info(
         f'started = "{started.isoformat(timespec="seconds")}"\n'
         f"{elapsed_line}\n"
         f"{finished_line}\n"
+        f"{resume_block}"
         f"{best_block}"
     )
 
@@ -180,7 +188,14 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help="Path to a .zip model to warm-start from (e.g. models/20260416_190850). "
-             "Loads weights + optimizer state; continues training on the current env.",
+             "Loads weights + optimizer state; resets step counter.",
+    )
+    p.add_argument(
+        "--resume",
+        default=None,
+        metavar="PATH",
+        help="Path to a checkpoint .zip to resume from. Keeps the step counter and trains "
+             "for the remaining steps (total_timesteps - checkpoint_steps).",
     )
     p.add_argument(
         "--verbose",
@@ -263,7 +278,19 @@ def main() -> None:
     )
 
     # ---- model ----
-    if args.pretrain:
+    resumed_at: int | None = None
+    if args.resume:
+        print(f"{_ts()} ▶️  Resuming from {args.resume}")
+        model = PPO.load(
+            args.resume,
+            env=train_env,
+            verbose=verbose,
+            tensorboard_log=trial_dir,
+        )
+        resumed_at = model.num_timesteps
+        remaining = max(args.timesteps - resumed_at, 0)
+        print(f"{_ts()} ⏱  Checkpoint at {resumed_at:,} steps; {remaining:,} remaining to {args.timesteps:,}")
+    elif args.pretrain:
         print(f"{_ts()} 🔄 Warm-starting from {args.pretrain}")
         model = PPO.load(
             args.pretrain,
@@ -297,18 +324,21 @@ def main() -> None:
             seed=seed,
         )
 
+    resume_info = {"checkpoint": args.resume, "resumed_at": resumed_at} if args.resume else None
     _write_run_info(run_info_path, name=args.run_name, trial=trial,
-                    started=start_time)
+                    started=start_time, resume=resume_info)
 
     print(f"{_ts()} 🚀 Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)")
     print(f"{_ts()} 📁 Trial       : {trial_dir}")
     print(f"{_ts()} 📊 Tensorboard : {trial_dir}/PPO_1")
     print()
 
+    extra_callbacks = [] if (args.verbose or args.resume is None) else [ResumeProgressCallback(args.timesteps)]
     model.learn(
         total_timesteps=args.timesteps,
-        callback=[checkpoint_cb, eval_cb, video_cb],
-        progress_bar=not args.verbose,
+        callback=[checkpoint_cb, eval_cb, video_cb, *extra_callbacks],
+        reset_num_timesteps=args.resume is None,
+        progress_bar=not args.verbose and args.resume is None,
     )
 
     final_path = os.path.join(trial_dir, "final_model")
@@ -318,7 +348,8 @@ def main() -> None:
     _write_run_info(run_info_path, name=args.run_name, trial=trial,
                     started=start_time,
                     elapsed_s=elapsed_s,
-                    best=_load_best_metrics(trial_dir))
+                    best=_load_best_metrics(trial_dir),
+                    resume=resume_info)
 
     print(f"\n{_ts()} ✅ Training done in {_fmt_elapsed(elapsed_s)}. Final model saved to {final_path}.zip")
 
