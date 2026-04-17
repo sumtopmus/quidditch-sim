@@ -6,6 +6,7 @@
 CONDA_ENV  ?= uav
 RUN_NAME   ?= ppo_hoop
 TRIAL      ?=
+PRETRAIN   ?=
 RUNS_DIR   := runs
 MODELS_DIR := models
 
@@ -34,7 +35,7 @@ help: ## 📋 Show available targets
 	@awk 'BEGIN{FS=":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
 	     /^[a-zA-Z_-]+:.*##/{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
-	@echo "Override variables:  make train RUN_NAME=my_run   CONDA_ENV=uav"
+	@echo "Override variables:  make train RUN_NAME=my_run  PRETRAIN=models/...  CONDA_ENV=uav"
 
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -44,8 +45,10 @@ check: ## ✅ Validate env headless (fast, no window)
 check-gui: ## 🪟 Validate env with PyBullet GUI (interactive camera)
 	@$(PYTHON) scripts/check_env.py --gui
 
-train: ## 🚀 Run PPO training  [RUN_NAME=... overrides config run_name]
-	@$(PYTHON) scripts/train_ppo.py $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
+train: ## 🚀 Run PPO training  [RUN_NAME=...] [PRETRAIN=models/...] [overrides config]
+	@$(PYTHON) scripts/train_ppo.py \
+	  $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME)) \
+	  $(if $(PRETRAIN),--pretrain $(PRETRAIN)/best_model)
 
 eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES=10]
 	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)

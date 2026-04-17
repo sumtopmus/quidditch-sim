@@ -30,7 +30,7 @@ Action (4 floats, normalized to [-1, 1]):
 Reward (per step):
     −(dist_to_hoop / ARENA_RADIUS) × 0.01      distance-shaping term
     +10.0  on scoring through the hoop          terminal bonus
-    −2.0   on crash or out-of-bounds            terminal penalty
+    −20.0  on crash or out-of-bounds            terminal penalty
 
 Flight mode: PyFlyt mode 7 — position setpoint [x, y, yaw, z].
 """

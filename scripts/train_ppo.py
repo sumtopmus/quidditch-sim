@@ -176,6 +176,13 @@ def parse_args() -> argparse.Namespace:
         help="RNG seed. Overrides config seed. Pass -1 to disable (non-deterministic).",
     )
     p.add_argument(
+        "--pretrain",
+        default=None,
+        metavar="PATH",
+        help="Path to a .zip model to warm-start from (e.g. models/20260416_190850). "
+             "Loads weights + optimizer state; continues training on the current env.",
+    )
+    p.add_argument(
         "--verbose",
         action="store_true",
         help="Print SB3 training logs instead of showing a rich progress bar.",
@@ -256,21 +263,39 @@ def main() -> None:
     )
 
     # ---- model ----
-    model = PPO(
-        "MlpPolicy",
-        train_env,
-        verbose=verbose,
-        tensorboard_log=trial_dir,
-        n_steps=cfg["ppo"]["n_steps"],
-        batch_size=cfg["ppo"]["batch_size"],
-        n_epochs=cfg["ppo"]["n_epochs"],
-        learning_rate=args.lr,
-        gamma=cfg["ppo"]["gamma"],
-        gae_lambda=cfg["ppo"]["gae_lambda"],
-        clip_range=cfg["ppo"]["clip_range"],
-        ent_coef=cfg["ppo"]["ent_coef"],
-        seed=seed,
-    )
+    if args.pretrain:
+        print(f"{_ts()} 🔄 Warm-starting from {args.pretrain}")
+        model = PPO.load(
+            args.pretrain,
+            env=train_env,
+            verbose=verbose,
+            tensorboard_log=trial_dir,
+            # Override hyper-params so the loaded model uses the current config
+            n_steps=cfg["ppo"]["n_steps"],
+            batch_size=cfg["ppo"]["batch_size"],
+            n_epochs=cfg["ppo"]["n_epochs"],
+            learning_rate=args.lr,
+            gamma=cfg["ppo"]["gamma"],
+            gae_lambda=cfg["ppo"]["gae_lambda"],
+            clip_range=cfg["ppo"]["clip_range"],
+            ent_coef=cfg["ppo"]["ent_coef"],
+        )
+    else:
+        model = PPO(
+            "MlpPolicy",
+            train_env,
+            verbose=verbose,
+            tensorboard_log=trial_dir,
+            n_steps=cfg["ppo"]["n_steps"],
+            batch_size=cfg["ppo"]["batch_size"],
+            n_epochs=cfg["ppo"]["n_epochs"],
+            learning_rate=args.lr,
+            gamma=cfg["ppo"]["gamma"],
+            gae_lambda=cfg["ppo"]["gae_lambda"],
+            clip_range=cfg["ppo"]["clip_range"],
+            ent_coef=cfg["ppo"]["ent_coef"],
+            seed=seed,
+        )
 
     _write_run_info(run_info_path, name=args.run_name, trial=trial,
                     started=start_time)
