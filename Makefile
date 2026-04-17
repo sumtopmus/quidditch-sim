@@ -90,6 +90,12 @@ repro: ## 🔄 Restore config/training.toml from a promoted model  [MODEL=...]
 
 install: ## 📦 Create or update the $(CONDA_ENV) conda env from environment.yml
 	@conda env create -f environment.yml 2>/dev/null || conda env update -f environment.yml --prune
+	@if [ ! -f config/training.toml ]; then \
+	   cp templates/training.toml config/training.toml; \
+	   echo "Created config/training.toml from templates/training.toml."; \
+	 else \
+	   echo "config/training.toml already exists — not overwritten."; \
+	 fi
 	@echo "Done. Verify with: make check"
 
 list-runs: ## 🗂️  List training runs grouped by config name

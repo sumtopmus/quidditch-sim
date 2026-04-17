@@ -1,10 +1,14 @@
 # PPO training configuration for QuidditchSimpleEnv.
-# Loaded by train_ppo.py at startup; CLI flags (--timesteps, --n-envs, --lr, --seed)
-# override individual values at runtime.
+# This is the template — tracked in git.
+#
+# On first `make install`, this file is copied to config/training.toml.
+# config/training.toml is gitignored; edit it freely while experimenting.
+# `make promote` snapshots your working training.toml into models/<run>/ so
+# any run can be reproduced later with `make repro MODEL=<name>`.
 
 [training]
-run_name        = "ppo_hoop_randstart"
-total_timesteps = 10_000_000
+run_name        = "ppo_hoop"
+total_timesteps = 2_000_000
 n_envs          = 8
 seed            = 42    # integer ≥ 0 for reproducible runs; -1 to disable
 
