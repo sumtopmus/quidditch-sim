@@ -29,7 +29,7 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 from stable_baselines3 import PPO
 
-from envs.quidditch_env import QuidditchSimpleEnv
+from envs.quidditch_simple_env import QuidditchSimpleEnv
 
 
 def parse_args() -> argparse.Namespace:
