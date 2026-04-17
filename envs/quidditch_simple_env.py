@@ -5,7 +5,8 @@ Game rules (Phase 1 milestone):
   - One vertical hoop (0.5 m diameter) on a pole, at (2, 0, 2) m — i.e.
     2 m from arena center (1 m from the wall), 2 m height, hoop plane perpendicular to the ground
     and facing the arena center.
-  - Drone starts at the arena center on the ground.
+  - Drone starts at a random position on the ground within the arena (randomise_start=True)
+    or fixed at the arena center (randomise_start=False).
   - Score: drone crosses the hoop plane from the inside (arena-center side)
     to the outside while its y/z position is within the hoop aperture.
   - Episode ends on score, crash, out-of-bounds, or 2-minute timeout.
@@ -106,9 +107,13 @@ HOOP_OUTWARD_NORMAL = np.array([1.0, 0.0, 0.0], dtype=np.float64)
 HOOP_DIAMETER: float = 0.5  # m (50 cm)
 HOOP_RADIUS: float = HOOP_DIAMETER / 2.0
 
-# Drone initial state
+# Drone initial state — used when randomise_start=False
 DRONE_START_POS = np.array([[0.0, 0.0, 0.0]], dtype=np.float64)
 DRONE_START_ORN = np.array([[0.0, 0.0, 0.0]], dtype=np.float64)
+
+# Start-position randomisation: sample uniformly within this radius (m).
+# Slightly inset from ARENA_RADIUS so the drone never spawns exactly on the wall.
+START_SAMPLE_RADIUS: float = ARENA_RADIUS - 0.1
 
 # Timing
 EPISODE_SECONDS: float = 120.0  # 2-minute episodes
@@ -180,9 +185,14 @@ class QuidditchSimpleEnv(gym.Env):
 
     metadata = {"render_modes": ["human", "rgb_array"]}
 
-    def __init__(self, render_mode: str | None = None) -> None:
+    def __init__(
+        self,
+        render_mode: str | None = None,
+        randomise_start: bool = True,
+    ) -> None:
         super().__init__()
         self.render_mode = render_mode
+        self.randomise_start = randomise_start
 
         # 16-dim flat obs vector
         self.observation_space = spaces.Box(
@@ -218,25 +228,37 @@ class QuidditchSimpleEnv(gym.Env):
     ) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed)
 
+        # Sample or fix start pose — must happen after super().reset() so
+        # self.np_random is seeded.
+        start_pos, start_orn = self._sample_start() if self.randomise_start else (
+            DRONE_START_POS[0].copy(), DRONE_START_ORN[0].copy()
+        )
+
         if self._aviary is None:
             # First call — create the Aviary (opens the PyBullet physics server).
             # PyBullet prints "argv[0]=..." at C level on connect; suppress it.
             with _silence_c_stdout():
                 self._aviary = Aviary(
-                    start_pos=DRONE_START_POS,
-                    start_orn=DRONE_START_ORN,
+                    start_pos=start_pos[np.newaxis],   # (1, 3)
+                    start_orn=start_orn[np.newaxis],   # (1, 3)
                     render=(self.render_mode == "human"),
                     drone_type="quadx",
                     seed=seed,
                 )
         else:
-            # Subsequent calls — reset physics and re-spawn drone in-place
+            # Update the stored start pose so Aviary.reset() re-spawns at the
+            # new position rather than the one used at construction time.
+            self._aviary.start_pos = start_pos[np.newaxis].copy()
+            self._aviary.start_orn = start_orn[np.newaxis].copy()
             self._aviary.reset()
 
         self._aviary.set_mode(7)  # position setpoint: [x, y, yaw, z]
 
-        # Initialize setpoint at a safe hover height so the drone takes off
-        self._setpoint = np.array([0.0, 0.0, 0.0, 0.1], dtype=np.float32)
+        # Initialize setpoint at the actual start position so the drone hovers
+        # in place initially rather than being pulled toward the origin.
+        self._setpoint = np.array(
+            [start_pos[0], start_pos[1], start_orn[2], 0.1], dtype=np.float32
+        )
         self._aviary.set_setpoint(0, self._setpoint)
 
         # Derive max steps from the aviary's actual step period
@@ -347,6 +369,20 @@ class QuidditchSimpleEnv(gym.Env):
         """Aviary accessor that asserts initialisation once, in one place."""
         assert self._aviary is not None, "Call reset() before using the aviary."
         return self._aviary
+
+    def _sample_start(self) -> tuple[np.ndarray, np.ndarray]:
+        """Sample a random start pose uniformly within the arena.
+
+        Returns:
+            pos: (3,) float64 — (x, y, 0.0), uniform in disc of START_SAMPLE_RADIUS
+            orn: (3,) float64 — (0.0, 0.0, yaw), yaw uniform in [−π, π]
+        """
+        r = START_SAMPLE_RADIUS * float(np.sqrt(self.np_random.uniform(0.0, 1.0)))
+        theta = float(self.np_random.uniform(0.0, 2.0 * np.pi))
+        pos = np.array([r * np.cos(theta), r * np.sin(theta), 0.0], dtype=np.float64)
+        yaw = float(self.np_random.uniform(-np.pi, np.pi))
+        orn = np.array([0.0, 0.0, yaw], dtype=np.float64)
+        return pos, orn
 
     def _drone_pos(self) -> np.ndarray:
         """Return the drone's ground-frame position as a (3,) float64 array."""

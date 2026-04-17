@@ -44,8 +44,8 @@ check: ## ✅ Validate env headless (fast, no window)
 check-gui: ## 🪟 Validate env with PyBullet GUI (interactive camera)
 	@$(PYTHON) scripts/check_env.py --gui
 
-train: ## 🚀 Run PPO training  [RUN_NAME=ppo_hoop]
-	@$(PYTHON) scripts/train_ppo.py --run-name $(RUN_NAME)
+train: ## 🚀 Run PPO training  [RUN_NAME=... overrides config run_name]
+	@$(PYTHON) scripts/train_ppo.py $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
 
 eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES=10]
 	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)

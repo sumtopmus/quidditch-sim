@@ -157,8 +157,8 @@ def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train PPO on QuidditchSimpleEnv")
     p.add_argument(
         "--run-name",
-        default="ppo_hoop",
-        help="Config/experiment label (default: ppo_hoop). A timestamp trial "
+        default=cfg["training"]["run_name"],
+        help="Config/experiment label (default: from config/training.toml). A timestamp trial "
         "subdirectory is always created automatically.",
     )
     p.add_argument("--timesteps", type=int, default=cfg["training"]["total_timesteps"])

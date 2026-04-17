@@ -3,6 +3,7 @@
 # override individual values at runtime.
 
 [training]
+run_name        = "ppo_hoop"
 total_timesteps = 2_000_000
 n_envs          = 8
 seed            = 42    # integer ≥ 0 for reproducible runs; -1 to disable
