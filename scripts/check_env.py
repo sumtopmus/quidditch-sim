@@ -16,6 +16,12 @@ Run:
     python check_env.py --gui
 """
 
+import sys
+from pathlib import Path
+
+# Allow imports from the project root (envs/) regardless of CWD.
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import argparse
 import numpy as np
 

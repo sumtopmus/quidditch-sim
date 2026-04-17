@@ -22,12 +22,16 @@ To evaluate the best model visually (PyBullet GUI):
 """
 
 import os
+import sys
 import shutil
 import argparse
 import tomllib
 import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
+
+# Allow imports from the project root (envs/, scripts/) regardless of CWD.
+sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # SB3 warns when train and eval vec envs are different types (SubprocVecEnv vs
 # DummyVecEnv).  Using DummyVecEnv for the single-instance eval env is
@@ -61,7 +65,7 @@ def _ts() -> str:
 # Config — loaded from config/training.toml at startup
 # ---------------------------------------------------------------------------
 
-_CONFIG_PATH = Path(__file__).parent / "config" / "training.toml"
+_CONFIG_PATH = Path(__file__).parent.parent / "config" / "training.toml"
 
 with _CONFIG_PATH.open("rb") as _f:
     cfg = tomllib.load(_f)

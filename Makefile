@@ -39,19 +39,19 @@ help: ## 📋 Show available targets
 # ──────────────────────────────────────────────────────────────────────────────
 
 check: ## ✅ Validate env headless (fast, no window)
-	@$(PYTHON) check_env.py
+	@$(PYTHON) scripts/check_env.py
 
 check-gui: ## 🪟 Validate env with PyBullet GUI (interactive camera)
-	@$(PYTHON) check_env.py --gui
+	@$(PYTHON) scripts/check_env.py --gui
 
 train: ## 🚀 Run PPO training  [RUN_NAME=ppo_hoop]
-	@$(PYTHON) train_ppo.py --run-name $(RUN_NAME)
+	@$(PYTHON) scripts/train_ppo.py --run-name $(RUN_NAME)
 
 eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES=10]
-	@$(PYTHON) eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)
+	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)
 
 eval-headless: ## 📈 Evaluate best model headless  [RUN_NAME=...] [TRIAL=...] [EPISODES=50]
-	@$(PYTHON) eval_ppo.py --model $(_TRIAL_DIR)/best_model --no-render --episodes $(or $(EPISODES),50)
+	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --no-render --episodes $(or $(EPISODES),50)
 
 tensorboard: ## 📊 Launch TensorBoard — all runs, or [RUN_NAME=...] for one config
 	@$(CONDA_RUN) tensorboard --logdir $(if $(filter command line,$(origin RUN_NAME)),$(RUNS_DIR)/$(RUN_NAME),$(RUNS_DIR))

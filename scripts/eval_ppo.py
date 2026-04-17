@@ -14,6 +14,12 @@ Usage:
     python eval_ppo.py --model runs/ppo_hoop_v1/checkpoints/ppo_hoop_70000_steps
 """
 
+import sys
+from pathlib import Path
+
+# Allow imports from the project root (envs/) regardless of CWD.
+sys.path.insert(0, str(Path(__file__).parent.parent))
+
 import argparse
 import os
 
