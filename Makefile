@@ -26,8 +26,14 @@ _LATEST_CKPT    = $(shell ls -1 "$(_TRIAL_DIR)/checkpoints/"*.zip 2>/dev/null | 
 # Run name extracted from the resolved trial dir (e.g. runs/ppo_hoop_randstart/... → ppo_hoop_randstart)
 _RESUME_RUN     = $(word 2,$(subst /, ,$(_TRIAL_DIR)))
 
+# Resolve the conda binary: prefer $CONDA_EXE (set by `conda init`), fall back to PATH.
+CONDA := $(or $(CONDA_EXE),$(shell command -v conda 2>/dev/null))
+ifeq ($(CONDA),)
+$(error conda not found — activate a conda shell or set CONDA_EXE)
+endif
+
 # Run a command inside the conda env, streaming output in real time.
-CONDA_RUN := conda run --no-capture-output -n $(CONDA_ENV)
+CONDA_RUN := $(CONDA) run --no-capture-output -n $(CONDA_ENV)
 PYTHON    := $(CONDA_RUN) python
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -103,7 +109,7 @@ repro: ## 🔄 Restore config/training.toml from a promoted model  [MODEL=...]
 # ──────────────────────────────────────────────────────────────────────────────
 
 install: ## 📦 Create or update the $(CONDA_ENV) conda env from environment.yml
-	@conda env create -f environment.yml 2>/dev/null || conda env update -f environment.yml --prune
+	@$(CONDA) env create -f environment.yml 2>/dev/null || $(CONDA) env update -f environment.yml --prune
 	@if [ ! -f config/training.toml ]; then \
 	   cp templates/training.toml config/training.toml; \
 	   echo "Created config/training.toml from templates/training.toml."; \
