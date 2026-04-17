@@ -22,10 +22,11 @@ To evaluate the best model visually (PyBullet GUI):
 """
 
 import os
+import shutil
 import argparse
 import tomllib
 import warnings
-from datetime import datetime
+from datetime import datetime, timedelta
 from pathlib import Path
 
 # SB3 warns when train and eval vec envs are different types (SubprocVecEnv vs
@@ -74,9 +75,9 @@ def _fmt_elapsed(seconds: float) -> str:
     h, rem = divmod(int(seconds), 3600)
     m, s = divmod(rem, 60)
     if h:
-        return f"{h}h {m:02d}m {s:02d}s"
+        return f"{h}h{m:02d}m{s:02d}s"
     if m:
-        return f"{m}m {s:02d}s"
+        return f"{m}m{s:02d}s"
     return f"{s}s"
 
 
@@ -86,7 +87,6 @@ def _write_run_info(
     name: str,
     trial: str,
     started: datetime,
-    args: argparse.Namespace,
     elapsed_s: float | None = None,
     best: dict | None = None,
 ) -> None:
@@ -96,11 +96,12 @@ def _write_run_info(
     (elapsed + best eval metrics filled in).  The file is never read by any
     training code — it exists purely for human inspection.
     """
-    elapsed_line = (
-        f'elapsed     = "{_fmt_elapsed(elapsed_s)}"  # {elapsed_s:.0f} s total'
-        if elapsed_s is not None
-        else 'elapsed     = "in progress"'
-    )
+    if elapsed_s is not None:
+        elapsed_line = f'elapsed     = "{_fmt_elapsed(elapsed_s)}"  # {elapsed_s:.0f} s total'
+        finished_line = f'finished    = "{(started + timedelta(seconds=elapsed_s)).isoformat(timespec="seconds")}"'
+    else:
+        elapsed_line  = 'elapsed     = "in progress"'
+        finished_line = 'finished    = "in progress"'
 
     if best:
         best_block = (
@@ -120,18 +121,7 @@ def _write_run_info(
         f'trial   = "{trial}"\n'
         f'started = "{started.isoformat(timespec="seconds")}"\n'
         f"{elapsed_line}\n"
-        "\n"
-        "[params]\n"
-        f"total_timesteps = {args.timesteps}\n"
-        f"n_envs          = {args.n_envs}\n"
-        f"lr              = {args.lr}\n"
-        f"n_steps         = {cfg['ppo']['n_steps']}\n"
-        f"batch_size      = {cfg['ppo']['batch_size']}\n"
-        f"n_epochs        = {cfg['ppo']['n_epochs']}\n"
-        f"gamma           = {cfg['ppo']['gamma']}\n"
-        f"gae_lambda      = {cfg['ppo']['gae_lambda']}\n"
-        f"clip_range      = {cfg['ppo']['clip_range']}\n"
-        f"ent_coef        = {cfg['ppo']['ent_coef']}\n"
+        f"{finished_line}\n"
         f"{best_block}"
     )
 
@@ -171,6 +161,12 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--n-envs", type=int, default=cfg["training"]["n_envs"])
     p.add_argument("--lr", type=float, default=cfg["ppo"]["lr"])
     p.add_argument(
+        "--seed",
+        type=int,
+        default=None,
+        help="RNG seed. Overrides config seed. Pass -1 to disable (non-deterministic).",
+    )
+    p.add_argument(
         "--verbose",
         action="store_true",
         help="Print SB3 training logs instead of showing a rich progress bar.",
@@ -186,9 +182,20 @@ def main() -> None:
     trial_dir = os.path.join("runs", args.run_name, trial)
     ckpt_dir = os.path.join(trial_dir, "checkpoints")
     video_dir = os.path.join(trial_dir, "videos")
-    run_info_path = os.path.join(trial_dir, "run_info.toml")
+    run_info_path = os.path.join(trial_dir, "info.toml")
     # SB3 writes TB events to trial_dir/PPO_1/ automatically — no separate tb/ subdir needed.
     os.makedirs(ckpt_dir, exist_ok=True)
+
+    # ---- seed ----
+    # CLI --seed overrides config; -1 (or absent) means non-deterministic.
+    if args.seed is not None:
+        seed: int | None = None if args.seed < 0 else args.seed
+    else:
+        raw = cfg["training"].get("seed", -1)
+        seed = None if raw < 0 else raw
+
+    # Snapshot the config file used for this trial so 'make repro' can restore it later.
+    shutil.copy(_CONFIG_PATH, os.path.join(trial_dir, "config_snapshot.toml"))
 
     # ---- environments ----
     # SubprocVecEnv spawns one OS process per env so physics steps run in
@@ -197,6 +204,7 @@ def main() -> None:
     train_env = make_vec_env(
         QuidditchSimpleEnv,
         n_envs=args.n_envs,
+        seed=seed,
         env_kwargs={"render_mode": None},
         vec_env_cls=SubprocVecEnv,
     )
@@ -204,6 +212,7 @@ def main() -> None:
     eval_env = make_vec_env(
         QuidditchSimpleEnv,
         n_envs=1,
+        seed=seed,
         env_kwargs={"render_mode": None},
     )
 
@@ -251,10 +260,11 @@ def main() -> None:
         gae_lambda=cfg["ppo"]["gae_lambda"],
         clip_range=cfg["ppo"]["clip_range"],
         ent_coef=cfg["ppo"]["ent_coef"],
+        seed=seed,
     )
 
     _write_run_info(run_info_path, name=args.run_name, trial=trial,
-                    started=start_time, args=args)
+                    started=start_time)
 
     print(f"{_ts()} 🚀 Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)")
     print(f"{_ts()} 📁 Trial       : {trial_dir}")
@@ -272,7 +282,7 @@ def main() -> None:
 
     elapsed_s = (datetime.now() - start_time).total_seconds()
     _write_run_info(run_info_path, name=args.run_name, trial=trial,
-                    started=start_time, args=args,
+                    started=start_time,
                     elapsed_s=elapsed_s,
                     best=_load_best_metrics(trial_dir))
 
