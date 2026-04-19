@@ -1,9 +1,11 @@
 """Sanity-check QuidditchSimpleEnv before committing to a full training run.
 
-Runs three checks:
+Headless mode (default) runs three checks:
   1. stable-baselines3 check_env (obs/action shapes, dtype, step contract)
   2. One episode with a zero-action policy (confirm no crashes in env logic)
   3. One episode with a scripted "fly toward hoop" policy (confirm scoring works)
+
+GUI mode runs only the scripted flight so you can watch the drone.
 
 Run:
     conda activate uav
@@ -12,7 +14,7 @@ Run:
     # Headless — fast, no window (default):
     python check_env.py
 
-    # GUI — opens PyBullet window with interactive camera:
+    # GUI — opens PyBullet window; only the scripted flight runs:
     python check_env.py --gui
 """
 
@@ -153,13 +155,13 @@ def run_scripted_score_episode(render_mode: str | None = None) -> None:
 
 if __name__ == "__main__":
     args = parse_args()
-    render_mode = "human" if args.gui else None
 
     if args.gui:
         print("GUI mode — PyBullet window will open.")
         print("  Orbit: left-drag   Pan: middle-drag   Zoom: scroll\n")
-
-    run_sb3_check(render_mode=render_mode)
-    run_zero_policy_episode(render_mode=render_mode)
-    run_scripted_score_episode(render_mode=render_mode)
-    print("All checks complete.")
+        run_scripted_score_episode(render_mode="human")
+    else:
+        run_sb3_check()
+        run_zero_policy_episode()
+        run_scripted_score_episode()
+        print("All checks complete.")
