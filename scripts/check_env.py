@@ -47,7 +47,7 @@ def parse_args() -> argparse.Namespace:
 
 def run_sb3_check(render_mode: str | None = None) -> None:
     print("=== [1/3] stable-baselines3 check_env ===")
-    env = QuidditchSimpleEnv(render_mode=render_mode)
+    env = QuidditchSimpleEnv(render_mode=render_mode, randomise_start=False)
     check_env(env, warn=True)
     env.close()
     print("PASSED\n")
@@ -55,7 +55,7 @@ def run_sb3_check(render_mode: str | None = None) -> None:
 
 def run_zero_policy_episode(render_mode: str | None = None) -> None:
     print("=== [2/3] Zero-action episode (10 steps) ===")
-    env = QuidditchSimpleEnv(render_mode=render_mode)
+    env = QuidditchSimpleEnv(render_mode=render_mode, randomise_start=False)
     obs, _ = env.reset()
     print(f"  initial obs shape : {obs.shape}, dtype: {obs.dtype}")
     print(f"  obs sample        : {obs}")
@@ -87,7 +87,7 @@ def run_scripted_score_episode(render_mode: str | None = None) -> None:
     if the scoring geometry is correct.
     """
     print("=== [3/3] Scripted fly-toward-hoop episode ===")
-    env = QuidditchSimpleEnv(render_mode=render_mode)
+    env = QuidditchSimpleEnv(render_mode=render_mode, randomise_start=False)
     obs, _ = env.reset()
 
     # We'll command the delta to always push setpoint toward the hoop.
@@ -133,6 +133,15 @@ def run_scripted_score_episode(render_mode: str | None = None) -> None:
         if terminated or truncated:
             print(f"  Episode ended at step {step} without scoring: {info}")
             break
+
+    if scored and render_mode == "human":
+        assert env._aviary is not None
+        hover_seconds = 60
+        hover_steps = int(hover_seconds / env._aviary.step_period)
+        print(f"  Hovering for {hover_seconds}s ({hover_steps} steps) — orbit/pan/zoom the window.")
+        zero_action = np.zeros(4, dtype=np.float32)
+        for _ in range(hover_steps):
+            env.step(zero_action)
 
     env.close()
 
