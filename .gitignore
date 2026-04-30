@@ -7,8 +7,9 @@ runs/
 
 # models/ IS tracked; individual zips committed via `make promote`
 
-# Working config directory — gitignored so local experiments aren't committed.
+# Working training config — gitignored so local experiments aren't committed.
 # Edit freely; `make promote` snapshots it into models/<run>/config.toml.
 # Restore from a promoted model with `make repro MODEL=<name>`.
 # First-time setup: `make install` copies templates/training.toml here.
-config
+# Other files in config/ (e.g. camera.toml) ARE tracked.
+config/training.toml

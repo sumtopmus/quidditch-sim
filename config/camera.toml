@@ -1,0 +1,18 @@
+# Camera spec for the rendered "fixed" view.
+#
+# Used by:
+#   - VideoRecorderCallback (checkpoint training videos)
+#   - demo/camera_test.py   (offline preview — `make camera-test`)
+#   - core/quadrotor.py     (initial viewer pose for live demos)
+#
+# eye:    camera position in world coordinates [x, y, z] (metres)
+# lookat: point the camera is aimed at         [x, y, z] (metres)
+#
+# Scene reference points:
+#   arena radius 3 m, wall height 4.5 m,
+#   drone start (0, 0, 0), hoop centre (2, 0, 2), hoop plane ⊥ +x.
+# Walls are alpha=0.35 (translucent), so a camera outside the arena also works.
+
+[camera]
+eye    = [-2.5, -1.0, 2.0]    # south side, just inside the wall, slightly above hoop bottom
+lookat = [ 1.5,  0.0, 1.3]    # between drone-start and hoop, ~1.3 m up

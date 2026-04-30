@@ -17,10 +17,91 @@ construction time, so no external asset files are needed.
 from __future__ import annotations
 
 import math
+from pathlib import Path
 import numpy as np
 import mujoco
 
 from core.position_controller import Mode7Controller
+
+
+# ── camera config ────────────────────────────────────────────────────────────
+# Eye and lookat in world coords (metres).  Used for both the offscreen "fixed"
+# camera (videos) and the live viewer.  Override per-construction by passing
+# `camera={"eye": (...), "lookat": (...)}` to Quadrotor; otherwise we try
+# config/camera.toml and fall back to the hardcoded sideline view below.
+_FALLBACK_CAMERA: dict = {
+    "eye":    (2.9, -4.7, 2.9),
+    "lookat": (0.5,  0.0, 1.3),
+}
+
+
+def load_camera_config(path: str | Path | None = None) -> dict:
+    """Load {'eye': (x,y,z), 'lookat': (x,y,z)} from a TOML file.
+
+    Defaults to ``<repo>/config/camera.toml``.  Falls back to the hardcoded
+    sideline view if the file is missing or malformed.
+    """
+    import tomllib
+
+    if path is None:
+        path = Path(__file__).resolve().parent.parent / "config" / "camera.toml"
+    try:
+        with open(path, "rb") as f:
+            data = tomllib.load(f)
+        cam = data["camera"]
+        return {"eye": tuple(cam["eye"]), "lookat": tuple(cam["lookat"])}
+    except (FileNotFoundError, KeyError):
+        return dict(_FALLBACK_CAMERA)
+
+
+def _camera_xyaxes(eye: tuple, lookat: tuple) -> tuple[str, str]:
+    """Compute MJCF ``<camera>`` ``pos`` and ``xyaxes`` strings from eye+lookat.
+
+    Returns (pos_str, xyaxes_str).  Raises if the look direction is parallel
+    to world up (degenerate camera).
+    """
+    eye_a    = np.asarray(eye,    dtype=np.float64)
+    lookat_a = np.asarray(lookat, dtype=np.float64)
+    forward = lookat_a - eye_a
+    fnorm = float(np.linalg.norm(forward))
+    if fnorm < 1e-9:
+        raise ValueError(f"Degenerate camera: eye == lookat ({eye!r})")
+    forward /= fnorm
+
+    # MuJoCo camera frame: +X right, +Y up, camera looks along -Z (OpenGL).
+    # xaxis = right = cross(forward, up); yaxis = up_cam = cross(xaxis, forward).
+    cam_x = np.cross(forward, [0.0, 0.0, 1.0])
+    xnorm = float(np.linalg.norm(cam_x))
+    if xnorm < 1e-6:
+        raise ValueError(
+            f"Degenerate camera: look direction parallel to world up "
+            f"(eye={eye!r}, lookat={lookat!r}). Add a horizontal offset."
+        )
+    cam_x /= xnorm
+    cam_y = np.cross(cam_x, forward)  # already unit length
+
+    pos_str = f"{eye_a[0]:.4f} {eye_a[1]:.4f} {eye_a[2]:.4f}"
+    xyaxes_str = (
+        f"{cam_x[0]:.5f} {cam_x[1]:.5f} {cam_x[2]:.5f}  "
+        f"{cam_y[0]:.5f} {cam_y[1]:.5f} {cam_y[2]:.5f}"
+    )
+    return pos_str, xyaxes_str
+
+
+def _viewer_params(eye: tuple, lookat: tuple) -> tuple[float, float, float, np.ndarray]:
+    """Convert (eye, lookat) → MuJoCo viewer (azimuth°, elevation°, distance, lookat).
+
+    Matches the spherical convention used by ``mujoco.viewer``:
+        azimuth   = angle of look-direction in xy-plane, measured from +x CCW
+        elevation = arcsin of look-direction's z component (negative = looking down)
+    """
+    eye_a    = np.asarray(eye,    dtype=np.float64)
+    lookat_a = np.asarray(lookat, dtype=np.float64)
+    vec = eye_a - lookat_a                  # camera offset from lookat
+    distance = float(np.linalg.norm(vec))
+    azimuth = math.degrees(math.atan2(-vec[1], -vec[0]))
+    elevation = math.degrees(math.asin(-vec[2] / distance))
+    return azimuth, elevation, distance, lookat_a
 
 # ── cf2x physical constants (from cf2x.urdf + cf2x.yaml) ────────────────────
 MASS: float = 0.027         # kg
@@ -58,6 +139,7 @@ class Quadrotor:
         render: bool = False,
         seed: int | None = None,
         markers: list[tuple[tuple[float, float, float], str, float]] | None = None,
+        camera: dict | None = None,
     ) -> None:
         """
         Args:
@@ -65,14 +147,19 @@ class Quadrotor:
                      as a non-colliding sphere geom in the scene.  Useful for
                      waypoints, target markers, etc.  Baked into the MJCF at
                      construction time — cannot be modified after.
+            camera:  optional {"eye": (x,y,z), "lookat": (x,y,z)} dict.  Drives
+                     both the offscreen "fixed" camera (videos) and the live
+                     viewer pose.  Defaults to load_camera_config() →
+                     config/camera.toml, with a hardcoded sideline fallback.
         """
         self.start_pos = np.asarray(start_pos, dtype=np.float64)  # (1,3)
         self.start_orn = np.asarray(start_orn, dtype=np.float64)  # (1,3)
         self._render = render
         self.np_random = np.random.default_rng(seed)
+        self._camera = camera if camera is not None else load_camera_config()
 
         # Build and load the complete scene (drone + hoop + arena wall + markers)
-        xml = _build_scene_xml(markers=markers)
+        xml = _build_scene_xml(markers=markers, camera=self._camera)
         self._model = mujoco.MjModel.from_xml_string(xml)
         self._data  = mujoco.MjData(self._model)
 
@@ -145,11 +232,13 @@ class Quadrotor:
         if self._render and self._viewer is None:
             import mujoco.viewer as _mjv
             self._viewer = _mjv.launch_passive(self._model, self._data)
-            # Position the camera to match the scene's fixed camera
-            self._viewer.cam.azimuth   = 117.0
-            self._viewer.cam.elevation = -17.0
-            self._viewer.cam.distance  = 5.5
-            self._viewer.cam.lookat[:] = [0.5, 0.0, 1.3]
+            az, el, dist, lookat = _viewer_params(
+                self._camera["eye"], self._camera["lookat"]
+            )
+            self._viewer.cam.azimuth   = az
+            self._viewer.cam.elevation = el
+            self._viewer.cam.distance  = dist
+            self._viewer.cam.lookat[:] = lookat
 
     def set_mode(self, mode: int) -> None:
         if mode != 7:
@@ -331,6 +420,7 @@ def _build_scene_xml(
     hoop_radius: float = 0.25,           # ring major radius (= HOOP_DIAMETER / 2)
     arena_radius: float = 3.0,
     markers: list[tuple] | None = None,
+    camera: dict | None = None,
 ) -> str:
     """Return the complete MuJoCo XML for the Quidditch scene."""
     hx, hy, hz = hoop_center
@@ -339,12 +429,8 @@ def _build_scene_xml(
     arena_xml = _arena_wall_geoms(arena_radius, 4.5, 32, "0.6 0.85 1.0 0.35")
     marker_xml = _markers_xml(markers)
 
-    # Camera: eye=(-2,1,2) looking at (0,0,1.3)
-    # xyaxes computed from forward = normalize(target-eye):
-    #   forward ≈ (0.854,-0.427,-0.299)
-    #   cam_x   = normalize(cross(world_up, forward)) ≈ (0.447, 0.894, 0)
-    #   cam_y   = cross(forward, cam_x) × (-1)        ≈ (0.267,-0.134, 0.955)
-    CAM_XYAXES = "0.447 0.894 0  0.267 -0.134 0.955"
+    cam = camera if camera is not None else _FALLBACK_CAMERA
+    cam_pos, cam_xyaxes = _camera_xyaxes(cam["eye"], cam["lookat"])
 
     return f"""
 <mujoco model="quidditch">
@@ -353,7 +439,7 @@ def _build_scene_xml(
 
   <visual>
     <headlight ambient="0.5 0.5 0.5" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1"/>
-    <global offwidth="640" offheight="480"/>
+    <global offwidth="1920" offheight="1080"/>
   </visual>
 
   <asset>
@@ -425,8 +511,8 @@ def _build_scene_xml(
     <!-- ── Optional markers (waypoints, debug spheres, …) ─────────────── -->
     {marker_xml}
 
-    <!-- Fixed camera: eye=(-2,1,2) looking at (0,0,1.3) -->
-    <camera name="fixed" pos="-2 1 2" xyaxes="{CAM_XYAXES}"/>
+    <!-- Fixed camera (config/camera.toml): eye={cam["eye"]} looking at {cam["lookat"]} -->
+    <camera name="fixed" pos="{cam_pos}" xyaxes="{cam_xyaxes}"/>
   </worldbody>
 
   <sensor>
