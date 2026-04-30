@@ -57,14 +57,22 @@ class Quadrotor:
         start_orn: np.ndarray,
         render: bool = False,
         seed: int | None = None,
+        markers: list[tuple[tuple[float, float, float], str, float]] | None = None,
     ) -> None:
+        """
+        Args:
+            markers: optional list of (pos, rgba, radius) tuples; each is rendered
+                     as a non-colliding sphere geom in the scene.  Useful for
+                     waypoints, target markers, etc.  Baked into the MJCF at
+                     construction time — cannot be modified after.
+        """
         self.start_pos = np.asarray(start_pos, dtype=np.float64)  # (1,3)
         self.start_orn = np.asarray(start_orn, dtype=np.float64)  # (1,3)
         self._render = render
         self.np_random = np.random.default_rng(seed)
 
-        # Build and load the complete scene (drone + hoop + arena wall)
-        xml = _build_scene_xml()
+        # Build and load the complete scene (drone + hoop + arena wall + markers)
+        xml = _build_scene_xml(markers=markers)
         self._model = mujoco.MjModel.from_xml_string(xml)
         self._data  = mujoco.MjData(self._model)
 
@@ -304,16 +312,32 @@ def _arena_wall_geoms(radius: float, height: float, n: int, rgba: str) -> str:
     return "\n      ".join(lines)
 
 
+def _markers_xml(markers: list[tuple] | None) -> str:
+    """Render a list of (pos, rgba_str, radius) tuples as non-colliding spheres."""
+    if not markers:
+        return ""
+    lines = []
+    for (pos, rgba, radius) in markers:
+        x, y, z = float(pos[0]), float(pos[1]), float(pos[2])
+        lines.append(
+            f'<geom type="sphere" size="{radius}" pos="{x:.4f} {y:.4f} {z:.4f}" '
+            f'rgba="{rgba}" contype="0" conaffinity="0"/>'
+        )
+    return "\n      ".join(lines)
+
+
 def _build_scene_xml(
     hoop_center: tuple[float, float, float] = (2.0, 0.0, 2.0),
     hoop_radius: float = 0.25,           # ring major radius (= HOOP_DIAMETER / 2)
     arena_radius: float = 3.0,
+    markers: list[tuple] | None = None,
 ) -> str:
     """Return the complete MuJoCo XML for the Quidditch scene."""
     hx, hy, hz = hoop_center
     hoop_xml  = _hoop_geoms(hx, hy, hz, hoop_radius, 0.012, 32, "1.0 0.45 0.0 1.0")
     pole_xml  = _pole_geom(hx, hy, hz, hoop_radius)
     arena_xml = _arena_wall_geoms(arena_radius, 4.5, 32, "0.6 0.85 1.0 0.35")
+    marker_xml = _markers_xml(markers)
 
     # Camera: eye=(-2,1,2) looking at (0,0,1.3)
     # xyaxes computed from forward = normalize(target-eye):
@@ -397,6 +421,9 @@ def _build_scene_xml(
     <body name="arena" pos="0 0 0">
       {arena_xml}
     </body>
+
+    <!-- ── Optional markers (waypoints, debug spheres, …) ─────────────── -->
+    {marker_xml}
 
     <!-- Fixed camera: eye=(-2,1,2) looking at (0,0,1.3) -->
     <camera name="fixed" pos="-2 1 2" xyaxes="{CAM_XYAXES}"/>
