@@ -1,7 +1,12 @@
-# Do NOT add pybullet here — install via conda-forge (see environment.yml).
-# Do NOT use stable-baselines3[extra] — stale numpy constraint causes conflicts.
-PyFlyt
+# Physics / sim
+mujoco>=3.0
+
+# RL
 stable-baselines3
+
+# Monitoring / logging
 tensorboard
+
+# Video recording
 imageio
 imageio-ffmpeg

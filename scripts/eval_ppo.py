@@ -48,7 +48,7 @@ def parse_args() -> argparse.Namespace:
     p.add_argument(
         "--no-render",
         action="store_true",
-        help="Run headless (no PyBullet GUI) — useful for batch stats",
+        help="Run headless (no viewer) — useful for batch stats",
     )
     p.add_argument(
         "--deterministic",
@@ -109,7 +109,7 @@ def main() -> None:
 
     print(f"Model   : {model_path}")
     print(f"Episodes: {args.episodes}")
-    print(f"Render  : {'no (headless)' if args.no_render else 'yes (PyBullet GUI)'}")
+    print(f"Render  : {'no (headless)' if args.no_render else 'yes (MuJoCo viewer)'}")
     print(f"Policy  : {'deterministic' if args.deterministic else 'stochastic'}")
     print()
 

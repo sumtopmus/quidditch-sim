@@ -32,65 +32,17 @@ Reward (per step):
     +10.0  on scoring through the hoop          terminal bonus
     −20.0  on crash or out-of-bounds            terminal penalty
 
-Flight mode: PyFlyt mode 7 — position setpoint [x, y, yaw, z].
+Flight mode: mode 7 — position setpoint [x, y, yaw, z].
 """
 
 from __future__ import annotations
 
-import contextlib
-import ctypes
-import os
 import time
-
-# _silence_c_stdout must be defined before any C-extension import so that
-# module-level imports in subprocess workers can be silenced immediately.
-_libc = ctypes.CDLL(None)
-
-
-@contextlib.contextmanager
-def _silence_c_stdout():
-    """Redirect C-level stdout AND stderr to /dev/null for the duration of the block.
-
-    Python's sys.stdout redirection cannot suppress printf() calls from C
-    extensions (e.g. PyBullet's 'pybullet build time:' or 'argv[0]=' messages).
-    We must dup2 the real file descriptors instead.  Both FD 1 and FD 2 are
-    redirected because pybullet routes some messages through stderr.
-
-    When stdout is not a TTY (e.g. with a rich progress bar), C's stdio is
-    block-buffered.  printf() data accumulates in the buffer without being
-    written to the OS fd.  If we restore the FDs before flushing, the buffer
-    drains to the now-live terminal later (typically at process exit), causing
-    a flood of deferred prints.  fflush(NULL) inside the finally block — while
-    both FDs still point to /dev/null — drains all C-buffered output to
-    /dev/null before the restore happens.
-    """
-    _libc.fflush(None)  # drain any pre-existing C-level output first
-    devnull_fd = os.open(os.devnull, os.O_WRONLY)
-    saved_out = os.dup(1)
-    saved_err = os.dup(2)
-    os.dup2(devnull_fd, 1)
-    os.dup2(devnull_fd, 2)
-    os.close(devnull_fd)
-    try:
-        yield
-    finally:
-        _libc.fflush(None)  # flush C buffers → /dev/null before restoring
-        os.dup2(saved_out, 1)
-        os.dup2(saved_err, 2)
-        os.close(saved_out)
-        os.close(saved_err)
-
-
-# Suppress "pybullet build time: ..." printed by the C extension on first import.
-# Each SubprocVecEnv worker spawns a fresh Python process and re-imports this
-# module, so without this guard the message appears once per worker.
-with _silence_c_stdout():
-    import pybullet as p  # noqa: E402
-    from PyFlyt.core import Aviary  # noqa: E402
-
 import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
+
+from core.quadrotor import Quadrotor
 
 
 # ---------------------------------------------------------------------------
@@ -100,79 +52,34 @@ from gymnasium import spaces
 ARENA_RADIUS: float = 3.0  # m (6 m diameter)
 
 # Hoop geometry: vertical ring at x=2, y=0, z=2.
-# 2 m from arena center, 1 m from the wall, 2 m height.
-# "Outward normal" points from arena center through the hoop (away from center).
 HOOP_CENTER = np.array([2.0, 0.0, 2.0], dtype=np.float64)
 HOOP_OUTWARD_NORMAL = np.array([1.0, 0.0, 0.0], dtype=np.float64)
-HOOP_DIAMETER: float = 0.5  # m (50 cm)
+HOOP_DIAMETER: float = 0.5  # m
 HOOP_RADIUS: float = HOOP_DIAMETER / 2.0
 
 # Drone initial state — used when randomise_start=False
 DRONE_START_POS = np.array([[0.0, 0.0, 0.0]], dtype=np.float64)
 DRONE_START_ORN = np.array([[0.0, 0.0, 0.0]], dtype=np.float64)
 
-# Start-position randomisation: sample uniformly within this radius (m).
-# Slightly inset from ARENA_RADIUS so the drone never spawns exactly on the wall.
+# Start-position randomisation
 START_SAMPLE_RADIUS: float = ARENA_RADIUS - 0.1
 
 # Timing
-EPISODE_SECONDS: float = 120.0  # 2-minute episodes
-PHYSICS_HZ: int = 240  # PyFlyt default (do not change)
-
-# Action scaling: each normalized action component [-1, 1] maps to these deltas
-ACTION_SCALE = np.array([0.2, 0.2, 0.5, 0.1], dtype=np.float32)  # yaw (rad) not scaled
+EPISODE_SECONDS: float = 120.0
+ACTION_SCALE = np.array([0.2, 0.2, 0.5, 0.1], dtype=np.float32)
 
 # Reward
 SCORE_REWARD: float = 10.0
 CRASH_PENALTY: float = -20.0
-DIST_REWARD_SCALE: float = 0.01  # multiplied by −(dist/ARENA_RADIUS) per step
-TAKEOFF_GRACE_STEPS: int = 30  # skip crash check while drone lifts off from ground
+DIST_REWARD_SCALE: float = 0.01
+TAKEOFF_GRACE_STEPS: int = 30
 
-# Scoring geometry: how far past the hoop plane (in meters) the drone's center
-# must travel before a crossing is confirmed as a score.  This ensures the
-# drone actually flies *through* the hoop rather than merely touching the plane.
-HOOP_CROSSING_MARGIN: float = 0.1  # m — 10 cm past the plane
+# Two-phase scoring: drone must travel this far past the hoop plane to confirm
+HOOP_CROSSING_MARGIN: float = 0.1  # m
 
-# ---------------------------------------------------------------------------
-# Hoop visualization
-# ---------------------------------------------------------------------------
-HOOP_TUBE_RADIUS: float = 0.012  # m — radius of the ring tube
-HOOP_MAJOR_SEGS: int = 32  # segments around the ring circumference
-HOOP_MINOR_SEGS: int = 10  # segments around the tube cross-section
-POLE_RADIUS: float = 0.005  # m — radius of the support pole
-HOOP_RGBA = (1.0, 0.45, 0.0, 1.0)  # orange
-POLE_RGBA = (0.55, 0.55, 0.55, 1.0)
-
-# ---------------------------------------------------------------------------
-# Arena boundary visualization — single translucent cylinder wall
-# ---------------------------------------------------------------------------
-ARENA_WALL_SEGS: int = 64  # polygon segments around the cylinder circumference
-ARENA_WALL_HEIGHT: float = 4.0  # m — taller than the hoop (2 m) to frame the volume
-ARENA_WALL_RGBA = (0.6, 0.85, 1.0, 0.40)  # semi-transparent light sky-blue
-
-# ---------------------------------------------------------------------------
-# Camera — shared position used for rgb_array render, GUI initial view, and
-# training videos.  Eye at (-2, 1, 2), looking at (0, 0, 1.3).
-#
-# Target z=1.3 tilts the view upward vs. the old z=1.0 so the hoop at (2,0,2)
-# sits closer to frame centre.  (0,0,0) stays in frame: the angular distance
-# from frame centre to the origin ray is ≈ 24.5°, within the 30° vertical
-# half-FOV of the 60° lens.
-#
-# Derived GUI params (for resetDebugVisualizerCamera):
-#   distance = |eye - target| = sqrt(4+1+0.49) ≈ 2.34 m
-#   yaw      = atan2(-1, 2) + 360 ≈ 297° (camera is WNW of the target, unchanged)
-#   pitch    = -atan(0.7/√5) ≈ -17° (eye is 0.7 m above target)
-# ---------------------------------------------------------------------------
-VIDEO_WIDTH: int = 640
+# Camera / video parameters (used by VideoRecorderCallback)
+VIDEO_WIDTH: int  = 640
 VIDEO_HEIGHT: int = 480
-VIDEO_CAM_EYE = (-2.0, 1.0, 2.0)
-VIDEO_CAM_TARGET = (0.0, 0.0, 1.3)
-VIDEO_CAM_UP = (0.0, 0.0, 1.0)
-
-GUI_CAM_DISTANCE: float = 2.34
-GUI_CAM_YAW: float = 297.0
-GUI_CAM_PITCH: float = -17.0
 
 
 # ---------------------------------------------------------------------------
@@ -201,19 +108,12 @@ class QuidditchSimpleEnv(gym.Env):
         # 4-dim normalized action
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
 
-        self._aviary: Aviary | None = None
-        # Current position setpoint: [x, y, yaw, z]
+        self._quad: Quadrotor | None = None
         self._setpoint = np.zeros(4, dtype=np.float32)
         self._step_count: int = 0
-        self._max_steps: int = 0  # set after first Aviary reset
+        self._max_steps: int = 0
         self._prev_signed_dist: float = 0.0
-        # Two-phase hoop scoring: True once the drone crosses the plane (signed dist
-        # goes negative→non-negative) while inside the aperture.  Score is confirmed
-        # only when signed dist reaches HOOP_CROSSING_MARGIN past the plane.
-        # Reset to False if the drone retreats back to the approach side.
         self._crossing_started: bool = False
-        # Drone starts on the ground; skip the crash check for the first
-        # TAKEOFF_GRACE_STEPS steps so it has time to climb above the threshold.
         self._takeoff_grace: int = 0
 
     # -----------------------------------------------------------------------
@@ -228,44 +128,32 @@ class QuidditchSimpleEnv(gym.Env):
     ) -> tuple[np.ndarray, dict]:
         super().reset(seed=seed)
 
-        # Sample or fix start pose — must happen after super().reset() so
-        # self.np_random is seeded.
         start_pos, start_orn = (
             self._sample_start()
             if self.randomise_start
             else (DRONE_START_POS[0].copy(), DRONE_START_ORN[0].copy())
         )
 
-        if self._aviary is None:
-            # First call — create the Aviary (opens the PyBullet physics server).
-            # PyBullet prints "argv[0]=..." at C level on connect; suppress it.
-            with _silence_c_stdout():
-                self._aviary = Aviary(
-                    start_pos=start_pos[np.newaxis],  # (1, 3)
-                    start_orn=start_orn[np.newaxis],  # (1, 3)
-                    render=(self.render_mode == "human"),
-                    drone_type="quadx",
-                    seed=seed,
-                )
+        if self._quad is None:
+            self._quad = Quadrotor(
+                start_pos=start_pos[np.newaxis],
+                start_orn=start_orn[np.newaxis],
+                render=(self.render_mode == "human"),
+                seed=seed,
+            )
         else:
-            # Update the stored start pose so Aviary.reset() re-spawns at the
-            # new position rather than the one used at construction time.
-            self._aviary.start_pos = start_pos[np.newaxis].copy()
-            self._aviary.start_orn = start_orn[np.newaxis].copy()
-            self._aviary.reset()
+            self._quad.start_pos = start_pos[np.newaxis].copy()
+            self._quad.start_orn = start_orn[np.newaxis].copy()
+            self._quad.reset()
 
-        self._aviary.set_mode(7)  # position setpoint: [x, y, yaw, z]
+        self._quad.set_mode(7)
 
-        # Initialize setpoint at the actual start position so the drone hovers
-        # in place initially rather than being pulled toward the origin.
         self._setpoint = np.array(
             [start_pos[0], start_pos[1], start_orn[2], 0.1], dtype=np.float32
         )
-        self._aviary.set_setpoint(0, self._setpoint)
+        self._quad.set_setpoint(0, self._setpoint)
 
-        # Derive max steps from the aviary's actual step period
-        self._max_steps = int(EPISODE_SECONDS / self._aviary.step_period)
-
+        self._max_steps = int(EPISODE_SECONDS / self._quad.step_period)
         self._step_count = 0
         self._takeoff_grace = TAKEOFF_GRACE_STEPS
         self._crossing_started = False
@@ -273,57 +161,41 @@ class QuidditchSimpleEnv(gym.Env):
         self._prev_signed_dist = self._signed_dist(drone_pos)
 
         if self.render_mode == "human":
-            self._reset_gui_camera()
-
-        if self.render_mode in ("human", "rgb_array"):
-            self._draw_hoop()
-            self._draw_arena()
-
-        if self.render_mode == "human":
-            time.sleep(
-                10
-            )  # pause so the arena can be examined before the episode starts
+            time.sleep(10)  # pause so the arena can be examined before the episode starts
 
         return self._obs(), {}
 
     def step(self, action: np.ndarray) -> tuple[np.ndarray, float, bool, bool, dict]:
-        assert self._aviary is not None, "Call reset() before step()."
+        assert self._quad is not None, "Call reset() before step()."
 
-        # Apply delta, clamp to safe limits
         delta = np.asarray(action, dtype=np.float32) * ACTION_SCALE
         self._setpoint += delta
-        # x / y stay inside arena
         self._setpoint[0] = np.clip(self._setpoint[0], -ARENA_RADIUS, ARENA_RADIUS)
         self._setpoint[1] = np.clip(self._setpoint[1], -ARENA_RADIUS, ARENA_RADIUS)
-        # yaw wraps to (-π, π]
         self._setpoint[2] = (self._setpoint[2] + np.pi) % (2 * np.pi) - np.pi
-        # altitude: stay above 0.01 m, cap at 4 m
         self._setpoint[3] = np.clip(self._setpoint[3], 0.01, 4.0)
 
-        self._aviary.set_setpoint(0, self._setpoint)
-        self._aviary.step()
+        self._quad.set_setpoint(0, self._setpoint)
+        self._quad.step()
         self._step_count += 1
 
         drone_pos = self._drone_pos()
         curr_signed_dist = self._signed_dist(drone_pos)
 
-        # --- scoring ---
         scored = self._detect_score(drone_pos, curr_signed_dist)
         self._prev_signed_dist = curr_signed_dist
 
-        # --- termination ---
         out_of_bounds = float(np.linalg.norm(drone_pos[:2])) > ARENA_RADIUS
         if self._takeoff_grace > 0:
             self._takeoff_grace -= 1
             crashed = False
         else:
-            crashed = float(drone_pos[2]) < 0.05  # returned to ground after takeoff
+            crashed = float(drone_pos[2]) < 0.05
         timeout = self._step_count >= self._max_steps
 
         terminated = scored or out_of_bounds or crashed
         truncated = timeout and not terminated
 
-        # --- reward ---
         dist = float(np.linalg.norm(drone_pos - HOOP_CENTER))
         reward = -(dist / ARENA_RADIUS) * DIST_REWARD_SCALE
         if scored:
@@ -339,66 +211,33 @@ class QuidditchSimpleEnv(gym.Env):
         return self._obs(), float(reward), terminated, truncated, info
 
     def render(self) -> np.ndarray | None:
-        if self.render_mode != "rgb_array" or self._aviary is None:
+        if self.render_mode != "rgb_array" or self._quad is None:
             return None
-        view = self._aviary.computeViewMatrix(
-            VIDEO_CAM_EYE, VIDEO_CAM_TARGET, VIDEO_CAM_UP
-        )
-        proj = self._aviary.computeProjectionMatrixFOV(
-            fov=60,
-            aspect=VIDEO_WIDTH / VIDEO_HEIGHT,
-            nearVal=0.01,
-            farVal=20.0,
-        )
-        _, _, rgba, _, _ = self._aviary.getCameraImage(
-            VIDEO_WIDTH,
-            VIDEO_HEIGHT,
-            view,
-            proj,
-            renderer=p.ER_TINY_RENDERER,  # CPU renderer, works in DIRECT mode
-        )
-        return np.array(rgba, dtype=np.uint8)[:, :, :3]
+        return self._quad.render_frame(VIDEO_WIDTH, VIDEO_HEIGHT)
 
     def close(self) -> None:
-        if self._aviary is not None:
-            self._aviary.disconnect()
-            self._aviary = None
+        if self._quad is not None:
+            self._quad.disconnect()
+            self._quad = None
 
     # -----------------------------------------------------------------------
     # Internal helpers
     # -----------------------------------------------------------------------
 
     @property
-    def _av(self) -> Aviary:
-        """Aviary accessor that asserts initialisation once, in one place."""
-        assert self._aviary is not None, "Call reset() before using the aviary."
-        return self._aviary
-
-    def _sample_start(self) -> tuple[np.ndarray, np.ndarray]:
-        """Sample a random start pose uniformly within the arena.
-
-        Returns:
-            pos: (3,) float64 — (x, y, 0.0), uniform in disc of START_SAMPLE_RADIUS
-            orn: (3,) float64 — (0.0, 0.0, yaw), yaw uniform in [−π, π]
-        """
-        r = START_SAMPLE_RADIUS * float(np.sqrt(self.np_random.uniform(0.0, 1.0)))
-        theta = float(self.np_random.uniform(0.0, 2.0 * np.pi))
-        pos = np.array([r * np.cos(theta), r * np.sin(theta), 0.0], dtype=np.float64)
-        yaw = float(self.np_random.uniform(-np.pi, np.pi))
-        orn = np.array([0.0, 0.0, yaw], dtype=np.float64)
-        return pos, orn
+    def _q(self) -> Quadrotor:
+        assert self._quad is not None, "Call reset() before using the simulator."
+        return self._quad
 
     def _drone_pos(self) -> np.ndarray:
-        """Return the drone's ground-frame position as a (3,) float64 array."""
-        return self._av.state(0)[3].copy()  # state[3] = lin_pos
+        return self._q.state(0)[3].copy()
 
     def _obs(self) -> np.ndarray:
-        """Build the 16-dim observation vector."""
-        state = self._av.state(0)  # (4, 3) array
-        ang_vel = state[0]  # body-frame angular velocity
-        ang_pos = state[1]  # ground-frame euler attitude
-        lin_vel = state[2]  # body-frame linear velocity
-        lin_pos = state[3]  # ground-frame position
+        state = self._q.state(0)  # (4, 3)
+        ang_vel = state[0]
+        ang_pos = state[1]
+        lin_vel = state[2]
+        lin_pos = state[3]
 
         vec_to_hoop = HOOP_CENTER - lin_pos
         dist = float(np.linalg.norm(vec_to_hoop))
@@ -412,30 +251,10 @@ class QuidditchSimpleEnv(gym.Env):
 
     @staticmethod
     def _signed_dist(pos: np.ndarray) -> float:
-        """Signed distance from `pos` to the hoop plane.
-
-        Negative  →  on the arena-center side (correct approach side).
-        Positive  →  past the hoop (scoring side).
-        """
         return float(np.dot(pos - HOOP_CENTER, HOOP_OUTWARD_NORMAL))
 
     def _detect_score(self, drone_pos: np.ndarray, curr_signed_dist: float) -> bool:
-        """Return True when the drone has completely flown through the hoop aperture.
-
-        Two-phase detection:
-          Phase 1 — Arm: the drone crosses the hoop plane (signed dist goes
-            negative→non-negative) while its lateral (y, z) position is inside
-            the aperture.  Sets _crossing_started = True.
-          Phase 2 — Confirm: the drone's signed distance reaches
-            HOOP_CROSSING_MARGIN past the plane.  Returns True.
-
-        If the drone retreats back through the plane before reaching the margin,
-        _crossing_started is reset — the approach side must be re-entered and
-        the crossing repeated.  This prevents oscillation at the plane boundary
-        from triggering a spurious score.
-        """
         if not self._crossing_started:
-            # Phase 1: detect the initial plane crossing
             if self._prev_signed_dist < 0.0 and curr_signed_dist >= 0.0:
                 radial = np.sqrt(
                     (drone_pos[1] - HOOP_CENTER[1]) ** 2
@@ -445,9 +264,7 @@ class QuidditchSimpleEnv(gym.Env):
                     self._crossing_started = True
             return False
 
-        # Phase 2: crossing is in progress — wait for the drone to clear the margin
         if curr_signed_dist < 0.0:
-            # Drone retreated; reset and require a clean re-crossing
             self._crossing_started = False
             return False
 
@@ -457,135 +274,10 @@ class QuidditchSimpleEnv(gym.Env):
 
         return False
 
-    @staticmethod
-    def _make_torus_mesh(
-        R: float, r: float, n_major: int, n_minor: int
-    ) -> tuple[list, list]:
-        """Generate vertices and triangle indices for a torus.
-
-        The torus ring lies in the Y-Z plane (tube axis along X), matching the
-        hoop's outward normal [1, 0, 0].  Place the resulting body at HOOP_CENTER.
-
-        Args:
-            R: major radius (center of tube to center of ring)
-            r: minor radius (tube cross-section radius)
-            n_major: segments around the ring circumference
-            n_minor: segments around the tube cross-section
-        """
-        verts, tris = [], []
-        for i in range(n_major):
-            for j in range(n_minor):
-                theta = 2.0 * np.pi * i / n_major  # around the ring
-                phi = 2.0 * np.pi * j / n_minor  # around the tube
-                verts.append(
-                    [
-                        r * np.sin(phi),
-                        (R + r * np.cos(phi)) * np.cos(theta),
-                        (R + r * np.cos(phi)) * np.sin(theta),
-                    ]
-                )
-        for i in range(n_major):
-            for j in range(n_minor):
-                a = i * n_minor + j
-                b = i * n_minor + (j + 1) % n_minor
-                c = ((i + 1) % n_major) * n_minor + j
-                d = ((i + 1) % n_major) * n_minor + (j + 1) % n_minor
-                tris += [a, b, c, b, d, c]
-        return verts, tris
-
-    def _draw_hoop(self) -> None:
-        """Draw the hoop and pole as static visual bodies in PyBullet."""
-        av = self._av
-
-        # Torus mesh — single body, smooth continuous ring
-        verts, tris = self._make_torus_mesh(
-            HOOP_RADIUS, HOOP_TUBE_RADIUS, HOOP_MAJOR_SEGS, HOOP_MINOR_SEGS
-        )
-        vis = av.createVisualShape(
-            p.GEOM_MESH,
-            vertices=verts,
-            indices=tris,
-            meshScale=[1, 1, 1],
-            rgbaColor=list(HOOP_RGBA),
-        )
-        av.createMultiBody(
-            baseMass=0, baseVisualShapeIndex=vis, basePosition=list(HOOP_CENTER)
-        )
-
-        # Support pole: cylinder from ground to hoop base
-        pole_length = HOOP_CENTER[2] - HOOP_RADIUS  # ground → bottom of ring
-        pole_half = pole_length / 2.0
-        pole_pos = [HOOP_CENTER[0], HOOP_CENTER[1], pole_half]
-        pole_vis = av.createVisualShape(
-            p.GEOM_CYLINDER,
-            radius=POLE_RADIUS,
-            length=pole_length,
-            rgbaColor=list(POLE_RGBA),
-        )
-        av.createMultiBody(
-            baseMass=0,
-            baseVisualShapeIndex=pole_vis,
-            basePosition=pole_pos,
-        )
-
-    def _reset_gui_camera(self) -> None:
-        """Position the PyBullet GUI camera at the shared eye/target defined above."""
-        self._av.resetDebugVisualizerCamera(
-            cameraDistance=GUI_CAM_DISTANCE,
-            cameraYaw=GUI_CAM_YAW,
-            cameraPitch=GUI_CAM_PITCH,
-            cameraTargetPosition=list(VIDEO_CAM_TARGET),
-        )
-
-    @staticmethod
-    def _make_cylinder_wall_mesh(
-        R: float, height: float, n_segs: int
-    ) -> tuple[list, list]:
-        """Generate an open cylindrical wall mesh at radius R, from z=0 to z=height.
-
-        Both inner and outer faces are included (reversed winding) so the wall is
-        visible from either side regardless of PyBullet's face-culling behaviour.
-        """
-        verts = []
-        for i in range(n_segs):
-            theta = 2.0 * np.pi * i / n_segs
-            x = R * np.cos(theta)
-            y = R * np.sin(theta)
-            verts.append([x, y, 0.0])  # bottom ring vertex
-            verts.append([x, y, height])  # top ring vertex
-
-        tris = []
-        for i in range(n_segs):
-            b0 = 2 * i
-            t0 = 2 * i + 1
-            b1 = 2 * ((i + 1) % n_segs)
-            t1 = 2 * ((i + 1) % n_segs) + 1
-            # Outer face
-            tris += [b0, b1, t0, t0, b1, t1]
-            # Inner face (reversed winding)
-            tris += [b0, t0, b1, t0, t1, b1]
-
-        return verts, tris
-
-    def _draw_arena(self) -> None:
-        """Draw the arena boundary as a single translucent cylinder wall.
-
-        One GEOM_MESH cylinder at ARENA_RADIUS, ARENA_WALL_HEIGHT tall, semi-transparent
-        light blue — clearly marks the flyable volume without obstructing the view.
-        """
-        av = self._av
-        verts, tris = self._make_cylinder_wall_mesh(
-            ARENA_RADIUS, ARENA_WALL_HEIGHT, ARENA_WALL_SEGS
-        )
-        vis = av.createVisualShape(
-            p.GEOM_MESH,
-            vertices=verts,
-            indices=tris,
-            meshScale=[1, 1, 1],
-            rgbaColor=list(ARENA_WALL_RGBA),
-        )
-        av.createMultiBody(
-            baseMass=0,
-            baseVisualShapeIndex=vis,
-            basePosition=[0.0, 0.0, 0.0],
-        )
+    def _sample_start(self) -> tuple[np.ndarray, np.ndarray]:
+        r = START_SAMPLE_RADIUS * float(np.sqrt(self.np_random.uniform(0.0, 1.0)))
+        theta = float(self.np_random.uniform(0.0, 2.0 * np.pi))
+        pos = np.array([r * np.cos(theta), r * np.sin(theta), 0.0], dtype=np.float64)
+        yaw = float(self.np_random.uniform(-np.pi, np.pi))
+        orn = np.array([0.0, 0.0, yaw], dtype=np.float64)
+        return pos, orn

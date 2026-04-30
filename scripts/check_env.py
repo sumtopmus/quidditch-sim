@@ -5,17 +5,18 @@ Headless mode (default) runs three checks:
   2. One episode with a zero-action policy (confirm no crashes in env logic)
   3. One episode with a scripted "fly toward hoop" policy (confirm scoring works)
 
-GUI mode runs only the scripted flight so you can watch the drone.
+Viewer mode (--viewer) opens a MuJoCo interactive window and runs only the
+scripted flight so you can watch the drone.
 
 Run:
     conda activate uav
     cd quidditch-sim
 
     # Headless — fast, no window (default):
-    python check_env.py
+    python scripts/check_env.py
 
-    # GUI — opens PyBullet window; only the scripted flight runs:
-    python check_env.py --gui
+    # Viewer — opens MuJoCo window; only the scripted flight runs:
+    python scripts/check_env.py --viewer
 """
 
 import sys
@@ -40,9 +41,9 @@ from envs.quidditch_simple_env import (
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Sanity-check QuidditchSimpleEnv")
     p.add_argument(
-        "--gui",
+        "--viewer",
         action="store_true",
-        help="Open PyBullet GUI window — orbit/pan/zoom with the mouse",
+        help="Open MuJoCo viewer window — orbit/pan/zoom with the mouse",
     )
     return p.parse_args()
 
@@ -81,36 +82,22 @@ def run_zero_policy_episode(render_mode: str | None = None) -> None:
 
 
 def run_scripted_score_episode(render_mode: str | None = None) -> None:
-    """Fly directly toward the hoop center via position setpoint commands.
-
-    This bypasses the normalized-delta action space and issues absolute
-    setpoints by choosing actions that push the setpoint toward the hoop
-    each step. The drone should score within a couple of hundred steps
-    if the scoring geometry is correct.
-    """
+    """Fly directly toward the hoop center via position setpoint commands."""
     print("=== [3/3] Scripted fly-toward-hoop episode ===")
     env = QuidditchSimpleEnv(render_mode=render_mode, randomise_start=False)
     obs, _ = env.reset()
 
-    # We'll command the delta to always push setpoint toward the hoop.
-    # Current setpoint starts at [0, 0, 0, 0.1]. We want to reach [2, 0, 0, 2].
-    # Max delta per step: [0.2, 0.2, 0.5, 0.1] (for action = [1,1,1,1]).
-    # So we just push action toward hoop consistently.
-
     scored = False
     total_reward = 0.0
     for step in range(env._max_steps):
-        pos = obs[9:12]   # current drone position from obs
+        pos = obs[9:12]
 
-        # Direction from current setpoint to hoop (use drone pos as proxy)
         vec = HOOP_CENTER - pos.astype(np.float64)
         dist = np.linalg.norm(vec)
 
         if dist < 0.01:
             action = np.zeros(4, dtype=np.float32)
         else:
-            # Normalize and clip to [-1, 1] action space
-            # [dx, dy, dyaw, dz] — ignore yaw for now
             action = np.array([
                 np.clip(vec[0] / 0.2, -1.0, 1.0),
                 np.clip(vec[1] / 0.2, -1.0, 1.0),
@@ -123,11 +110,12 @@ def run_scripted_score_episode(render_mode: str | None = None) -> None:
 
         if step % 10 == 0:
             print(f"  step {step:4d}  pos=({pos[0]:+5.1f},{pos[1]:+5.1f},{pos[2]:+4.1f})  "
-                  f"dist={dist:5.1f}  reward={reward:+.4f}")
+                  f"dist={dist:5.2f}  reward={reward:+.4f}")
 
         if info.get("scored"):
             pos_at_score = obs[9:12]
-            print(f"\n  SCORED at step {step}!  pos=({pos_at_score[0]:+.2f},{pos_at_score[1]:+.2f},{pos_at_score[2]:+.2f})")
+            print(f"\n  SCORED at step {step}!  "
+                  f"pos=({pos_at_score[0]:+.2f},{pos_at_score[1]:+.2f},{pos_at_score[2]:+.2f})")
             print(f"  total reward: {total_reward:.4f}")
             scored = True
             break
@@ -137,9 +125,9 @@ def run_scripted_score_episode(render_mode: str | None = None) -> None:
             break
 
     if scored and render_mode == "human":
-        assert env._aviary is not None
+        assert env._quad is not None
         hover_seconds = 60
-        hover_steps = int(hover_seconds / env._aviary.step_period)
+        hover_steps = int(hover_seconds / env._quad.step_period)
         print(f"  Hovering for {hover_seconds}s ({hover_steps} steps) — orbit/pan/zoom the window.")
         zero_action = np.zeros(4, dtype=np.float32)
         for _ in range(hover_steps):
@@ -156,9 +144,9 @@ def run_scripted_score_episode(render_mode: str | None = None) -> None:
 if __name__ == "__main__":
     args = parse_args()
 
-    if args.gui:
-        print("GUI mode — PyBullet window will open.")
-        print("  Orbit: left-drag   Pan: middle-drag   Zoom: scroll\n")
+    if args.viewer:
+        print("Viewer mode — MuJoCo window will open.")
+        print("  Orbit: left-drag   Pan: right-drag   Zoom: scroll\n")
         run_scripted_score_episode(render_mode="human")
     else:
         run_sb3_check()

@@ -1,6 +1,6 @@
 name: uav
-# PyBullet MUST come from conda-forge — PyPI wheels are incompatible with macOS 26.
-# Do NOT add pybullet to requirements.txt.
+# MuJoCo is installed via pip (official wheels support macOS Apple Silicon).
+# No conda-forge physics library needed — pybullet/PyFlyt are gone.
 channels:
   - conda-forge
   - defaults
@@ -9,6 +9,5 @@ dependencies:
   - numpy
   - wheel
   - pip
-  - pybullet
   - pip:
     - -r requirements.txt

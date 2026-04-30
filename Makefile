@@ -35,9 +35,13 @@ endif
 # Run a command inside the conda env, streaming output in real time.
 CONDA_RUN := $(CONDA) run --no-capture-output -n $(CONDA_ENV)
 PYTHON    := $(CONDA_RUN) python
+# macOS: mujoco.viewer.launch_passive() requires mjpython (owns the Cocoa main
+# thread).  mjpython is a wrapper installed by the mujoco pip package; use it
+# only for targets that open the interactive viewer.
+MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check check-gui train resume eval eval-headless tensorboard promote repro install clean list-runs
+.PHONY: help check check-viewer hover train resume eval eval-headless tensorboard promote repro install clean list-runs
 
 .DEFAULT_GOAL := help
 
@@ -52,8 +56,11 @@ help: ## 📋 Show available targets
 check: ## ✅ Validate env headless (fast, no window)
 	@$(PYTHON) scripts/check_env.py
 
-check-gui: ## 🪟 Validate env with PyBullet GUI (interactive camera)
-	@$(PYTHON) scripts/check_env.py --gui
+check-viewer: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
+	@$(MJPYTHON) scripts/check_env.py --viewer
+
+hover: ## 🚁 MuJoCo hover smoke test (opens viewer)
+	@$(MJPYTHON) demo/hover_demo.py
 
 train: ## 🚀 Run PPO training  [RUN_NAME=...] [PRETRAIN=models/...] [overrides config]
 	@$(PYTHON) scripts/train_ppo.py \
@@ -66,7 +73,7 @@ resume: ## ▶️  Resume from latest checkpoint  [RUN_NAME=...] [TRIAL=...] [CH
 	 $(PYTHON) scripts/train_ppo.py --run-name "$(_RESUME_RUN)" --resume "$$ckpt"
 
 eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES=10]
-	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)
+	@$(MJPYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)
 
 eval-headless: ## 📈 Evaluate best model headless  [RUN_NAME=...] [TRIAL=...] [EPISODES=50]
 	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --no-render --episodes $(or $(EPISODES),50)
