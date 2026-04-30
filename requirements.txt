@@ -4,6 +4,12 @@ mujoco>=3.0
 # RL
 stable-baselines3
 
+# Progress bar (used by SB3's progress_bar=True and our ResumeProgressCallback).
+# Installed individually instead of `stable-baselines3[extra]` to keep the
+# dependency surface small.
+tqdm
+rich
+
 # Monitoring / logging
 tensorboard
 
