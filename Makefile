@@ -100,9 +100,8 @@ promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
 	 dest="$(MODELS_DIR)/$$(echo $$label | tr '/' '_')"; \
 	 mkdir -p "$$dest"; \
 	 cp "$$src"                   "$$dest/best_model.zip"; \
-	 [ -f "$$dir/info.toml" ]            && cp "$$dir/info.toml"            "$$dest/run_info.toml"        || true; \
-	 [ -f "$$dir/config_snapshot.toml" ] && cp "$$dir/config_snapshot.toml" "$$dest/config.toml" || true; \
-	 [ -f "$$dir/env_snapshot.toml" ]    && cp "$$dir/env_snapshot.toml"    "$$dest/env.toml"    || true; \
+	 [ -f "$$dir/info.toml" ]            && cp "$$dir/info.toml"            "$$dest/run_info.toml" || true; \
+	 [ -f "$$dir/config_snapshot.toml" ] && cp "$$dir/config_snapshot.toml" "$$dest/config.toml"   || true; \
 	 echo ""; \
 	 echo "  Trial:    $$dir"; \
 	 echo "  Promoted  →  $$dest/"; \
@@ -113,7 +112,7 @@ promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
 	 echo "  To commit:"; \
 	 echo "    git add $$dest && git commit -m 'model: promote $$label best model'"
 
-repro: ## 🔄 Restore config/{training,env}.toml from a promoted model  [MODEL=...]
+repro: ## 🔄 Restore config/training.toml from a promoted model  [MODEL=...]
 	@test -n "$(MODEL)" || { echo "ERROR: specify MODEL=<name>  (see 'make list-runs')"; exit 1; }; \
 	 src="$(MODELS_DIR)/$(MODEL)/config.toml"; \
 	 test -f "$$src" || { echo "ERROR: $$src not found — model promoted before config snapshots were added?"; exit 1; }; \
@@ -121,20 +120,22 @@ repro: ## 🔄 Restore config/{training,env}.toml from a promoted model  [MODEL=
 	 echo "Restored config/training.toml from $$src"; \
 	 env_src="$(MODELS_DIR)/$(MODEL)/env.toml"; \
 	 if [ -f "$$env_src" ]; then \
-	   cp "$$env_src" config/env.toml; \
-	   echo "Restored config/env.toml from $$env_src"; \
+	   echo "NOTE: $$env_src is from an older promote format; its [env] section is now part of config/training.toml — verify the values match."; \
 	 fi
 
 # ──────────────────────────────────────────────────────────────────────────────
 
 install: ## 📦 Create or update the $(CONDA_ENV) conda env from environment.yml
 	@$(CONDA) env create -f environment.yml 2>/dev/null || $(CONDA) env update -f environment.yml --prune
-	@if [ ! -f config/training.toml ]; then \
-	   cp templates/training.toml config/training.toml; \
-	   echo "Created config/training.toml from templates/training.toml."; \
-	 else \
-	   echo "config/training.toml already exists — not overwritten."; \
-	 fi
+	@mkdir -p config
+	@for f in training camera; do \
+	   if [ ! -f config/$$f.toml ]; then \
+	     cp templates/$$f.toml config/$$f.toml; \
+	     echo "Created config/$$f.toml from templates/$$f.toml."; \
+	   else \
+	     echo "config/$$f.toml already exists — not overwritten."; \
+	   fi; \
+	 done
 	@echo "Done. Verify with: make check"
 
 list-runs: ## 🗂️  List training runs grouped by config name
