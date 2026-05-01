@@ -44,11 +44,16 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
+from core.world import World
 from core.quadrotor import Quadrotor
+from core.drone.cf2x import cf2x_fragment
+from envs.quidditch.scene import hoop_fragment, arena_wall_fragment
 from envs.quidditch.constants import (
     ARENA_RADIUS,
+    ARENA_WALL_HEIGHT,
     HOOP_CENTER,
     HOOP_OUTWARD_NORMAL,
+    HOOP_RADIUS,
 )
 
 
@@ -108,6 +113,7 @@ class QuidditchSimpleEnv(gym.Env):
         # 4-dim normalized action
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
 
+        self._world: World | None = None
         self._quad: Quadrotor | None = None
         self._setpoint = np.zeros(4, dtype=np.float32)
         self._step_count: int = 0
@@ -135,24 +141,29 @@ class QuidditchSimpleEnv(gym.Env):
             else (DRONE_START_POS[0].copy(), DRONE_START_ORN[0].copy())
         )
 
-        if self._quad is None:
-            self._quad = Quadrotor(
-                start_pos=start_pos[np.newaxis],
-                start_orn=start_orn[np.newaxis],
+        if self._world is None:
+            fragments = [
+                cf2x_fragment(prefix="drone"),
+                arena_wall_fragment(ARENA_RADIUS, ARENA_WALL_HEIGHT),
+                hoop_fragment(
+                    "hoop", HOOP_CENTER, HOOP_OUTWARD_NORMAL, HOOP_RADIUS,
+                ),
+            ]
+            self._world = World(
+                fragments,
                 render=(self.render_mode == "human"),
                 seed=seed,
             )
-        else:
-            self._quad.start_pos = start_pos[np.newaxis].copy()
-            self._quad.start_orn = start_orn[np.newaxis].copy()
-            self._quad.reset()
+            self._quad = Quadrotor(self._world, prefix="drone")
 
+        self._quad.set_start(start_pos[np.newaxis], start_orn[np.newaxis])
+        self._world.reset()
         self._quad.set_mode(7)
 
         self._setpoint = np.array(
             [start_pos[0], start_pos[1], start_orn[2], 0.1], dtype=np.float32
         )
-        self._quad.set_setpoint(0, self._setpoint)
+        self._quad.set_setpoint(self._setpoint)
 
         self._max_steps = int(EPISODE_SECONDS / self._quad.step_period)
         self._step_count = 0
@@ -177,8 +188,8 @@ class QuidditchSimpleEnv(gym.Env):
         self._setpoint[2] = (self._setpoint[2] + np.pi) % (2 * np.pi) - np.pi
         self._setpoint[3] = np.clip(self._setpoint[3], 0.01, 4.0)
 
-        self._quad.set_setpoint(0, self._setpoint)
-        self._quad.step()
+        self._quad.set_setpoint(self._setpoint)
+        self._world.step()
         self._step_count += 1
 
         drone_pos = self._drone_pos()
@@ -213,13 +224,14 @@ class QuidditchSimpleEnv(gym.Env):
         return self._obs(), float(reward), terminated, truncated, info
 
     def render(self) -> np.ndarray | None:
-        if self.render_mode != "rgb_array" or self._quad is None:
+        if self.render_mode != "rgb_array" or self._world is None:
             return None
-        return self._quad.render_frame(VIDEO_WIDTH, VIDEO_HEIGHT)
+        return self._world.render_frame(VIDEO_WIDTH, VIDEO_HEIGHT)
 
     def close(self) -> None:
-        if self._quad is not None:
-            self._quad.disconnect()
+        if self._world is not None:
+            self._world.disconnect()
+            self._world = None
             self._quad = None
 
     # -----------------------------------------------------------------------
@@ -232,10 +244,10 @@ class QuidditchSimpleEnv(gym.Env):
         return self._quad
 
     def _drone_pos(self) -> np.ndarray:
-        return self._q.state(0)[3].copy()
+        return self._q.state()[3].copy()
 
     def _obs(self) -> np.ndarray:
-        state = self._q.state(0)  # (4, 3)
+        state = self._q.state()  # (4, 3)
         ang_vel = state[0]
         ang_pos = state[1]
         lin_vel = state[2]

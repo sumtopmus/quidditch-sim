@@ -24,6 +24,14 @@ import numpy as np
 
 from core.quadrotor import Quadrotor, load_camera_config
 from demo.hover_demo import HOVER_SECONDS, START_POS, START_ORN, SETPOINT
+from envs.quidditch.scene import hoop_fragment, arena_wall_fragment
+from envs.quidditch.constants import (
+    ARENA_RADIUS,
+    ARENA_WALL_HEIGHT,
+    HOOP_CENTER,
+    HOOP_OUTWARD_NORMAL,
+    HOOP_RADIUS,
+)
 
 
 VIDEO_W, VIDEO_H = 960, 540
@@ -38,14 +46,18 @@ def main() -> None:
     cam = load_camera_config()
     print(f"[camera] eye={cam['eye']}  lookat={cam['lookat']}")
 
-    quad = Quadrotor(
+    quad = Quadrotor.standalone(
         start_pos=START_POS,
         start_orn=START_ORN,
         render=False,
         camera=cam,
+        extra_fragments=[
+            arena_wall_fragment(ARENA_RADIUS, ARENA_WALL_HEIGHT),
+            hoop_fragment("hoop", HOOP_CENTER, HOOP_OUTWARD_NORMAL, HOOP_RADIUS),
+        ],
     )
     quad.set_mode(7)
-    quad.set_setpoint(0, SETPOINT)
+    quad.set_setpoint(SETPOINT)
 
     frames: list[np.ndarray] = []
     every = max(1, int((1.0 / FPS) / quad.step_period))
