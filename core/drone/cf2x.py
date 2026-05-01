@@ -189,9 +189,16 @@ def cf2x_fragment(
         - The probe geom is `contype=0 conaffinity=0` and is intended
           for mj_geomDistance queries (e.g. against a hoop_score_tube).
     """
+    # NOTE: type="mesh" is required on every <geom mesh="...">.  Without it
+    # MuJoCo defaults type to sphere (using the mesh's bounding sphere),
+    # which renders the drone as a cluster of overlapping translucent
+    # bubbles instead of the cf2 body.  Menagerie's cf2.xml gets away with
+    # bare <geom mesh=...> only because they declare a <default class>
+    # that injects type="mesh" — we don't, so we say it explicitly.
     if with_collisions:
         collision_geoms = "\n".join(
-            f'      <geom mesh="cf2_collision_{i}" contype="1" conaffinity="1" group="3"/>'
+            f'      <geom type="mesh" mesh="cf2_collision_{i}" '
+            f'contype="1" conaffinity="1" group="3"/>'
             for i in range(32)
         )
         collision_block = (
@@ -208,13 +215,13 @@ def cf2x_fragment(
         f'      <inertial mass="{MASS}" pos="0 0 0"\n'
         f'                diaginertia="{IXX} {IYY} {IZZ}"/>\n'
         f'      <!-- Menagerie cf2 visuals (7 mesh geoms, all non-colliding) -->\n'
-        f'      <geom mesh="cf2_0" material="propeller_plastic"    contype="0" conaffinity="0"/>\n'
-        f'      <geom mesh="cf2_1" material="medium_gloss_plastic" contype="0" conaffinity="0"/>\n'
-        f'      <geom mesh="cf2_2" material="polished_gold"        contype="0" conaffinity="0"/>\n'
-        f'      <geom mesh="cf2_3" material="polished_plastic"     contype="0" conaffinity="0"/>\n'
-        f'      <geom mesh="cf2_4" material="burnished_chrome"     contype="0" conaffinity="0"/>\n'
-        f'      <geom mesh="cf2_5" material="body_frame_plastic"   contype="0" conaffinity="0"/>\n'
-        f'      <geom mesh="cf2_6" material="white"                contype="0" conaffinity="0"/>\n'
+        f'      <geom type="mesh" mesh="cf2_0" material="propeller_plastic"    contype="0" conaffinity="0"/>\n'
+        f'      <geom type="mesh" mesh="cf2_1" material="medium_gloss_plastic" contype="0" conaffinity="0"/>\n'
+        f'      <geom type="mesh" mesh="cf2_2" material="polished_gold"        contype="0" conaffinity="0"/>\n'
+        f'      <geom type="mesh" mesh="cf2_3" material="polished_plastic"     contype="0" conaffinity="0"/>\n'
+        f'      <geom type="mesh" mesh="cf2_4" material="burnished_chrome"     contype="0" conaffinity="0"/>\n'
+        f'      <geom type="mesh" mesh="cf2_5" material="body_frame_plastic"   contype="0" conaffinity="0"/>\n'
+        f'      <geom type="mesh" mesh="cf2_6" material="white"                contype="0" conaffinity="0"/>\n'
         f'{collision_block}'
         f'      <!-- IMU site for sensors -->\n'
         f'      <site name="{prefix}_imu" pos="0 0 0" size="0.001"/>\n'
