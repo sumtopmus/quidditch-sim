@@ -65,6 +65,12 @@ _CF2X_MESH_FILES: tuple[str, ...] = (
     "cf2_5.obj",
     "cf2_6.obj",
 )
+# Collision meshes — 32 convex hulls vendored from Menagerie's
+# bitcraze_crazyflie_2/assets/cf2_collision_*.obj.  Loaded only when
+# `cf2x_assets(with_collision_meshes=True)` is called.
+_CF2X_COLLISION_FILES: tuple[str, ...] = tuple(
+    f"cf2_collision_{i}.obj" for i in range(32)
+)
 # (mesh_name, material_name) per mesh — order + names match Menagerie's cf2.xml.
 _CF2X_MESH_MATERIALS: tuple[tuple[str, str], ...] = (
     ("cf2_0", "propeller_plastic"),
@@ -77,7 +83,7 @@ _CF2X_MESH_MATERIALS: tuple[tuple[str, str], ...] = (
 )
 
 
-def cf2x_assets() -> SceneFragment:
+def cf2x_assets(*, with_collision_meshes: bool = False) -> SceneFragment:
     """Mesh + material assets for the Crazyflie 2 visuals.
 
     Call this **exactly once per scene** — the seven mesh names (cf2_0…
@@ -85,12 +91,23 @@ def cf2x_assets() -> SceneFragment:
     global in MJCF, so a multi-drone scene declares them once and every
     drone body refers to them by name.
 
+    Args:
+        with_collision_meshes: When True, also load Menagerie's 32
+            cf2_collision_*.obj meshes and emit their <mesh> declarations.
+            Required for any drone that uses cf2x_fragment(..., with_collisions=True).
+            Default False (single-drone, non-colliding scenes don't need them
+            and the .obj load adds tiny startup overhead).
+
     Returns a `SceneFragment` whose:
       - `assets` block carries seven `<material/>` declarations (rgba
         values copied verbatim from Menagerie's cf2.xml) followed by
-        seven `<mesh file="cf2_<i>.obj"/>` declarations.
+        seven `<mesh file="cf2_<i>.obj"/>` declarations.  When
+        ``with_collision_meshes=True``, 32 additional ``<mesh
+        name="cf2_collision_<i>" file="cf2_collision_<i>.obj"/>``
+        declarations are appended.
       - `asset_files` block carries the seven .obj files as
-        ``(filename, bytes)`` tuples.  `World` forwards them to
+        ``(filename, bytes)`` tuples (plus the 32 collision .obj files
+        when the flag is on).  `World` forwards them to
         ``mujoco.MjModel.from_xml_string(assets=...)`` so MuJoCo
         resolves the mesh `file="..."` references against in-memory
         bytes — no filesystem lookup at sim-init time.
@@ -115,13 +132,28 @@ def cf2x_assets() -> SceneFragment:
         (filename, (_CF2X_ASSETS_DIR / filename).read_bytes())
         for filename in _CF2X_MESH_FILES
     )
+    if with_collision_meshes:
+        collision_meshes: tuple[str, ...] = tuple(
+            f'<mesh name="cf2_collision_{i}" file="{filename}"/>'
+            for i, filename in enumerate(_CF2X_COLLISION_FILES)
+        )
+        collision_file_bytes: tuple[tuple[str, bytes], ...] = tuple(
+            (filename, (_CF2X_ASSETS_DIR / filename).read_bytes())
+            for filename in _CF2X_COLLISION_FILES
+        )
+        meshes = meshes + collision_meshes
+        file_bytes = file_bytes + collision_file_bytes
     return SceneFragment(
         assets=materials + meshes,
         asset_files=file_bytes,
     )
 
 
-def cf2x_fragment(prefix: str = "drone") -> SceneFragment:
+def cf2x_fragment(
+    prefix: str = "drone",
+    *,
+    with_collisions: bool = False,
+) -> SceneFragment:
     """A single cf2x drone (body + sensors) as a composable MJCF fragment.
 
     Args:
@@ -129,6 +161,18 @@ def cf2x_fragment(prefix: str = "drone") -> SceneFragment:
             site, scoring probe, and the four sensors.  Default "drone"
             preserves the historical single-drone names.  For multi-drone
             scenes pass distinct prefixes (e.g. "red_0", "blue_0").
+        with_collisions: When True, append 32 collision-mesh geoms with
+            contype=1 conaffinity=1 to the body.  Requires cf2x_assets(
+            with_collision_meshes=True) to be present in the same scene.
+            Default False — drone is fully non-colliding, matching the
+            historical single-drone setup.
+
+            The contype/conaffinity bits 1/1 mean the drone collides with
+            anything else carrying bit 1 (currently only the floor —
+            hoop and arena_wall use bit 0).  Multi-drone scenes get
+            drone-drone + drone-floor collisions for free.  Override per-
+            fragment if you want fancier team-bitmask schemes (e.g.
+            bit 2 = "blue team", bit 3 = "obstacle").
 
     Returns:
         SceneFragment with one <body> in worldbody and four sensors
@@ -145,6 +189,19 @@ def cf2x_fragment(prefix: str = "drone") -> SceneFragment:
         - The probe geom is `contype=0 conaffinity=0` and is intended
           for mj_geomDistance queries (e.g. against a hoop_score_tube).
     """
+    if with_collisions:
+        collision_geoms = "\n".join(
+            f'      <geom mesh="cf2_collision_{i}" contype="1" conaffinity="1" group="3"/>'
+            for i in range(32)
+        )
+        collision_block = (
+            "      <!-- Menagerie cf2 collision meshes (32 meshes, contype=1 "
+            "conaffinity=1, group=3 hidden by default) -->\n"
+            f"{collision_geoms}\n"
+        )
+    else:
+        collision_block = ""
+
     body_xml = (
         f'<body name="{prefix}" pos="0 0 0.03">\n'
         f'      <freejoint name="{prefix}_root"/>\n'
@@ -158,6 +215,7 @@ def cf2x_fragment(prefix: str = "drone") -> SceneFragment:
         f'      <geom mesh="cf2_4" material="burnished_chrome"     contype="0" conaffinity="0"/>\n'
         f'      <geom mesh="cf2_5" material="body_frame_plastic"   contype="0" conaffinity="0"/>\n'
         f'      <geom mesh="cf2_6" material="white"                contype="0" conaffinity="0"/>\n'
+        f'{collision_block}'
         f'      <!-- IMU site for sensors -->\n'
         f'      <site name="{prefix}_imu" pos="0 0 0" size="0.001"/>\n'
         f'      <!-- Position probe for hoop scoring (non-colliding;\n'
