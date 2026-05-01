@@ -54,6 +54,7 @@ from stable_baselines3.common.callbacks import (
 )
 
 from envs.quidditch_simple_env import QuidditchSimpleEnv
+from core.quadrotor import CONTROL_HZ
 from callbacks import VideoRecorderCallback, ResumeProgressCallback
 
 
@@ -293,6 +294,7 @@ def main() -> None:
         video_dir=video_dir,
         record_freq=video_freq,
         fps=cfg["callbacks"]["video_fps"],
+        sim_hz=CONTROL_HZ,
         verbose=verbose,
     )
 

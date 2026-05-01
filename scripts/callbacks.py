@@ -58,6 +58,7 @@ class VideoRecorderCallback(BaseCallback):
         video_dir: str,
         record_freq: int,
         fps: int = 20,
+        sim_hz: int = 120,
         verbose: int = 1,
     ) -> None:
         super().__init__(verbose)
@@ -65,6 +66,7 @@ class VideoRecorderCallback(BaseCallback):
         self.video_dir = video_dir
         self.record_freq = record_freq
         self.fps = fps
+        self.frame_stride = max(1, round(sim_hz / fps))
         os.makedirs(video_dir, exist_ok=True)
 
         # Lazy import so training still works if imageio is missing
@@ -90,12 +92,15 @@ class VideoRecorderCallback(BaseCallback):
 
         obs, _ = env.reset()
         done = False
+        step_idx = 0
         while not done:
             action, _ = self.model.predict(obs, deterministic=True)
             obs, _, terminated, truncated, _ = env.step(action)
-            frame = env.render()
-            if frame is not None:
-                frames.append(frame)
+            if step_idx % self.frame_stride == 0:
+                frame = env.render()
+                if frame is not None:
+                    frames.append(frame)
+            step_idx += 1
             done = terminated or truncated
 
         env.close()
