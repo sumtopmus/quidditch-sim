@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check check-viewer hover waypoint camera-test train resume eval eval-headless tensorboard promote repro install clean list-runs
+.PHONY: help check check-viewer demo camera-test train resume eval eval-headless tensorboard promote repro install clean list-runs
 
 .DEFAULT_GOAL := help
 
@@ -59,13 +59,10 @@ check: ## ✅ Validate env headless (fast, no window)
 check-viewer: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
 	@$(MJPYTHON) scripts/check_env.py --viewer
 
-hover: ## 🚁 MuJoCo hover smoke test (opens viewer)
-	@$(MJPYTHON) demo/hover_demo.py
+demo: ## 🎮 Pick a demo to run (hover, waypoint) — opens viewer
+	@$(MJPYTHON) demo/menu.py
 
-waypoint: ## 📍 Fly a waypoint triangle with marker spheres (opens viewer)
-	@$(MJPYTHON) demo/waypoint_demo.py
-
-camera-test: ## 🎥 Render waypoint flight through fixed cam → mp4 (edit config/camera.toml)
+camera-test: ## 🎥 Render hover flight through fixed cam → mp4 (edit config/camera.toml)
 	@$(PYTHON) demo/camera_test.py
 
 train: ## 🚀 Run PPO training  [RUN_NAME=...] [PRETRAIN=models/...] [overrides config]

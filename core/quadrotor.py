@@ -141,6 +141,8 @@ class Quadrotor:
         seed: int | None = None,
         markers: list[tuple[tuple[float, float, float], str, float]] | None = None,
         camera: dict | None = None,
+        include_hoop: bool = True,
+        include_arena_wall: bool = True,
     ) -> None:
         """
         Args:
@@ -152,6 +154,9 @@ class Quadrotor:
                      both the offscreen "fixed" camera (videos) and the live
                      viewer pose.  Defaults to load_camera_config() →
                      config/camera.toml, with a hardcoded sideline fallback.
+            include_hoop: if False, omit the goal hoop + pole.  Useful for
+                     non-Quidditch scenes (e.g. waypoint flights).
+            include_arena_wall: if False, omit the cylindrical arena wall.
         """
         self.start_pos = np.asarray(start_pos, dtype=np.float64)  # (1,3)
         self.start_orn = np.asarray(start_orn, dtype=np.float64)  # (1,3)
@@ -159,8 +164,13 @@ class Quadrotor:
         self.np_random = np.random.default_rng(seed)
         self._camera = camera if camera is not None else load_camera_config()
 
-        # Build and load the complete scene (drone + hoop + arena wall + markers)
-        xml = _build_scene_xml(markers=markers, camera=self._camera)
+        # Build and load the complete scene (drone + optional hoop/arena/markers)
+        xml = _build_scene_xml(
+            markers=markers,
+            camera=self._camera,
+            include_hoop=include_hoop,
+            include_arena_wall=include_arena_wall,
+        )
         self._model = mujoco.MjModel.from_xml_string(xml)
         self._data  = mujoco.MjData(self._model)
 
@@ -446,12 +456,20 @@ def _build_scene_xml(
     arena_radius: float = 3.0,
     markers: list[tuple] | None = None,
     camera: dict | None = None,
+    include_hoop: bool = True,
+    include_arena_wall: bool = True,
 ) -> str:
     """Return the complete MuJoCo XML for the Quidditch scene."""
     hx, hy, hz = hoop_center
-    hoop_xml  = _hoop_geoms(hx, hy, hz, hoop_radius, 0.012, 32, "1.0 0.45 0.0 1.0")
-    pole_xml  = _pole_geom(hx, hy, hz, hoop_radius)
-    arena_xml = _arena_wall_geoms(arena_radius, 4.5, 32, "0.6 0.85 1.0 0.35")
+    hoop_xml  = (
+        _hoop_geoms(hx, hy, hz, hoop_radius, 0.012, 32, "1.0 0.45 0.0 1.0") + "\n      "
+        + _pole_geom(hx, hy, hz, hoop_radius)
+        if include_hoop else ""
+    )
+    arena_xml = (
+        _arena_wall_geoms(arena_radius, 4.5, 32, "0.6 0.85 1.0 0.35")
+        if include_arena_wall else ""
+    )
     marker_xml = _markers_xml(markers)
 
     cam = camera if camera is not None else _FALLBACK_CAMERA
@@ -525,7 +543,6 @@ def _build_scene_xml(
     <!-- ── Hoop (32-segment torus approximation) ──────────────────────── -->
     <body name="hoop" pos="0 0 0">
       {hoop_xml}
-      {pole_xml}
     </body>
 
     <!-- ── Arena boundary wall ────────────────────────────────────────── -->

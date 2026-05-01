@@ -1,12 +1,13 @@
 """Fly a single QuadX through a sequence of waypoints, with visible target markers.
 
-Stepping stone toward the Phase-2 hoop env: exercises position-setpoint flight
-mode (mode 7 — x, y, yaw, z), waypoint switching, and translucent-sphere markers.
+Runs in an *empty* scene (floor + waypoint markers only — no hoop, no arena
+wall) so the flight path is unobstructed.  Exercises mode-7 position-setpoint
+flight and waypoint switching.
 
 Unlike PyFlyt's Aviary, MuJoCo's launch_passive viewer does NOT auto-pace to
 real time, so we sleep `quad.step_period` after each step when rendering.
 
-Run:  make waypoint   (or:  mjpython demo/waypoint_demo.py)
+Run:  make demo  (and pick "waypoint")   or:  mjpython demo/waypoint_demo.py
 """
 
 import sys
@@ -73,6 +74,8 @@ def main() -> None:
         start_orn=START_ORN,
         render=True,
         markers=markers,
+        include_hoop=False,
+        include_arena_wall=False,
     )
     quad.set_mode(7)
 
