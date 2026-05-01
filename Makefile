@@ -102,6 +102,7 @@ promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
 	 cp "$$src"                   "$$dest/best_model.zip"; \
 	 [ -f "$$dir/info.toml" ]            && cp "$$dir/info.toml"            "$$dest/run_info.toml"        || true; \
 	 [ -f "$$dir/config_snapshot.toml" ] && cp "$$dir/config_snapshot.toml" "$$dest/config.toml" || true; \
+	 [ -f "$$dir/env_snapshot.toml" ]    && cp "$$dir/env_snapshot.toml"    "$$dest/env.toml"    || true; \
 	 echo ""; \
 	 echo "  Trial:    $$dir"; \
 	 echo "  Promoted  →  $$dest/"; \
@@ -112,12 +113,17 @@ promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
 	 echo "  To commit:"; \
 	 echo "    git add $$dest && git commit -m 'model: promote $$label best model'"
 
-repro: ## 🔄 Restore config/training.toml from a promoted model  [MODEL=...]
+repro: ## 🔄 Restore config/{training,env}.toml from a promoted model  [MODEL=...]
 	@test -n "$(MODEL)" || { echo "ERROR: specify MODEL=<name>  (see 'make list-runs')"; exit 1; }; \
 	 src="$(MODELS_DIR)/$(MODEL)/config.toml"; \
 	 test -f "$$src" || { echo "ERROR: $$src not found — model promoted before config snapshots were added?"; exit 1; }; \
 	 cp "$$src" config/training.toml; \
-	 echo "Restored config/training.toml from $$src"
+	 echo "Restored config/training.toml from $$src"; \
+	 env_src="$(MODELS_DIR)/$(MODEL)/env.toml"; \
+	 if [ -f "$$env_src" ]; then \
+	   cp "$$env_src" config/env.toml; \
+	   echo "Restored config/env.toml from $$env_src"; \
+	 fi
 
 # ──────────────────────────────────────────────────────────────────────────────
 

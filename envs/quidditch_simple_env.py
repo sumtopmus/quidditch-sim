@@ -96,10 +96,12 @@ class QuidditchSimpleEnv(gym.Env):
         self,
         render_mode: str | None = None,
         randomise_start: bool = True,
+        episode_seconds: float = EPISODE_SECONDS,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
         self.randomise_start = randomise_start
+        self.episode_seconds = float(episode_seconds)
 
         # 16-dim flat obs vector
         self.observation_space = spaces.Box(
@@ -153,7 +155,7 @@ class QuidditchSimpleEnv(gym.Env):
         )
         self._quad.set_setpoint(0, self._setpoint)
 
-        self._max_steps = int(EPISODE_SECONDS / self._quad.step_period)
+        self._max_steps = int(self.episode_seconds / self._quad.step_period)
         self._step_count = 0
         self._takeoff_grace = TAKEOFF_GRACE_STEPS
         self._crossing_started = False

@@ -66,6 +66,7 @@ def _ts() -> str:
 # ---------------------------------------------------------------------------
 
 _CONFIG_PATH = Path(__file__).parent.parent / "config" / "training.toml"
+_ENV_CONFIG_PATH = Path(__file__).parent.parent / "config" / "env.toml"
 
 if not _CONFIG_PATH.exists():
     raise FileNotFoundError(
@@ -74,6 +75,21 @@ if not _CONFIG_PATH.exists():
 
 with _CONFIG_PATH.open("rb") as _f:
     cfg = tomllib.load(_f)
+
+
+def _load_env_kwargs() -> dict:
+    """Load env constructor kwargs from config/env.toml. Falls back to env defaults."""
+    if not _ENV_CONFIG_PATH.exists():
+        return {}
+    with _ENV_CONFIG_PATH.open("rb") as f:
+        data = tomllib.load(f)
+    env = data.get("env", {})
+    out: dict = {}
+    if "randomise_start" in env:
+        out["randomise_start"] = bool(env["randomise_start"])
+    if "episode_seconds" in env:
+        out["episode_seconds"] = float(env["episode_seconds"])
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -225,10 +241,13 @@ def main() -> None:
         raw = cfg["training"].get("seed", -1)
         seed = None if raw < 0 else raw
 
-    # Snapshot the config file used for this trial so 'make repro' can restore it later.
+    # Snapshot the config files used for this trial so 'make repro' can restore them later.
     shutil.copy(_CONFIG_PATH, os.path.join(trial_dir, "config_snapshot.toml"))
+    if _ENV_CONFIG_PATH.exists():
+        shutil.copy(_ENV_CONFIG_PATH, os.path.join(trial_dir, "env_snapshot.toml"))
 
     # ---- environments ----
+    base_env_kwargs = _load_env_kwargs()
     # SubprocVecEnv spawns one OS process per env so physics steps run in
     # parallel across CPU cores.  Use class + env_kwargs (not a lambda) so
     # the factory is picklable under macOS's "spawn" multiprocessing start method.
@@ -236,7 +255,7 @@ def main() -> None:
         QuidditchSimpleEnv,
         n_envs=args.n_envs,
         seed=seed,
-        env_kwargs={"render_mode": None},
+        env_kwargs={"render_mode": None, **base_env_kwargs},
         vec_env_cls=SubprocVecEnv,
     )
     # Eval env: single instance, DummyVecEnv is sufficient (no subprocess overhead).
@@ -244,7 +263,7 @@ def main() -> None:
         QuidditchSimpleEnv,
         n_envs=1,
         seed=seed,
-        env_kwargs={"render_mode": None},
+        env_kwargs={"render_mode": None, **base_env_kwargs},
     )
 
     # ---- callbacks ----
@@ -270,7 +289,7 @@ def main() -> None:
         verbose=verbose,
     )
     video_cb = VideoRecorderCallback(
-        env_fn=lambda: QuidditchSimpleEnv(render_mode="rgb_array"),
+        env_fn=lambda: QuidditchSimpleEnv(render_mode="rgb_array", **base_env_kwargs),
         video_dir=video_dir,
         record_freq=video_freq,
         fps=cfg["callbacks"]["video_fps"],
