@@ -31,23 +31,19 @@ import mujoco
 from core.position_controller import Mode7Controller
 from core.mjcf import SceneFragment, WorldOptions, build_mjcf, load_camera_config
 from core.mjcf.camera import _viewer_params
-from core.mjcf.meshes import (
-    _torus_mesh_data,
-    _arena_wall_mesh_data,
-    _markers_xml,
+from core.mjcf.meshes import _markers_xml
+from core.drone.cf2x import (
+    MASS,
+    IXX,
+    IYY,
+    IZZ,
+    ARM,
+    THRUST_COEF,
+    TORQUE_COEF,
+    MAX_RPM,
+    cf2x_fragment,
 )
 
-
-# ── cf2x physical constants (from cf2x.urdf + cf2x.yaml) ────────────────────
-MASS: float = 0.027         # kg
-IXX: float  = 1.4e-5        # kg⋅m²
-IYY: float  = 1.4e-5
-IZZ: float  = 2.17e-5
-ARM: float  = 0.028         # m (motor distance from CoM along each diagonal)
-THRUST_COEF: float = 3.16e-10  # N / RPM²
-TORQUE_COEF: float = 7.94e-12  # N⋅m / RPM²
-# max_rpm = sqrt(total_max_thrust / (4 × kF)),  total_max_thrust = 2.0 N (cf2x.yaml)
-MAX_RPM: float = math.sqrt(2.0 / (4.0 * THRUST_COEF))   # ≈ 39 775 RPM
 
 # ── timing ───────────────────────────────────────────────────────────────────
 PHYSICS_HZ: int = 240
@@ -55,20 +51,6 @@ CONTROL_HZ: int = 120
 _DT_PHYSICS: float = 1.0 / PHYSICS_HZ          # 0.004167 s
 _DT_CONTROL: float = 1.0 / CONTROL_HZ          # 0.008333 s
 _PHYS_PER_CTRL: int = PHYSICS_HZ // CONTROL_HZ  # 2
-
-# ── scoring trigger volume ───────────────────────────────────────────────────
-# Thin cylinder along the hoop's outward normal.  Both the tube and the
-# drone's probe geom are non-colliding (contype=0 conaffinity=0); we detect
-# overlap with mj_geomDistance() in Quadrotor.drone_in_hoop instead of going
-# through MuJoCo's contact solver.  This avoids the residual contact force
-# that solimp="0 0 ..." doesn't quite eliminate (a 27g drone gets pinned at
-# the tube's -x face by ~0.1 N of leftover impedance).
-#
-# NOTE: this Quidditch-specific import lives here only because _hoop_fragment
-# is temporarily defined in this module.  When the fragment factories move
-# to envs/quidditch/scene.py (commit 3 of the refactor), this import goes
-# with them and core/quadrotor.py loses its dependency on envs/.
-from envs.quidditch.constants import HOOP_SCORE_TUBE_HALF_LEN  # noqa: E402
 
 
 class Quadrotor:
@@ -126,17 +108,19 @@ class Quadrotor:
         self._drone_id = mujoco.mj_name2id(
             self._model, mujoco.mjtObj.mjOBJ_BODY, "drone"
         )
+        # Sensor names are namespaced by drone prefix (cf2x_fragment uses
+        # "drone" as the default prefix → "drone_gyro" etc).
         self._gyro_adr = int(self._model.sensor_adr[
-            mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, "gyro")
+            mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, "drone_gyro")
         ])
         self._vel_adr  = int(self._model.sensor_adr[
-            mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, "velocimeter")
+            mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, "drone_velocimeter")
         ])
         self._quat_adr = int(self._model.sensor_adr[
-            mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, "framequat")
+            mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, "drone_framequat")
         ])
         self._pos_adr  = int(self._model.sensor_adr[
-            mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, "framepos")
+            mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, "drone_framepos")
         ])
 
         # Scoring geom IDs for mj_geomDistance().  None when include_hoop=False.
@@ -364,146 +348,39 @@ def _quat_to_euler_zyx(q: np.ndarray) -> np.ndarray:
     return np.array([roll, pitch, yaw], dtype=np.float64)
 
 
-# ── per-component fragment factories ──────────────────────────────────────────
-# These build the Quidditch scene piece by piece.  They live here for now —
-# commit 3 of the refactor will move them into core/drone/cf2x.py and
-# envs/quidditch/scene.py respectively.
-
-def _drone_body_fragment() -> SceneFragment:
-    """The cf2x drone body + IMU site + score probe + sensors."""
-    body_xml = (
-        f'<body name="drone" pos="0 0 0.03">\n'
-        f'      <freejoint name="root"/>\n'
-        f'      <inertial mass="{MASS}" pos="0 0 0"\n'
-        f'                diaginertia="{IXX} {IYY} {IZZ}"/>\n'
-        f'      <!-- central frame -->\n'
-        f'      <geom type="box" size="0.026 0.026 0.009"\n'
-        f'            rgba="0.15 0.15 0.85 1" contype="0" conaffinity="0"/>\n'
-        f'      <!-- four diagonal arms -->\n'
-        f'      <geom type="capsule" size="0.0025"\n'
-        f'            fromto=" 0.028 -0.028 0   0 0 0"\n'
-        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="capsule" size="0.0025"\n'
-        f'            fromto="-0.028  0.028 0   0 0 0"\n'
-        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="capsule" size="0.0025"\n'
-        f'            fromto=" 0.028  0.028 0   0 0 0"\n'
-        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="capsule" size="0.0025"\n'
-        f'            fromto="-0.028 -0.028 0   0 0 0"\n'
-        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
-        f'      <!-- motor discs: yellow = CCW (m0,m1), cyan = CW (m2,m3) -->\n'
-        f'      <geom type="cylinder" size="0.013 0.003"\n'
-        f'            pos=" 0.028 -0.028 0.005"\n'
-        f'            rgba="0.95 0.85 0.1 0.9" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="cylinder" size="0.013 0.003"\n'
-        f'            pos="-0.028  0.028 0.005"\n'
-        f'            rgba="0.95 0.85 0.1 0.9" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="cylinder" size="0.013 0.003"\n'
-        f'            pos=" 0.028  0.028 0.005"\n'
-        f'            rgba="0.1 0.85 0.85 0.9" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="cylinder" size="0.013 0.003"\n'
-        f'            pos="-0.028 -0.028 0.005"\n'
-        f'            rgba="0.1 0.85 0.85 0.9" contype="0" conaffinity="0"/>\n'
-        f'      <!-- IMU site for sensors -->\n'
-        f'      <site name="imu" pos="0 0 0" size="0.001"/>\n'
-        f'      <!-- Position probe for hoop scoring.  Non-colliding (contype=0/0);\n'
-        f'           mj_geomDistance(drone_probe, hoop_score_tube) detects overlap\n'
-        f'           without involving the contact solver. -->\n'
-        f'      <geom name="drone_probe" type="sphere" size="0.012" pos="0 0 0"\n'
-        f'            contype="0" conaffinity="0" rgba="1 0 0 0"/>\n'
-        f'    </body>'
-    )
-    sensors = (
-        '<gyro        name="gyro"        site="imu"/>',
-        '<velocimeter name="velocimeter" site="imu"/>',
-        '<framequat   name="framequat"   objtype="body" objname="drone"/>',
-        '<framepos    name="framepos"    objtype="body" objname="drone"/>',
-    )
-    return SceneFragment(worldbody=(body_xml,), sensors=sensors)
-
-
-def _hoop_fragment(
-    center: tuple[float, float, float],
-    major_r: float,
-) -> SceneFragment:
-    """The hoop ring (mesh) + pole + invisible scoring tube."""
-    hx, hy, hz = center
-
-    # ── mesh + material asset ────────────────────────────────────────────
-    v, n, f = _torus_mesh_data(major_r, 0.012, n_major=64, n_minor=12)
-    mesh_asset = (
-        f'<mesh name="hoop_ring" vertex="{v}" normal="{n}" face="{f}"/>\n'
-        f'    <material name="hoop_metal" rgba="1.0 0.45 0.0 1" '
-        f'specular="0.5" shininess="0.5" reflectance="0.15"/>'
-    )
-
-    # ── body: ring + pole + scoring tube ─────────────────────────────────
-    base_z = hz - major_r
-    body_xml = (
-        f'<body name="hoop" pos="0 0 0">\n'
-        f'      <geom type="mesh" mesh="hoop_ring" '
-        f'pos="{hx:.4f} {hy:.4f} {hz:.4f}" material="hoop_metal" '
-        f'contype="0" conaffinity="0"/>\n'
-        f'      <geom type="cylinder" size="0.005" '
-        f'fromto="{hx:.4f} {hy:.4f} 0  {hx:.4f} {hy:.4f} {base_z:.4f}" '
-        f'rgba="0.55 0.55 0.55 1" contype="0" conaffinity="0"/>\n'
-        f'      <!-- Invisible cylinder along the hoop normal (+x) — '
-        f'non-colliding;\n'
-        f'           acts purely as a geometric query target for '
-        f'mj_geomDistance.  rgba alpha=0\n'
-        f'           keeps it out of every render; bump alpha to e.g. '
-        f'0.08 for debugging. -->\n'
-        f'      <geom name="hoop_score_tube" type="cylinder" '
-        f'size="{major_r:.4f} {HOOP_SCORE_TUBE_HALF_LEN:.4f}" '
-        f'pos="{hx:.4f} {hy:.4f} {hz:.4f}" euler="0 1.5708 0" '
-        f'contype="0" conaffinity="0" rgba="0.1 1.0 0.3 0"/>\n'
-        f'    </body>'
-    )
-
-    return SceneFragment(assets=(mesh_asset,), worldbody=(body_xml,))
-
-
-def _arena_wall_fragment(radius: float, height: float) -> SceneFragment:
-    """The closed thin-shell cylindrical arena wall (translucent glass)."""
-    v, n, f = _arena_wall_mesh_data(radius, height, thickness=0.016, n=64)
-    mesh_asset = (
-        f'<mesh name="arena_wall" vertex="{v}" normal="{n}" face="{f}"/>\n'
-        f'    <material name="arena_glass" rgba="0.6 0.85 1.0 0.35" '
-        f'specular="0.3" shininess="0.5"/>'
-    )
-    body_xml = (
-        '<body name="arena" pos="0 0 0">\n'
-        '      <geom type="mesh" mesh="arena_wall" material="arena_glass" '
-        'contype="0" conaffinity="0"/>\n'
-        '    </body>'
-    )
-    return SceneFragment(assets=(mesh_asset,), worldbody=(body_xml,))
-
-
-def _markers_fragment(markers: list[tuple] | None) -> SceneFragment:
-    """Optional debug spheres baked into the scene at construction time."""
-    if not markers:
-        return SceneFragment()
-    return SceneFragment(worldbody=(_markers_xml(markers),))
-
+# ── scene composition shim ────────────────────────────────────────────────────
+# Thin wrapper around fragment factories from core.drone.cf2x and
+# envs.quidditch.scene.  Will be dissolved in commit 4 when Quadrotor becomes
+# a per-drone view and callers (env, demos) construct fragments directly.
 
 def _build_scene_xml(
     hoop_center: tuple[float, float, float] = (2.0, 0.0, 2.0),
     hoop_radius: float = 0.25,           # ring major radius (= HOOP_DIAMETER / 2)
     arena_radius: float = 3.0,
+    arena_height: float = 4.5,
     markers: list[tuple] | None = None,
     camera: dict | None = None,
     include_hoop: bool = True,
     include_arena_wall: bool = True,
 ) -> str:
     """Compose the Quidditch scene MJCF from per-component fragments."""
-    fragments: list[SceneFragment] = [_drone_body_fragment()]
+    # Imported here (function body) rather than at module top to keep the
+    # core→envs forward dependency local to this transitional shim.  Commit
+    # 4 dissolves the shim and the import goes with it.
+    from envs.quidditch.scene import hoop_fragment, arena_wall_fragment
+
+    fragments: list[SceneFragment] = [cf2x_fragment(prefix="drone")]
     if include_hoop:
-        fragments.append(_hoop_fragment(hoop_center, hoop_radius))
+        fragments.append(hoop_fragment(
+            prefix="hoop",
+            center=hoop_center,
+            outward_normal=(1.0, 0.0, 0.0),
+            radius=hoop_radius,
+        ))
     if include_arena_wall:
-        fragments.append(_arena_wall_fragment(arena_radius, 4.5))
-    fragments.append(_markers_fragment(markers))
+        fragments.append(arena_wall_fragment(arena_radius, arena_height))
+    if markers:
+        fragments.append(SceneFragment(worldbody=(_markers_xml(markers),)))
 
     opts = WorldOptions(
         name="quidditch",
