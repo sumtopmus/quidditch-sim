@@ -7,8 +7,10 @@ Game rules (Phase 1 milestone):
     and facing the arena center.
   - Drone starts at a random position on the ground within the arena (randomise_start=True)
     or fixed at the arena center (randomise_start=False).
-  - Score: drone crosses the hoop plane from the inside (arena-center side)
-    to the outside while its y/z position is within the hoop aperture.
+  - Score: drone enters the hoop's scoring trigger volume (a thin cylinder
+    along the hoop normal, defined in MJCF — see core.quadrotor) from the
+    arena-center side and exits on the outside side.  Detection comes from
+    mjData.contact via Quadrotor.drone_in_hoop, not Python-side geometry.
   - Episode ends on score, crash, out-of-bounds, or 2-minute timeout.
 
 Observation (16 floats):
@@ -51,11 +53,11 @@ from core.quadrotor import Quadrotor
 
 ARENA_RADIUS: float = 3.0  # m (6 m diameter)
 
-# Hoop geometry: vertical ring at x=2, y=0, z=2.
+# Hoop geometry: vertical ring at x=2, y=0, z=2.  Aperture / scoring volume
+# size is defined in MJCF (core.quadrotor) — the env only needs the centre and
+# normal for the obs vector and entry-side check.
 HOOP_CENTER = np.array([2.0, 0.0, 2.0], dtype=np.float64)
 HOOP_OUTWARD_NORMAL = np.array([1.0, 0.0, 0.0], dtype=np.float64)
-HOOP_DIAMETER: float = 0.5  # m
-HOOP_RADIUS: float = HOOP_DIAMETER / 2.0
 
 # Drone initial state — used when randomise_start=False
 DRONE_START_POS = np.array([[0.0, 0.0, 0.0]], dtype=np.float64)
@@ -73,9 +75,6 @@ SCORE_REWARD: float = 10.0
 CRASH_PENALTY: float = -20.0
 DIST_REWARD_SCALE: float = 0.01
 TAKEOFF_GRACE_STEPS: int = 30
-
-# Two-phase scoring: drone must travel this far past the hoop plane to confirm
-HOOP_CROSSING_MARGIN: float = 0.1  # m
 
 # Camera / video parameters (used by VideoRecorderCallback)
 VIDEO_WIDTH: int  = 640
@@ -114,6 +113,7 @@ class QuidditchSimpleEnv(gym.Env):
         self._max_steps: int = 0
         self._prev_signed_dist: float = 0.0
         self._crossing_started: bool = False
+        self._enter_signed_dist: float = 0.0  # signed_dist when drone entered the score volume
         self._takeoff_grace: int = 0
 
     # -----------------------------------------------------------------------
@@ -157,6 +157,7 @@ class QuidditchSimpleEnv(gym.Env):
         self._step_count = 0
         self._takeoff_grace = TAKEOFF_GRACE_STEPS
         self._crossing_started = False
+        self._enter_signed_dist = 0.0
         drone_pos = self._drone_pos()
         self._prev_signed_dist = self._signed_dist(drone_pos)
 
@@ -182,7 +183,7 @@ class QuidditchSimpleEnv(gym.Env):
         drone_pos = self._drone_pos()
         curr_signed_dist = self._signed_dist(drone_pos)
 
-        scored = self._detect_score(drone_pos, curr_signed_dist)
+        scored = self._detect_score(self._q.drone_in_hoop, curr_signed_dist)
         self._prev_signed_dist = curr_signed_dist
 
         out_of_bounds = float(np.linalg.norm(drone_pos[:2])) > ARENA_RADIUS
@@ -253,26 +254,28 @@ class QuidditchSimpleEnv(gym.Env):
     def _signed_dist(pos: np.ndarray) -> float:
         return float(np.dot(pos - HOOP_CENTER, HOOP_OUTWARD_NORMAL))
 
-    def _detect_score(self, drone_pos: np.ndarray, curr_signed_dist: float) -> bool:
+    def _detect_score(self, in_hoop: bool, curr_signed_dist: float) -> bool:
+        """Score event = drone entered the trigger tube from the inside (-x)
+        and just exited it on the outside (+x).
+
+        The trigger tube is a thin cylinder defined in MJCF, centred on the
+        hoop along its outward normal.  `in_hoop` comes from
+        Quadrotor.drone_in_hoop (a contact-pair check on mjData.contact).
+        """
+        if in_hoop:
+            if not self._crossing_started:
+                # Just entered — record which side we came from.  prev_signed_dist
+                # is the position one step ago, before we entered the volume.
+                self._crossing_started = True
+                self._enter_signed_dist = self._prev_signed_dist
+            return False
+
         if not self._crossing_started:
-            if self._prev_signed_dist < 0.0 and curr_signed_dist >= 0.0:
-                radial = np.sqrt(
-                    (drone_pos[1] - HOOP_CENTER[1]) ** 2
-                    + (drone_pos[2] - HOOP_CENTER[2]) ** 2
-                )
-                if radial <= HOOP_RADIUS:
-                    self._crossing_started = True
             return False
 
-        if curr_signed_dist < 0.0:
-            self._crossing_started = False
-            return False
-
-        if curr_signed_dist >= HOOP_CROSSING_MARGIN:
-            self._crossing_started = False
-            return True
-
-        return False
+        # Just exited the trigger volume.
+        self._crossing_started = False
+        return self._enter_signed_dist < 0.0 and curr_signed_dist > 0.0
 
     def _sample_start(self) -> tuple[np.ndarray, np.ndarray]:
         r = START_SAMPLE_RADIUS * float(np.sqrt(self.np_random.uniform(0.0, 1.0)))

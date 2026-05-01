@@ -33,7 +33,7 @@ from stable_baselines3.common.env_checker import check_env
 from envs.quidditch_simple_env import (
     QuidditchSimpleEnv,
     HOOP_CENTER,
-    HOOP_RADIUS,
+    HOOP_OUTWARD_NORMAL,
     ARENA_RADIUS,
 )
 
@@ -82,20 +82,34 @@ def run_zero_policy_episode(render_mode: str | None = None) -> None:
 
 
 def run_scripted_score_episode(render_mode: str | None = None) -> None:
-    """Fly directly toward the hoop center via position setpoint commands."""
+    """Two-phase scripted fly-through: climb to hoop altitude at the arena
+    centre first, then push past the hoop along its outward normal.  Aiming
+    directly at HOOP_CENTER is unreliable under the MuJoCo controller — the
+    z setpoint scale (0.1) lags the xy scale (0.2), so the drone arrives at
+    the hoop plane still below the aperture and goes around it."""
     print("=== [3/3] Scripted fly-toward-hoop episode ===")
     env = QuidditchSimpleEnv(render_mode=render_mode, randomise_start=False)
     obs, _ = env.reset()
 
+    approach_point = np.array([0.0, 0.0, float(HOOP_CENTER[2])], dtype=np.float64)
+    through_point  = HOOP_CENTER + 0.7 * HOOP_OUTWARD_NORMAL  # 0.7 m past the hoop
+    phase2 = False
+
     scored = False
     total_reward = 0.0
     for step in range(env._max_steps):
-        pos = obs[9:12]
+        pos = obs[9:12].astype(np.float64)
 
-        vec = HOOP_CENTER - pos.astype(np.float64)
-        dist = np.linalg.norm(vec)
+        # Switch to "push through" once we've climbed to hoop altitude near origin.
+        if not phase2 and np.linalg.norm(pos - approach_point) < 0.3:
+            phase2 = True
+            print(f"  [phase 2] reached approach point at step {step} — pushing through hoop")
 
-        if dist < 0.01:
+        target = through_point if phase2 else approach_point
+        vec = target - pos
+        dist = float(np.linalg.norm(HOOP_CENTER - pos))
+
+        if np.linalg.norm(vec) < 0.01:
             action = np.zeros(4, dtype=np.float32)
         else:
             action = np.array([

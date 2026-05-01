@@ -122,6 +122,15 @@ _DT_PHYSICS: float = 1.0 / PHYSICS_HZ          # 0.004167 s
 _DT_CONTROL: float = 1.0 / CONTROL_HZ          # 0.008333 s
 _PHYS_PER_CTRL: int = PHYSICS_HZ // CONTROL_HZ  # 2
 
+# ── scoring trigger volume ───────────────────────────────────────────────────
+# Thin cylinder along the hoop's outward normal.  Both the tube and the
+# drone's probe geom are non-colliding (contype=0 conaffinity=0); we detect
+# overlap with mj_geomDistance() in Quadrotor.drone_in_hoop instead of going
+# through MuJoCo's contact solver.  This avoids the residual contact force
+# that solimp="0 0 ..." doesn't quite eliminate (a 27g drone gets pinned at
+# the tube's -x face by ~0.1 N of leftover impedance).
+HOOP_SCORE_TUBE_HALF_LEN: float = 0.1  # ± m around the hoop plane
+
 
 class Quadrotor:
     """Single-drone MuJoCo quadrotor sim.  Mimics PyFlyt Aviary for mode 7.
@@ -190,6 +199,16 @@ class Quadrotor:
         self._pos_adr  = int(self._model.sensor_adr[
             mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_SENSOR, "framepos")
         ])
+
+        # Scoring geom IDs for mj_geomDistance().  None when include_hoop=False.
+        g_probe = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_GEOM, "drone_probe")
+        g_tube  = mujoco.mj_name2id(self._model, mujoco.mjtObj.mjOBJ_GEOM, "hoop_score_tube")
+        self._score_geoms: tuple[int, int] | None = (
+            (g_probe, g_tube) if (g_probe >= 0 and g_tube >= 0) else None
+        )
+        # Reusable output buffer for mj_geomDistance(fromto[6]).  Allocated once
+        # so the per-step query is allocation-free.
+        self._geom_dist_fromto = np.zeros(6, dtype=np.float64)
 
         # Flight controller (mode 7 only)
         self._controller = Mode7Controller(_DT_CONTROL)
@@ -323,6 +342,27 @@ class Quadrotor:
     def step_period(self) -> float:
         """Duration of one env step in seconds (= 1 / CONTROL_HZ)."""
         return _DT_CONTROL
+
+    @property
+    def drone_in_hoop(self) -> bool:
+        """True iff the drone's probe geom currently overlaps the hoop scoring tube.
+
+        Uses mj_geomDistance(), a pure geometric query — no contact-solver
+        involvement and no force on either geom.  Both probe and tube are
+        marked contype=0/conaffinity=0, so MuJoCo never tries to resolve a
+        contact between them.  Returns False when the scene has no hoop
+        (include_hoop=False).
+        """
+        if self._score_geoms is None:
+            return False
+        g_probe, g_tube = self._score_geoms
+        # distmax=0 enables early-exit: returns 0 if separated, else the
+        # actual (negative) penetration distance.  We treat dist < 0 as
+        # "inside the tube".
+        dist = mujoco.mj_geomDistance(
+            self._model, self._data, g_probe, g_tube, 0.0, self._geom_dist_fromto
+        )
+        return bool(dist < 0.0)
 
     # ── rendering helpers ─────────────────────────────────────────────────────
 
@@ -466,6 +506,16 @@ def _build_scene_xml(
         + _pole_geom(hx, hy, hz, hoop_radius)
         if include_hoop else ""
     )
+    # Translucent green cylinder along the hoop normal (+x) — non-colliding;
+    # acts purely as a geometric query target for mj_geomDistance.
+    score_tube_xml = (
+        f'<geom name="hoop_score_tube" type="cylinder" '
+        f'size="{hoop_radius:.4f} {HOOP_SCORE_TUBE_HALF_LEN:.4f}" '
+        f'pos="{hx:.4f} {hy:.4f} {hz:.4f}" euler="0 1.5708 0" '
+        f'contype="0" conaffinity="0" '
+        f'rgba="0.1 1.0 0.3 0.08"/>'
+        if include_hoop else ""
+    )
     arena_xml = (
         _arena_wall_geoms(arena_radius, 4.5, 32, "0.6 0.85 1.0 0.35")
         if include_arena_wall else ""
@@ -538,11 +588,17 @@ def _build_scene_xml(
             rgba="0.1 0.85 0.85 0.9" contype="0" conaffinity="0"/>
       <!-- IMU site for sensors -->
       <site name="imu" pos="0 0 0" size="0.001"/>
+      <!-- Position probe for hoop scoring.  Non-colliding (contype=0/0);
+           mj_geomDistance(drone_probe, hoop_score_tube) detects overlap
+           without involving the contact solver. -->
+      <geom name="drone_probe" type="sphere" size="0.012" pos="0 0 0"
+            contype="0" conaffinity="0" rgba="1 0 0 0"/>
     </body>
 
-    <!-- ── Hoop (32-segment torus approximation) ──────────────────────── -->
+    <!-- ── Hoop (32-segment torus approximation + scoring trigger volume) -->
     <body name="hoop" pos="0 0 0">
       {hoop_xml}
+      {score_tube_xml}
     </body>
 
     <!-- ── Arena boundary wall ────────────────────────────────────────── -->
