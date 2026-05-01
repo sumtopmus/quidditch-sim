@@ -427,24 +427,68 @@ def _quat_to_euler_zyx(q: np.ndarray) -> np.ndarray:
 
 # ── MJCF scene generation ─────────────────────────────────────────────────────
 
-def _hoop_geoms(
-    cx: float, cy: float, cz: float,
-    ring_r: float, tube_r: float,
-    n: int, rgba: str,
-) -> str:
-    """32 cylinder segments approximating a torus in the YZ plane at x=cx."""
-    lines = []
-    for i in range(n):
-        t1 = 2.0 * math.pi * i / n
-        t2 = 2.0 * math.pi * (i + 1) / n
-        y1 = cy + ring_r * math.cos(t1);  z1 = cz + ring_r * math.sin(t1)
-        y2 = cy + ring_r * math.cos(t2);  z2 = cz + ring_r * math.sin(t2)
-        lines.append(
-            f'<geom type="cylinder" size="{tube_r}" '
-            f'fromto="{cx:.4f} {y1:.4f} {z1:.4f}  {cx:.4f} {y2:.4f} {z2:.4f}" '
-            f'rgba="{rgba}" contype="0" conaffinity="0"/>'
-        )
-    return "\n      ".join(lines)
+def _torus_mesh_data(
+    major_r: float,
+    minor_r: float,
+    n_major: int = 64,
+    n_minor: int = 12,
+) -> tuple[str, str, str]:
+    """Generate inline-MJCF torus mesh data, centred at origin, axis = +x.
+
+    Parameterised as: ring lies in the YZ plane, tube cross-section in the
+    plane spanned by (radial direction in YZ, +x).
+
+    Returns (vertex_str, normal_str, face_str) — space-separated strings
+    suitable for ``<mesh vertex="..." normal="..." face="..."/>``.
+    """
+    verts: list[tuple[float, float, float]] = []
+    norms: list[tuple[float, float, float]] = []
+    for i in range(n_major):
+        theta = 2.0 * math.pi * i / n_major
+        ct, st = math.cos(theta), math.sin(theta)
+        for j in range(n_minor):
+            phi = 2.0 * math.pi * j / n_minor
+            cp, sp = math.cos(phi), math.sin(phi)
+            verts.append((
+                minor_r * sp,
+                ct * (major_r + minor_r * cp),
+                st * (major_r + minor_r * cp),
+            ))
+            norms.append((sp, ct * cp, st * cp))
+
+    faces: list[tuple[int, int, int]] = []
+    for i in range(n_major):
+        for j in range(n_minor):
+            v00 = i * n_minor + j
+            v01 = i * n_minor + (j + 1) % n_minor
+            v10 = ((i + 1) % n_major) * n_minor + j
+            v11 = ((i + 1) % n_major) * n_minor + (j + 1) % n_minor
+            faces.append((v00, v10, v11))
+            faces.append((v00, v11, v01))
+
+    vertex_str = " ".join(f"{x:.5f} {y:.5f} {z:.5f}" for x, y, z in verts)
+    normal_str = " ".join(f"{nx:.5f} {ny:.5f} {nz:.5f}" for nx, ny, nz in norms)
+    face_str   = " ".join(f"{a} {b} {c}" for a, b, c in faces)
+    return vertex_str, normal_str, face_str
+
+
+def _hoop_mesh_asset_xml(major_r: float, tube_r: float = 0.012) -> str:
+    """`<mesh>` + `<material>` block for the polished hoop ring."""
+    v, n, f = _torus_mesh_data(major_r, tube_r, n_major=64, n_minor=12)
+    return (
+        f'<mesh name="hoop_ring" vertex="{v}" normal="{n}" face="{f}"/>\n'
+        f'    <material name="hoop_metal" rgba="1.0 0.45 0.0 1" '
+        f'specular="0.5" shininess="0.5" reflectance="0.15"/>'
+    )
+
+
+def _hoop_geom_xml(cx: float, cy: float, cz: float) -> str:
+    """Single mesh geom referencing the hoop_ring mesh defined in <asset>."""
+    return (
+        f'<geom type="mesh" mesh="hoop_ring" '
+        f'pos="{cx:.4f} {cy:.4f} {cz:.4f}" material="hoop_metal" '
+        f'contype="0" conaffinity="0"/>'
+    )
 
 
 def _pole_geom(cx: float, cy: float, cz: float, ring_r: float) -> str:
@@ -502,18 +546,19 @@ def _build_scene_xml(
     """Return the complete MuJoCo XML for the Quidditch scene."""
     hx, hy, hz = hoop_center
     hoop_xml  = (
-        _hoop_geoms(hx, hy, hz, hoop_radius, 0.012, 32, "1.0 0.45 0.0 1.0") + "\n      "
-        + _pole_geom(hx, hy, hz, hoop_radius)
+        _hoop_geom_xml(hx, hy, hz) + "\n      " + _pole_geom(hx, hy, hz, hoop_radius)
         if include_hoop else ""
     )
-    # Translucent green cylinder along the hoop normal (+x) — non-colliding;
-    # acts purely as a geometric query target for mj_geomDistance.
+    hoop_assets_xml = _hoop_mesh_asset_xml(hoop_radius) if include_hoop else ""
+    # Invisible cylinder along the hoop normal (+x) — non-colliding; acts
+    # purely as a geometric query target for mj_geomDistance.  rgba alpha=0
+    # keeps it out of every render; bump alpha to e.g. 0.08 for debugging.
     score_tube_xml = (
         f'<geom name="hoop_score_tube" type="cylinder" '
         f'size="{hoop_radius:.4f} {HOOP_SCORE_TUBE_HALF_LEN:.4f}" '
         f'pos="{hx:.4f} {hy:.4f} {hz:.4f}" euler="0 1.5708 0" '
         f'contype="0" conaffinity="0" '
-        f'rgba="0.1 1.0 0.3 0.08"/>'
+        f'rgba="0.1 1.0 0.3 0"/>'
         if include_hoop else ""
     )
     arena_xml = (
@@ -544,6 +589,7 @@ def _build_scene_xml(
              width="300" height="300" mark="edge" markrgb="0.4 0.4 0.4"/>
     <material name="grid" texture="grid" texuniform="true"
               texrepeat="5 5" reflectance="0.08"/>
+    {hoop_assets_xml}
   </asset>
 
   <worldbody>
