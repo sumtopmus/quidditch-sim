@@ -10,7 +10,7 @@ scripted flight so you can watch the drone.
 
 Run:
     conda activate uav
-    cd quidditch-sim
+    cd repo
 
     # Headless — fast, no window (default):
     python scripts/check_env.py

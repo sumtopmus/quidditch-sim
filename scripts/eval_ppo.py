@@ -2,7 +2,7 @@
 
 Usage:
     conda activate uav
-    cd quidditch-sim
+    cd repo
 
     # Visual evaluation (PyBullet GUI) — 10 episodes:
     python eval_ppo.py --model runs/ppo_hoop_v1/best_model

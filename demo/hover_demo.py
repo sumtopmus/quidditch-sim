@@ -5,7 +5,7 @@ The drone should climb to 1 m and hold position indefinitely.
 
 Run:
     conda activate uav
-    cd quidditch-sim
+    cd repo
     python demo/hover_demo.py
 """
 

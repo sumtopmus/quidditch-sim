@@ -94,7 +94,6 @@ The per-step distance penalty provides a dense gradient toward the hoop. The +10
 ```bash
 # 1. Clone this repo
 git clone <this-repo-url>
-cd quidditch-sim
 
 # 2. Create the conda environment (installs PyBullet, PyFlyt, SB3, imageio, etc.)
 make install

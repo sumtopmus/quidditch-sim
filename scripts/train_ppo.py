@@ -2,7 +2,7 @@
 
 Usage:
     conda activate uav
-    cd quidditch-sim
+    cd repo
     python train_ppo.py                        # uses RUN_NAME=ppo_hoop
     python train_ppo.py --run-name ppo_hoop_v2
 
