@@ -1,0 +1,11 @@
+# Run info — written by train_ppo.py.  Not read by any script.
+
+[run]
+name    = "ppo_hoop_fixed_start"
+trial   = "20260430_224234"
+started = "2026-04-30T22:42:34"
+elapsed     = "in progress"
+finished    = "in progress"
+
+[best]
+# filled in after training completes
