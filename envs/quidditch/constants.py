@@ -1,6 +1,6 @@
 """Canonical Quidditch arena constants — single source of truth.
 
-Previously these were duplicated between envs/quidditch_simple_env.py and
+Previously these were duplicated between envs/quidditch/simple_env.py and
 core/quadrotor.py defaults.  Anything that needs to know "where is the hoop"
 or "how big is the arena" should import from here.
 """

@@ -53,7 +53,7 @@ from stable_baselines3.common.callbacks import (
     EvalCallback,
 )
 
-from envs.quidditch_simple_env import QuidditchSimpleEnv
+from envs.quidditch.simple_env import QuidditchSimpleEnv
 from callbacks import VideoRecorderCallback, ResumeProgressCallback
 
 

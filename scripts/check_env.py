@@ -30,7 +30,7 @@ import numpy as np
 
 from stable_baselines3.common.env_checker import check_env
 
-from envs.quidditch_simple_env import QuidditchSimpleEnv
+from envs.quidditch.simple_env import QuidditchSimpleEnv
 from envs.quidditch.constants import (
     ARENA_RADIUS,
     HOOP_CENTER,
