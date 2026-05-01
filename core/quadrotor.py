@@ -12,97 +12,31 @@ Provides the same interface used by QuidditchSimpleEnv:
 Physics: MuJoCo at 240 Hz; position-setpoint control at 120 Hz.
 The full scene (drone + hoop + arena) is built as a single MJCF string at
 construction time, so no external asset files are needed.
+
+The MJCF is now composed from SceneFragments (see core.mjcf) — each
+component (drone body, hoop, arena wall, markers) contributes a fragment
+that build_mjcf merges into the final document.  Future commits will move
+the per-component fragment factories out of this module into
+core/drone/cf2x.py and envs/quidditch/scene.py.
 """
 
 from __future__ import annotations
 
 import math
 import time
-from pathlib import Path
+
 import numpy as np
 import mujoco
 
 from core.position_controller import Mode7Controller
+from core.mjcf import SceneFragment, WorldOptions, build_mjcf, load_camera_config
+from core.mjcf.camera import _viewer_params
+from core.mjcf.meshes import (
+    _torus_mesh_data,
+    _arena_wall_mesh_data,
+    _markers_xml,
+)
 
-
-# ── camera config ────────────────────────────────────────────────────────────
-# Eye and lookat in world coords (metres).  Used for both the offscreen "fixed"
-# camera (videos) and the live viewer.  Override per-construction by passing
-# `camera={"eye": (...), "lookat": (...)}` to Quadrotor; otherwise we try
-# config/camera.toml and fall back to the hardcoded sideline view below.
-_FALLBACK_CAMERA: dict = {
-    "eye":    (2.9, -4.7, 2.9),
-    "lookat": (0.5,  0.0, 1.3),
-}
-
-
-def load_camera_config(path: str | Path | None = None) -> dict:
-    """Load {'eye': (x,y,z), 'lookat': (x,y,z)} from a TOML file.
-
-    Defaults to ``<repo>/config/camera.toml``.  Falls back to the hardcoded
-    sideline view if the file is missing or malformed.
-    """
-    import tomllib
-
-    if path is None:
-        path = Path(__file__).resolve().parent.parent / "config" / "camera.toml"
-    try:
-        with open(path, "rb") as f:
-            data = tomllib.load(f)
-        cam = data["camera"]
-        return {"eye": tuple(cam["eye"]), "lookat": tuple(cam["lookat"])}
-    except (FileNotFoundError, KeyError):
-        return dict(_FALLBACK_CAMERA)
-
-
-def _camera_xyaxes(eye: tuple, lookat: tuple) -> tuple[str, str]:
-    """Compute MJCF ``<camera>`` ``pos`` and ``xyaxes`` strings from eye+lookat.
-
-    Returns (pos_str, xyaxes_str).  Raises if the look direction is parallel
-    to world up (degenerate camera).
-    """
-    eye_a    = np.asarray(eye,    dtype=np.float64)
-    lookat_a = np.asarray(lookat, dtype=np.float64)
-    forward = lookat_a - eye_a
-    fnorm = float(np.linalg.norm(forward))
-    if fnorm < 1e-9:
-        raise ValueError(f"Degenerate camera: eye == lookat ({eye!r})")
-    forward /= fnorm
-
-    # MuJoCo camera frame: +X right, +Y up, camera looks along -Z (OpenGL).
-    # xaxis = right = cross(forward, up); yaxis = up_cam = cross(xaxis, forward).
-    cam_x = np.cross(forward, [0.0, 0.0, 1.0])
-    xnorm = float(np.linalg.norm(cam_x))
-    if xnorm < 1e-6:
-        raise ValueError(
-            f"Degenerate camera: look direction parallel to world up "
-            f"(eye={eye!r}, lookat={lookat!r}). Add a horizontal offset."
-        )
-    cam_x /= xnorm
-    cam_y = np.cross(cam_x, forward)  # already unit length
-
-    pos_str = f"{eye_a[0]:.4f} {eye_a[1]:.4f} {eye_a[2]:.4f}"
-    xyaxes_str = (
-        f"{cam_x[0]:.5f} {cam_x[1]:.5f} {cam_x[2]:.5f}  "
-        f"{cam_y[0]:.5f} {cam_y[1]:.5f} {cam_y[2]:.5f}"
-    )
-    return pos_str, xyaxes_str
-
-
-def _viewer_params(eye: tuple, lookat: tuple) -> tuple[float, float, float, np.ndarray]:
-    """Convert (eye, lookat) → MuJoCo viewer (azimuth°, elevation°, distance, lookat).
-
-    Matches the spherical convention used by ``mujoco.viewer``:
-        azimuth   = angle of look-direction in xy-plane, measured from +x CCW
-        elevation = arcsin of look-direction's z component (negative = looking down)
-    """
-    eye_a    = np.asarray(eye,    dtype=np.float64)
-    lookat_a = np.asarray(lookat, dtype=np.float64)
-    vec = eye_a - lookat_a                  # camera offset from lookat
-    distance = float(np.linalg.norm(vec))
-    azimuth = math.degrees(math.atan2(-vec[1], -vec[0]))
-    elevation = math.degrees(math.asin(-vec[2] / distance))
-    return azimuth, elevation, distance, lookat_a
 
 # ── cf2x physical constants (from cf2x.urdf + cf2x.yaml) ────────────────────
 MASS: float = 0.027         # kg
@@ -425,186 +359,128 @@ def _quat_to_euler_zyx(q: np.ndarray) -> np.ndarray:
     return np.array([roll, pitch, yaw], dtype=np.float64)
 
 
-# ── MJCF scene generation ─────────────────────────────────────────────────────
+# ── per-component fragment factories ──────────────────────────────────────────
+# These build the Quidditch scene piece by piece.  They live here for now —
+# commit 3 of the refactor will move them into core/drone/cf2x.py and
+# envs/quidditch/scene.py respectively.
 
-def _torus_mesh_data(
+def _drone_body_fragment() -> SceneFragment:
+    """The cf2x drone body + IMU site + score probe + sensors."""
+    body_xml = (
+        f'<body name="drone" pos="0 0 0.03">\n'
+        f'      <freejoint name="root"/>\n'
+        f'      <inertial mass="{MASS}" pos="0 0 0"\n'
+        f'                diaginertia="{IXX} {IYY} {IZZ}"/>\n'
+        f'      <!-- central frame -->\n'
+        f'      <geom type="box" size="0.026 0.026 0.009"\n'
+        f'            rgba="0.15 0.15 0.85 1" contype="0" conaffinity="0"/>\n'
+        f'      <!-- four diagonal arms -->\n'
+        f'      <geom type="capsule" size="0.0025"\n'
+        f'            fromto=" 0.028 -0.028 0   0 0 0"\n'
+        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
+        f'      <geom type="capsule" size="0.0025"\n'
+        f'            fromto="-0.028  0.028 0   0 0 0"\n'
+        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
+        f'      <geom type="capsule" size="0.0025"\n'
+        f'            fromto=" 0.028  0.028 0   0 0 0"\n'
+        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
+        f'      <geom type="capsule" size="0.0025"\n'
+        f'            fromto="-0.028 -0.028 0   0 0 0"\n'
+        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
+        f'      <!-- motor discs: yellow = CCW (m0,m1), cyan = CW (m2,m3) -->\n'
+        f'      <geom type="cylinder" size="0.013 0.003"\n'
+        f'            pos=" 0.028 -0.028 0.005"\n'
+        f'            rgba="0.95 0.85 0.1 0.9" contype="0" conaffinity="0"/>\n'
+        f'      <geom type="cylinder" size="0.013 0.003"\n'
+        f'            pos="-0.028  0.028 0.005"\n'
+        f'            rgba="0.95 0.85 0.1 0.9" contype="0" conaffinity="0"/>\n'
+        f'      <geom type="cylinder" size="0.013 0.003"\n'
+        f'            pos=" 0.028  0.028 0.005"\n'
+        f'            rgba="0.1 0.85 0.85 0.9" contype="0" conaffinity="0"/>\n'
+        f'      <geom type="cylinder" size="0.013 0.003"\n'
+        f'            pos="-0.028 -0.028 0.005"\n'
+        f'            rgba="0.1 0.85 0.85 0.9" contype="0" conaffinity="0"/>\n'
+        f'      <!-- IMU site for sensors -->\n'
+        f'      <site name="imu" pos="0 0 0" size="0.001"/>\n'
+        f'      <!-- Position probe for hoop scoring.  Non-colliding (contype=0/0);\n'
+        f'           mj_geomDistance(drone_probe, hoop_score_tube) detects overlap\n'
+        f'           without involving the contact solver. -->\n'
+        f'      <geom name="drone_probe" type="sphere" size="0.012" pos="0 0 0"\n'
+        f'            contype="0" conaffinity="0" rgba="1 0 0 0"/>\n'
+        f'    </body>'
+    )
+    sensors = (
+        '<gyro        name="gyro"        site="imu"/>',
+        '<velocimeter name="velocimeter" site="imu"/>',
+        '<framequat   name="framequat"   objtype="body" objname="drone"/>',
+        '<framepos    name="framepos"    objtype="body" objname="drone"/>',
+    )
+    return SceneFragment(worldbody=(body_xml,), sensors=sensors)
+
+
+def _hoop_fragment(
+    center: tuple[float, float, float],
     major_r: float,
-    minor_r: float,
-    n_major: int = 64,
-    n_minor: int = 12,
-) -> tuple[str, str, str]:
-    """Generate inline-MJCF torus mesh data, centred at origin, axis = +x.
+) -> SceneFragment:
+    """The hoop ring (mesh) + pole + invisible scoring tube."""
+    hx, hy, hz = center
 
-    Parameterised as: ring lies in the YZ plane, tube cross-section in the
-    plane spanned by (radial direction in YZ, +x).
-
-    Returns (vertex_str, normal_str, face_str) — space-separated strings
-    suitable for ``<mesh vertex="..." normal="..." face="..."/>``.
-    """
-    verts: list[tuple[float, float, float]] = []
-    norms: list[tuple[float, float, float]] = []
-    for i in range(n_major):
-        theta = 2.0 * math.pi * i / n_major
-        ct, st = math.cos(theta), math.sin(theta)
-        for j in range(n_minor):
-            phi = 2.0 * math.pi * j / n_minor
-            cp, sp = math.cos(phi), math.sin(phi)
-            verts.append((
-                minor_r * sp,
-                ct * (major_r + minor_r * cp),
-                st * (major_r + minor_r * cp),
-            ))
-            norms.append((sp, ct * cp, st * cp))
-
-    faces: list[tuple[int, int, int]] = []
-    for i in range(n_major):
-        for j in range(n_minor):
-            v00 = i * n_minor + j
-            v01 = i * n_minor + (j + 1) % n_minor
-            v10 = ((i + 1) % n_major) * n_minor + j
-            v11 = ((i + 1) % n_major) * n_minor + (j + 1) % n_minor
-            faces.append((v00, v10, v11))
-            faces.append((v00, v11, v01))
-
-    vertex_str = " ".join(f"{x:.5f} {y:.5f} {z:.5f}" for x, y, z in verts)
-    normal_str = " ".join(f"{nx:.5f} {ny:.5f} {nz:.5f}" for nx, ny, nz in norms)
-    face_str   = " ".join(f"{a} {b} {c}" for a, b, c in faces)
-    return vertex_str, normal_str, face_str
-
-
-def _hoop_mesh_asset_xml(major_r: float, tube_r: float = 0.012) -> str:
-    """`<mesh>` + `<material>` block for the polished hoop ring."""
-    v, n, f = _torus_mesh_data(major_r, tube_r, n_major=64, n_minor=12)
-    return (
+    # ── mesh + material asset ────────────────────────────────────────────
+    v, n, f = _torus_mesh_data(major_r, 0.012, n_major=64, n_minor=12)
+    mesh_asset = (
         f'<mesh name="hoop_ring" vertex="{v}" normal="{n}" face="{f}"/>\n'
         f'    <material name="hoop_metal" rgba="1.0 0.45 0.0 1" '
         f'specular="0.5" shininess="0.5" reflectance="0.15"/>'
     )
 
-
-def _hoop_geom_xml(cx: float, cy: float, cz: float) -> str:
-    """Single mesh geom referencing the hoop_ring mesh defined in <asset>."""
-    return (
-        f'<geom type="mesh" mesh="hoop_ring" '
-        f'pos="{cx:.4f} {cy:.4f} {cz:.4f}" material="hoop_metal" '
-        f'contype="0" conaffinity="0"/>'
+    # ── body: ring + pole + scoring tube ─────────────────────────────────
+    base_z = hz - major_r
+    body_xml = (
+        f'<body name="hoop" pos="0 0 0">\n'
+        f'      <geom type="mesh" mesh="hoop_ring" '
+        f'pos="{hx:.4f} {hy:.4f} {hz:.4f}" material="hoop_metal" '
+        f'contype="0" conaffinity="0"/>\n'
+        f'      <geom type="cylinder" size="0.005" '
+        f'fromto="{hx:.4f} {hy:.4f} 0  {hx:.4f} {hy:.4f} {base_z:.4f}" '
+        f'rgba="0.55 0.55 0.55 1" contype="0" conaffinity="0"/>\n'
+        f'      <!-- Invisible cylinder along the hoop normal (+x) — '
+        f'non-colliding;\n'
+        f'           acts purely as a geometric query target for '
+        f'mj_geomDistance.  rgba alpha=0\n'
+        f'           keeps it out of every render; bump alpha to e.g. '
+        f'0.08 for debugging. -->\n'
+        f'      <geom name="hoop_score_tube" type="cylinder" '
+        f'size="{major_r:.4f} {HOOP_SCORE_TUBE_HALF_LEN:.4f}" '
+        f'pos="{hx:.4f} {hy:.4f} {hz:.4f}" euler="0 1.5708 0" '
+        f'contype="0" conaffinity="0" rgba="0.1 1.0 0.3 0"/>\n'
+        f'    </body>'
     )
 
-
-def _pole_geom(cx: float, cy: float, cz: float, ring_r: float) -> str:
-    """Thin vertical cylinder from ground to the bottom of the hoop."""
-    base_z = cz - ring_r
-    return (
-        f'<geom type="cylinder" size="0.005" '
-        f'fromto="{cx:.4f} {cy:.4f} 0  {cx:.4f} {cy:.4f} {base_z:.4f}" '
-        f'rgba="0.55 0.55 0.55 1" contype="0" conaffinity="0"/>'
-    )
+    return SceneFragment(assets=(mesh_asset,), worldbody=(body_xml,))
 
 
-def _arena_wall_mesh_data(
-    radius: float,
-    height: float,
-    thickness: float = 0.016,
-    n: int = 64,
-) -> tuple[str, str, str]:
-    """Generate inline-MJCF mesh data for a closed thin-shell cylindrical wall.
-
-    The wall extends from z=0 to z=height with inner radius (radius - t/2)
-    and outer radius (radius + t/2).  Includes inner + outer surfaces and
-    top + bottom edge caps so the shell is closed and visible from any angle.
-
-    Returns (vertex_str, normal_str, face_str).
-    """
-    R_in  = radius - thickness / 2.0
-    R_out = radius + thickness / 2.0
-    H     = height
-
-    verts: list[tuple[float, float, float]] = []
-    norms: list[tuple[float, float, float]] = []
-
-    def add(v: tuple[float, float, float], nrm: tuple[float, float, float]) -> int:
-        idx = len(verts)
-        verts.append(v)
-        norms.append(nrm)
-        return idx
-
-    # Per-angle vertex indices for each of the four surfaces.  We duplicate
-    # vertices at shared positions (e.g. (R_out·cosθ, R_out·sinθ, 0) appears
-    # in both the outer surface and the bottom cap) so each surface gets its
-    # own vertex normal — required for crisp edges where surfaces meet.
-    outer_b: list[int] = []
-    outer_t: list[int] = []
-    inner_b: list[int] = []
-    inner_t: list[int] = []
-    top_o:   list[int] = []
-    top_i:   list[int] = []
-    bot_o:   list[int] = []
-    bot_i:   list[int] = []
-
-    for i in range(n):
-        theta = 2.0 * math.pi * i / n
-        ct, st = math.cos(theta), math.sin(theta)
-        outer_b.append(add((R_out * ct, R_out * st, 0.0), ( ct,  st, 0.0)))
-        outer_t.append(add((R_out * ct, R_out * st, H  ), ( ct,  st, 0.0)))
-        inner_b.append(add((R_in  * ct, R_in  * st, 0.0), (-ct, -st, 0.0)))
-        inner_t.append(add((R_in  * ct, R_in  * st, H  ), (-ct, -st, 0.0)))
-        top_o.append(  add((R_out * ct, R_out * st, H  ), (0.0, 0.0,  1.0)))
-        top_i.append(  add((R_in  * ct, R_in  * st, H  ), (0.0, 0.0,  1.0)))
-        bot_o.append(  add((R_out * ct, R_out * st, 0.0), (0.0, 0.0, -1.0)))
-        bot_i.append(  add((R_in  * ct, R_in  * st, 0.0), (0.0, 0.0, -1.0)))
-
-    faces: list[tuple[int, int, int]] = []
-    for i in range(n):
-        j = (i + 1) % n
-        # Outer surface: CCW from outside → normal radially outward.
-        faces.append((outer_b[i], outer_b[j], outer_t[j]))
-        faces.append((outer_b[i], outer_t[j], outer_t[i]))
-        # Inner surface: opposite winding → normal radially inward.
-        faces.append((inner_b[i], inner_t[j], inner_b[j]))
-        faces.append((inner_b[i], inner_t[i], inner_t[j]))
-        # Top cap: normal +z.
-        faces.append((top_o[i], top_o[j], top_i[j]))
-        faces.append((top_o[i], top_i[j], top_i[i]))
-        # Bottom cap: normal -z.
-        faces.append((bot_o[i], bot_i[j], bot_o[j]))
-        faces.append((bot_o[i], bot_i[i], bot_i[j]))
-
-    vertex_str = " ".join(f"{x:.5f} {y:.5f} {z:.5f}" for x, y, z in verts)
-    normal_str = " ".join(f"{nx:.5f} {ny:.5f} {nz:.5f}" for nx, ny, nz in norms)
-    face_str   = " ".join(f"{a} {b} {c}" for a, b, c in faces)
-    return vertex_str, normal_str, face_str
-
-
-def _arena_wall_mesh_asset_xml(radius: float, height: float) -> str:
-    """`<mesh>` + `<material>` block for the translucent arena wall."""
+def _arena_wall_fragment(radius: float, height: float) -> SceneFragment:
+    """The closed thin-shell cylindrical arena wall (translucent glass)."""
     v, n, f = _arena_wall_mesh_data(radius, height, thickness=0.016, n=64)
-    return (
+    mesh_asset = (
         f'<mesh name="arena_wall" vertex="{v}" normal="{n}" face="{f}"/>\n'
         f'    <material name="arena_glass" rgba="0.6 0.85 1.0 0.35" '
         f'specular="0.3" shininess="0.5"/>'
     )
-
-
-def _arena_wall_geom_xml() -> str:
-    """Single mesh geom referencing the arena_wall mesh defined in <asset>."""
-    return (
-        '<geom type="mesh" mesh="arena_wall" material="arena_glass" '
-        'contype="0" conaffinity="0"/>'
+    body_xml = (
+        '<body name="arena" pos="0 0 0">\n'
+        '      <geom type="mesh" mesh="arena_wall" material="arena_glass" '
+        'contype="0" conaffinity="0"/>\n'
+        '    </body>'
     )
+    return SceneFragment(assets=(mesh_asset,), worldbody=(body_xml,))
 
 
-def _markers_xml(markers: list[tuple] | None) -> str:
-    """Render a list of (pos, rgba_str, radius) tuples as non-colliding spheres."""
+def _markers_fragment(markers: list[tuple] | None) -> SceneFragment:
+    """Optional debug spheres baked into the scene at construction time."""
     if not markers:
-        return ""
-    lines = []
-    for (pos, rgba, radius) in markers:
-        x, y, z = float(pos[0]), float(pos[1]), float(pos[2])
-        lines.append(
-            f'<geom type="sphere" size="{radius}" pos="{x:.4f} {y:.4f} {z:.4f}" '
-            f'rgba="{rgba}" contype="0" conaffinity="0"/>'
-        )
-    return "\n      ".join(lines)
+        return SceneFragment()
+    return SceneFragment(worldbody=(_markers_xml(markers),))
 
 
 def _build_scene_xml(
@@ -616,129 +492,17 @@ def _build_scene_xml(
     include_hoop: bool = True,
     include_arena_wall: bool = True,
 ) -> str:
-    """Return the complete MuJoCo XML for the Quidditch scene."""
-    hx, hy, hz = hoop_center
-    hoop_xml  = (
-        _hoop_geom_xml(hx, hy, hz) + "\n      " + _pole_geom(hx, hy, hz, hoop_radius)
-        if include_hoop else ""
+    """Compose the Quidditch scene MJCF from per-component fragments."""
+    fragments: list[SceneFragment] = [_drone_body_fragment()]
+    if include_hoop:
+        fragments.append(_hoop_fragment(hoop_center, hoop_radius))
+    if include_arena_wall:
+        fragments.append(_arena_wall_fragment(arena_radius, 4.5))
+    fragments.append(_markers_fragment(markers))
+
+    opts = WorldOptions(
+        name="quidditch",
+        timestep=_DT_PHYSICS,
+        camera=camera,
     )
-    hoop_assets_xml = _hoop_mesh_asset_xml(hoop_radius) if include_hoop else ""
-    # Invisible cylinder along the hoop normal (+x) — non-colliding; acts
-    # purely as a geometric query target for mj_geomDistance.  rgba alpha=0
-    # keeps it out of every render; bump alpha to e.g. 0.08 for debugging.
-    score_tube_xml = (
-        f'<geom name="hoop_score_tube" type="cylinder" '
-        f'size="{hoop_radius:.4f} {HOOP_SCORE_TUBE_HALF_LEN:.4f}" '
-        f'pos="{hx:.4f} {hy:.4f} {hz:.4f}" euler="0 1.5708 0" '
-        f'contype="0" conaffinity="0" '
-        f'rgba="0.1 1.0 0.3 0"/>'
-        if include_hoop else ""
-    )
-    arena_xml = _arena_wall_geom_xml() if include_arena_wall else ""
-    arena_assets_xml = (
-        _arena_wall_mesh_asset_xml(arena_radius, 4.5) if include_arena_wall else ""
-    )
-    marker_xml = _markers_xml(markers)
-
-    cam = camera if camera is not None else _FALLBACK_CAMERA
-    cam_pos, cam_xyaxes = _camera_xyaxes(cam["eye"], cam["lookat"])
-
-    return f"""
-<mujoco model="quidditch">
-  <compiler angle="radian" autolimits="true"/>
-  <option gravity="0 0 -9.81" timestep="{_DT_PHYSICS:.8f}"/>
-
-  <visual>
-    <headlight ambient="0.5 0.5 0.5" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1"/>
-    <global offwidth="1920" offheight="1080"/>
-    <quality offsamples="8" shadowsize="4096"/>
-  </visual>
-
-  <asset>
-    <texture type="skybox" builtin="gradient"
-             rgb1="0.4 0.6 0.8" rgb2="0.05 0.05 0.12"
-             width="512" height="3072"/>
-    <texture type="2d" name="grid" builtin="checker"
-             rgb1="0.28 0.32 0.36" rgb2="0.20 0.24 0.28"
-             width="300" height="300" mark="edge" markrgb="0.4 0.4 0.4"/>
-    <material name="grid" texture="grid" texuniform="true"
-              texrepeat="5 5" reflectance="0.08"/>
-    {hoop_assets_xml}
-    {arena_assets_xml}
-  </asset>
-
-  <worldbody>
-    <light name="sun"  pos="0 0 8"  dir="0 0 -1"  diffuse="0.6 0.6 0.6" specular="0.1 0.1 0.1"/>
-    <light name="fill" pos="-4 4 5" dir="1 -1 -1"  diffuse="0.2 0.2 0.2" specular="0 0 0"/>
-    <geom name="floor" type="plane" size="6 6 0.05"
-          material="grid" contype="1" conaffinity="1"/>
-
-    <!-- ── Quadrotor (cf2x) ───────────────────────────────────────────── -->
-    <body name="drone" pos="0 0 0.03">
-      <freejoint name="root"/>
-      <inertial mass="{MASS}" pos="0 0 0"
-                diaginertia="{IXX} {IYY} {IZZ}"/>
-      <!-- central frame -->
-      <geom type="box" size="0.026 0.026 0.009"
-            rgba="0.15 0.15 0.85 1" contype="0" conaffinity="0"/>
-      <!-- four diagonal arms -->
-      <geom type="capsule" size="0.0025"
-            fromto=" 0.028 -0.028 0   0 0 0"
-            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>
-      <geom type="capsule" size="0.0025"
-            fromto="-0.028  0.028 0   0 0 0"
-            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>
-      <geom type="capsule" size="0.0025"
-            fromto=" 0.028  0.028 0   0 0 0"
-            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>
-      <geom type="capsule" size="0.0025"
-            fromto="-0.028 -0.028 0   0 0 0"
-            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>
-      <!-- motor discs: yellow = CCW (m0,m1), cyan = CW (m2,m3) -->
-      <geom type="cylinder" size="0.013 0.003"
-            pos=" 0.028 -0.028 0.005"
-            rgba="0.95 0.85 0.1 0.9" contype="0" conaffinity="0"/>
-      <geom type="cylinder" size="0.013 0.003"
-            pos="-0.028  0.028 0.005"
-            rgba="0.95 0.85 0.1 0.9" contype="0" conaffinity="0"/>
-      <geom type="cylinder" size="0.013 0.003"
-            pos=" 0.028  0.028 0.005"
-            rgba="0.1 0.85 0.85 0.9" contype="0" conaffinity="0"/>
-      <geom type="cylinder" size="0.013 0.003"
-            pos="-0.028 -0.028 0.005"
-            rgba="0.1 0.85 0.85 0.9" contype="0" conaffinity="0"/>
-      <!-- IMU site for sensors -->
-      <site name="imu" pos="0 0 0" size="0.001"/>
-      <!-- Position probe for hoop scoring.  Non-colliding (contype=0/0);
-           mj_geomDistance(drone_probe, hoop_score_tube) detects overlap
-           without involving the contact solver. -->
-      <geom name="drone_probe" type="sphere" size="0.012" pos="0 0 0"
-            contype="0" conaffinity="0" rgba="1 0 0 0"/>
-    </body>
-
-    <!-- ── Hoop (32-segment torus approximation + scoring trigger volume) -->
-    <body name="hoop" pos="0 0 0">
-      {hoop_xml}
-      {score_tube_xml}
-    </body>
-
-    <!-- ── Arena boundary wall ────────────────────────────────────────── -->
-    <body name="arena" pos="0 0 0">
-      {arena_xml}
-    </body>
-
-    <!-- ── Optional markers (waypoints, debug spheres, …) ─────────────── -->
-    {marker_xml}
-
-    <!-- Fixed camera (config/camera.toml): eye={cam["eye"]} looking at {cam["lookat"]} -->
-    <camera name="fixed" pos="{cam_pos}" xyaxes="{cam_xyaxes}"/>
-  </worldbody>
-
-  <sensor>
-    <gyro        name="gyro"        site="imu"/>
-    <velocimeter name="velocimeter" site="imu"/>
-    <framequat   name="framequat"   objtype="body" objname="drone"/>
-    <framepos    name="framepos"    objtype="body" objname="drone"/>
-  </sensor>
-</mujoco>
-"""
+    return build_mjcf(opts, fragments)
