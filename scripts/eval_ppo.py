@@ -129,8 +129,6 @@ def main() -> None:
             f"{status}"
         )
 
-    env.close()
-
     # ---- aggregate stats ----
     n = len(results)
     score_rate = sum(r["scored"] for r in results) / n * 100
@@ -152,6 +150,10 @@ def main() -> None:
         print(f"  Steps/score  : {mean_steps_to_score:.0f}  "
               f"({mean_steps_to_score * 0.05:.1f} s at 20 Hz)")
     print("=" * 50)
+
+    if not args.no_render and env._quad is not None:
+        env._quad.idle()
+    env.close()
 
 
 if __name__ == "__main__":

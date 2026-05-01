@@ -40,5 +40,6 @@ for i in range(n_steps):
         print(f"  t={i/CONTROL_HZ:4.1f}s  pos=({pos[0]:+.3f}, {pos[1]:+.3f}, {pos[2]:+.3f})")
     time.sleep(quad.step_period)  # pace to roughly real-time
 
+quad.idle()
 quad.disconnect()
 print("Done.")

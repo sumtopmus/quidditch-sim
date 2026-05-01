@@ -95,6 +95,7 @@ def main() -> None:
     print(f"[done] hovering {FINAL_HOVER_SECONDS}s before closing")
     fly_to(quad, WAYPOINTS[-1], yaw=0.0, seconds=FINAL_HOVER_SECONDS)
 
+    quad.idle()
     quad.disconnect()
 
 

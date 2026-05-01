@@ -17,6 +17,7 @@ construction time, so no external asset files are needed.
 from __future__ import annotations
 
 import math
+import time
 from pathlib import Path
 import numpy as np
 import mujoco
@@ -275,6 +276,30 @@ class Quadrotor:
         lin_pos = sd[self._pos_adr   : self._pos_adr   + 3].copy()
         ang_pos = _quat_to_euler_zyx(quat)
         return np.stack([ang_vel, ang_pos, lin_vel, lin_pos], axis=0)
+
+    def idle(self, active: bool = False) -> None:
+        """Block until the user closes the viewer window.
+
+        Lets you keep orbiting/panning the camera after a script's flight is
+        finished.  No-op when running headless.
+
+        Args:
+            active: If True, keep stepping the controller against the last
+                setpoint so the drone holds position.  If False (default),
+                freeze physics and hold the last frame.
+        """
+        if self._viewer is None or not self._viewer.is_running():
+            return
+
+        mode = "hovering" if active else "frozen"
+        print(f"[idle] viewer open ({mode}) — close the window to exit.")
+        if active:
+            while self._viewer.is_running():
+                self.step()
+                time.sleep(self.step_period)
+        else:
+            while self._viewer.is_running():
+                time.sleep(0.05)
 
     def disconnect(self) -> None:
         if self._viewer is not None:
