@@ -15,8 +15,8 @@ MODELS_DIR := models
 #   TRIAL= given on CLI          → runs/$(RUN_NAME)/$(TRIAL)
 #   RUN_NAME= given on CLI only  → latest trial inside that run
 #   nothing given                → latest trial across all runs
-_LATEST_IN_RUN  = $(shell ls -d $(RUNS_DIR)/$(RUN_NAME)/* 2>/dev/null | sort -t/ -k3 | tail -1)
-_LATEST_OVERALL = $(shell ls -d $(RUNS_DIR)/*/* 2>/dev/null | sort -t/ -k3 | tail -1)
+_LATEST_IN_RUN  = $(shell find $(RUNS_DIR)/$(RUN_NAME) -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -t/ -k3 | tail -1)
+_LATEST_OVERALL = $(shell find $(RUNS_DIR) -mindepth 2 -maxdepth 2 -type d 2>/dev/null | sort -t/ -k3 | tail -1)
 _TRIAL_DIR      = $(strip $(if $(TRIAL),\
                     $(RUNS_DIR)/$(RUN_NAME)/$(TRIAL),\
                     $(if $(filter command line,$(origin RUN_NAME)),\
