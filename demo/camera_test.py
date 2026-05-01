@@ -8,7 +8,7 @@ checkpoint videos too.
 
 Output:
     runs/camera_test/hover_camera_test.mp4   ← full hover video
-    runs/camera_test/first_frame.png         ← still preview (faster to inspect)
+    runs/camera_test/last_frame.png          ← still preview (faster to inspect)
 
 Run:  make camera-test    (or:  python demo/camera_test.py)
 """
@@ -35,7 +35,7 @@ from envs.quidditch.constants import (
 
 
 VIDEO_W, VIDEO_H = 960, 540
-FPS = 30
+FPS = 120
 OUT_DIR = Path(__file__).resolve().parents[1] / "runs" / "camera_test"
 
 
@@ -72,13 +72,13 @@ def main() -> None:
     quad.disconnect()
 
     mp4 = OUT_DIR / "hover_camera_test.mp4"
-    png = OUT_DIR / "first_frame.png"
+    png = OUT_DIR / "last_frame.png"
     with imageio.get_writer(str(mp4), fps=FPS, macro_block_size=None) as w:
         for f in frames:
-            w.append_data(f)
-    imageio.imwrite(str(png), frames[0])
+            w.append_data(f)  # type: ignore[attr-defined]
+    imageio.imwrite(str(png), frames[-1])
     print(f"\nWrote {len(frames)} frames @ {FPS} fps -> {mp4}")
-    print(f"First-frame preview                  -> {png}")
+    print(f"Last-frame preview                   -> {png}")
 
 
 if __name__ == "__main__":
