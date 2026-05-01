@@ -1,13 +1,14 @@
-"""Render the waypoint flight through the *fixed* camera and write an mp4.
+"""Render the hover demo through the *fixed* camera and write an mp4.
 
 Use this to iterate on config/camera.toml — edit the camera position/lookat,
 re-run `make camera-test`, watch the result.  This is what the
-VideoRecorderCallback sees during training (same MJCF "fixed" camera), so
-getting the angle right here gets it right for checkpoint videos too.
+VideoRecorderCallback sees during training (same MJCF "fixed" camera in the
+Quidditch arena), so getting the angle right here gets it right for
+checkpoint videos too.
 
 Output:
-    runs/camera_test/waypoint_camera_test.mp4   ← full flight video
-    runs/camera_test/first_frame.png            ← still preview (faster to inspect)
+    runs/camera_test/hover_camera_test.mp4   ← full hover video
+    runs/camera_test/first_frame.png         ← still preview (faster to inspect)
 
 Run:  make camera-test    (or:  python demo/camera_test.py)
 """
@@ -22,37 +23,20 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 import numpy as np
 
 from core.quadrotor import Quadrotor, load_camera_config
-from demo.waypoint_demo import (
-    WAYPOINTS,
-    SETTLE_SECONDS,
-    SECONDS_PER_WAYPOINT,
-    FINAL_HOVER_SECONDS,
-    START_POS,
-    START_ORN,
+from demo.hover_demo import HOVER_SECONDS, START_POS, START_ORN, SETPOINT
+from envs.quidditch.scene import hoop_fragment, arena_wall_fragment
+from envs.quidditch.constants import (
+    ARENA_RADIUS,
+    ARENA_WALL_HEIGHT,
+    HOOP_CENTER,
+    HOOP_OUTWARD_NORMAL,
+    HOOP_RADIUS,
 )
 
 
 VIDEO_W, VIDEO_H = 960, 540
 FPS = 30
 OUT_DIR = Path(__file__).resolve().parents[1] / "runs" / "camera_test"
-
-
-def fly_record(
-    quad: Quadrotor,
-    wp: np.ndarray,
-    yaw: float,
-    seconds: float,
-    frames: list[np.ndarray],
-    every: int,
-) -> None:
-    """Hold a setpoint for `seconds` of sim time, capturing every `every`-th step."""
-    setpoint = np.array([wp[0], wp[1], yaw, wp[2]], dtype=np.float32)
-    quad.set_setpoint(0, setpoint)
-    steps = int(seconds / quad.step_period)
-    for i in range(steps):
-        quad.step()
-        if i % every == 0:
-            frames.append(quad.render_frame(VIDEO_W, VIDEO_H))
 
 
 def main() -> None:
@@ -62,39 +46,32 @@ def main() -> None:
     cam = load_camera_config()
     print(f"[camera] eye={cam['eye']}  lookat={cam['lookat']}")
 
-    markers = [
-        ((float(wp[0]), float(wp[1]), float(wp[2])), "0.4 0.7 1.0 0.35", 0.15)
-        for wp in WAYPOINTS
-    ]
-
-    quad = Quadrotor(
+    quad = Quadrotor.standalone(
         start_pos=START_POS,
         start_orn=START_ORN,
         render=False,
-        markers=markers,
         camera=cam,
+        extra_fragments=[
+            arena_wall_fragment(ARENA_RADIUS, ARENA_WALL_HEIGHT),
+            hoop_fragment("hoop", HOOP_CENTER, HOOP_OUTWARD_NORMAL, HOOP_RADIUS),
+        ],
     )
     quad.set_mode(7)
+    quad.set_setpoint(SETPOINT)
 
     frames: list[np.ndarray] = []
     every = max(1, int((1.0 / FPS) / quad.step_period))
+    steps = int(HOVER_SECONDS / quad.step_period)
 
-    print(f"[settle] {SETTLE_SECONDS}s at start altitude")
-    fly_record(quad, np.array([0.0, 0.0, 1.5]), 0.0, SETTLE_SECONDS, frames, every)
-
-    for i, wp in enumerate(WAYPOINTS):
-        nxt = WAYPOINTS[i + 1] if i + 1 < len(WAYPOINTS) else wp
-        dx, dy = nxt[0] - wp[0], nxt[1] - wp[1]
-        yaw = float(np.arctan2(dy, dx)) if (dx or dy) else 0.0
-        print(f"[waypoint {i}] -> ({wp[0]:+.2f}, {wp[1]:+.2f}, {wp[2]:+.2f})")
-        fly_record(quad, wp, yaw, SECONDS_PER_WAYPOINT, frames, every)
-
-    print(f"[done] hovering {FINAL_HOVER_SECONDS}s")
-    fly_record(quad, WAYPOINTS[-1], 0.0, FINAL_HOVER_SECONDS, frames, every)
+    print(f"[hover] recording {HOVER_SECONDS:.0f}s at (0,0,1) in Quidditch arena")
+    for i in range(steps):
+        quad.step()
+        if i % every == 0:
+            frames.append(quad.render_frame(VIDEO_W, VIDEO_H))
 
     quad.disconnect()
 
-    mp4 = OUT_DIR / "waypoint_camera_test.mp4"
+    mp4 = OUT_DIR / "hover_camera_test.mp4"
     png = OUT_DIR / "first_frame.png"
     with imageio.get_writer(str(mp4), fps=FPS, macro_block_size=None) as w:
         for f in frames:

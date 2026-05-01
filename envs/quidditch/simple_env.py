@@ -7,8 +7,12 @@ Game rules (Phase 1 milestone):
     and facing the arena center.
   - Drone starts at a random position on the ground within the arena (randomise_start=True)
     or fixed at the arena center (randomise_start=False).
-  - Score: drone crosses the hoop plane from the inside (arena-center side)
-    to the outside while its y/z position is within the hoop aperture.
+  - Score: drone enters the hoop's scoring trigger volume (a thin cylinder
+    along the hoop normal, defined in MJCF — see envs.quidditch.scene) from
+    the arena-center side and exits on the outside side.  Detection comes
+    from envs.quidditch.scoring.GeomDistanceScorer (mj_geomDistance between
+    the drone's probe geom and the hoop's score tube), not Python-side
+    geometry.
   - Episode ends on score, crash, out-of-bounds, or 2-minute timeout.
 
 Observation (16 floats):
@@ -42,20 +46,27 @@ import numpy as np
 import gymnasium as gym
 from gymnasium import spaces
 
+from core.world import World
 from core.quadrotor import Quadrotor
+from core.drone.cf2x import cf2x_assets, cf2x_fragment
+from envs.quidditch.scene import hoop_fragment, arena_wall_fragment
+from envs.quidditch.scoring import GeomDistanceScorer
+from envs.quidditch.constants import (
+    ARENA_RADIUS,
+    ARENA_WALL_HEIGHT,
+    HOOP_CENTER,
+    HOOP_OUTWARD_NORMAL,
+    HOOP_RADIUS,
+)
 
 
 # ---------------------------------------------------------------------------
 # Environment constants
 # ---------------------------------------------------------------------------
-
-ARENA_RADIUS: float = 3.0  # m (6 m diameter)
-
-# Hoop geometry: vertical ring at x=2, y=0, z=2.
-HOOP_CENTER = np.array([2.0, 0.0, 2.0], dtype=np.float64)
-HOOP_OUTWARD_NORMAL = np.array([1.0, 0.0, 0.0], dtype=np.float64)
-HOOP_DIAMETER: float = 0.5  # m
-HOOP_RADIUS: float = HOOP_DIAMETER / 2.0
+# Scene geometry (ARENA_RADIUS, HOOP_CENTER, HOOP_OUTWARD_NORMAL) is imported
+# from envs.quidditch.constants — single source of truth shared with the MJCF
+# scene builder.  The constants below are RL-specific (rewards, action scale,
+# episode timing) and stay local.
 
 # Drone initial state — used when randomise_start=False
 DRONE_START_POS = np.array([[0.0, 0.0, 0.0]], dtype=np.float64)
@@ -73,9 +84,6 @@ SCORE_REWARD: float = 10.0
 CRASH_PENALTY: float = -20.0
 DIST_REWARD_SCALE: float = 0.01
 TAKEOFF_GRACE_STEPS: int = 30
-
-# Two-phase scoring: drone must travel this far past the hoop plane to confirm
-HOOP_CROSSING_MARGIN: float = 0.1  # m
 
 # Camera / video parameters (used by VideoRecorderCallback)
 VIDEO_WIDTH: int  = 640
@@ -110,12 +118,15 @@ class QuidditchSimpleEnv(gym.Env):
         # 4-dim normalized action
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
 
+        self._world: World | None = None
         self._quad: Quadrotor | None = None
+        self._scorer: GeomDistanceScorer | None = None
         self._setpoint = np.zeros(4, dtype=np.float32)
         self._step_count: int = 0
         self._max_steps: int = 0
         self._prev_signed_dist: float = 0.0
         self._crossing_started: bool = False
+        self._enter_signed_dist: float = 0.0  # signed_dist when drone entered the score volume
         self._takeoff_grace: int = 0
 
     # -----------------------------------------------------------------------
@@ -136,29 +147,37 @@ class QuidditchSimpleEnv(gym.Env):
             else (DRONE_START_POS[0].copy(), DRONE_START_ORN[0].copy())
         )
 
-        if self._quad is None:
-            self._quad = Quadrotor(
-                start_pos=start_pos[np.newaxis],
-                start_orn=start_orn[np.newaxis],
+        if self._world is None:
+            fragments = [
+                cf2x_assets(),
+                cf2x_fragment(prefix="drone"),
+                arena_wall_fragment(ARENA_RADIUS, ARENA_WALL_HEIGHT),
+                hoop_fragment(
+                    "hoop", HOOP_CENTER, HOOP_OUTWARD_NORMAL, HOOP_RADIUS,
+                ),
+            ]
+            self._world = World(
+                fragments,
                 render=(self.render_mode == "human"),
                 seed=seed,
             )
-        else:
-            self._quad.start_pos = start_pos[np.newaxis].copy()
-            self._quad.start_orn = start_orn[np.newaxis].copy()
-            self._quad.reset()
+            self._quad = Quadrotor(self._world, prefix="drone")
+            self._scorer = GeomDistanceScorer(self._world, ["drone"], ["hoop"])
 
+        self._quad.set_start(start_pos[np.newaxis], start_orn[np.newaxis])
+        self._world.reset()
         self._quad.set_mode(7)
 
         self._setpoint = np.array(
             [start_pos[0], start_pos[1], start_orn[2], 0.1], dtype=np.float32
         )
-        self._quad.set_setpoint(0, self._setpoint)
+        self._quad.set_setpoint(self._setpoint)
 
         self._max_steps = int(self.episode_seconds / self._quad.step_period)
         self._step_count = 0
         self._takeoff_grace = TAKEOFF_GRACE_STEPS
         self._crossing_started = False
+        self._enter_signed_dist = 0.0
         drone_pos = self._drone_pos()
         self._prev_signed_dist = self._signed_dist(drone_pos)
 
@@ -177,14 +196,16 @@ class QuidditchSimpleEnv(gym.Env):
         self._setpoint[2] = (self._setpoint[2] + np.pi) % (2 * np.pi) - np.pi
         self._setpoint[3] = np.clip(self._setpoint[3], 0.01, 4.0)
 
-        self._quad.set_setpoint(0, self._setpoint)
-        self._quad.step()
+        self._quad.set_setpoint(self._setpoint)
+        self._world.step()
         self._step_count += 1
 
         drone_pos = self._drone_pos()
         curr_signed_dist = self._signed_dist(drone_pos)
 
-        scored = self._detect_score(drone_pos, curr_signed_dist)
+        scored = self._detect_score(
+            bool(self._scorer.overlaps()[0, 0]), curr_signed_dist
+        )
         self._prev_signed_dist = curr_signed_dist
 
         out_of_bounds = float(np.linalg.norm(drone_pos[:2])) > ARENA_RADIUS
@@ -213,14 +234,16 @@ class QuidditchSimpleEnv(gym.Env):
         return self._obs(), float(reward), terminated, truncated, info
 
     def render(self) -> np.ndarray | None:
-        if self.render_mode != "rgb_array" or self._quad is None:
+        if self.render_mode != "rgb_array" or self._world is None:
             return None
-        return self._quad.render_frame(VIDEO_WIDTH, VIDEO_HEIGHT)
+        return self._world.render_frame(VIDEO_WIDTH, VIDEO_HEIGHT)
 
     def close(self) -> None:
-        if self._quad is not None:
-            self._quad.disconnect()
+        if self._world is not None:
+            self._world.disconnect()
+            self._world = None
             self._quad = None
+            self._scorer = None
 
     # -----------------------------------------------------------------------
     # Internal helpers
@@ -232,10 +255,10 @@ class QuidditchSimpleEnv(gym.Env):
         return self._quad
 
     def _drone_pos(self) -> np.ndarray:
-        return self._q.state(0)[3].copy()
+        return self._q.state()[3].copy()
 
     def _obs(self) -> np.ndarray:
-        state = self._q.state(0)  # (4, 3)
+        state = self._q.state()  # (4, 3)
         ang_vel = state[0]
         ang_pos = state[1]
         lin_vel = state[2]
@@ -255,26 +278,29 @@ class QuidditchSimpleEnv(gym.Env):
     def _signed_dist(pos: np.ndarray) -> float:
         return float(np.dot(pos - HOOP_CENTER, HOOP_OUTWARD_NORMAL))
 
-    def _detect_score(self, drone_pos: np.ndarray, curr_signed_dist: float) -> bool:
+    def _detect_score(self, in_hoop: bool, curr_signed_dist: float) -> bool:
+        """Score event = drone entered the trigger tube from the inside (-x)
+        and just exited it on the outside (+x).
+
+        The trigger tube is a thin cylinder defined in MJCF, centred on the
+        hoop along its outward normal.  `in_hoop` comes from the scorer's
+        per-step (drones × hoops) overlap matrix
+        (envs.quidditch.scoring.GeomDistanceScorer).
+        """
+        if in_hoop:
+            if not self._crossing_started:
+                # Just entered — record which side we came from.  prev_signed_dist
+                # is the position one step ago, before we entered the volume.
+                self._crossing_started = True
+                self._enter_signed_dist = self._prev_signed_dist
+            return False
+
         if not self._crossing_started:
-            if self._prev_signed_dist < 0.0 and curr_signed_dist >= 0.0:
-                radial = np.sqrt(
-                    (drone_pos[1] - HOOP_CENTER[1]) ** 2
-                    + (drone_pos[2] - HOOP_CENTER[2]) ** 2
-                )
-                if radial <= HOOP_RADIUS:
-                    self._crossing_started = True
             return False
 
-        if curr_signed_dist < 0.0:
-            self._crossing_started = False
-            return False
-
-        if curr_signed_dist >= HOOP_CROSSING_MARGIN:
-            self._crossing_started = False
-            return True
-
-        return False
+        # Just exited the trigger volume.
+        self._crossing_started = False
+        return self._enter_signed_dist < 0.0 and curr_signed_dist > 0.0
 
     def _sample_start(self) -> tuple[np.ndarray, np.ndarray]:
         r = START_SAMPLE_RADIUS * float(np.sqrt(self.np_random.uniform(0.0, 1.0)))

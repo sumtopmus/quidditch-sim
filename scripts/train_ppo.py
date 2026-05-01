@@ -53,8 +53,7 @@ from stable_baselines3.common.callbacks import (
     EvalCallback,
 )
 
-from envs.quidditch_simple_env import QuidditchSimpleEnv
-from core.quadrotor import CONTROL_HZ
+from envs.quidditch.simple_env import QuidditchSimpleEnv
 from callbacks import VideoRecorderCallback, ResumeProgressCallback
 
 
@@ -92,6 +91,7 @@ def _load_env_kwargs() -> dict:
 # Run-info helpers — write a human-readable TOML snapshot per trial
 # ---------------------------------------------------------------------------
 
+
 def _fmt_elapsed(seconds: float) -> str:
     h, rem = divmod(int(seconds), 3600)
     m, s = divmod(rem, 60)
@@ -119,10 +119,12 @@ def _write_run_info(
     training code — it exists purely for human inspection.
     """
     if elapsed_s is not None:
-        elapsed_line = f'elapsed     = "{_fmt_elapsed(elapsed_s)}"  # {elapsed_s:.0f} s total'
+        elapsed_line = (
+            f'elapsed     = "{_fmt_elapsed(elapsed_s)}"  # {elapsed_s:.0f} s total'
+        )
         finished_line = f'finished    = "{(started + timedelta(seconds=elapsed_s)).isoformat(timespec="seconds")}"'
     else:
-        elapsed_line  = 'elapsed     = "in progress"'
+        elapsed_line = 'elapsed     = "in progress"'
         finished_line = 'finished    = "in progress"'
 
     if best:
@@ -136,10 +138,14 @@ def _write_run_info(
         best_block = "\n[best]\n# filled in after training completes\n"
 
     resume_block = (
-        f"\n[resume]\n"
-        f'checkpoint  = "{resume["checkpoint"]}"\n'
-        f"resumed_at  = {resume['resumed_at']}\n"
-    ) if resume else ""
+        (
+            f"\n[resume]\n"
+            f'checkpoint  = "{resume["checkpoint"]}"\n'
+            f"resumed_at  = {resume['resumed_at']}\n"
+        )
+        if resume
+        else ""
+    )
 
     content = (
         "# Run info — written by train_ppo.py.  Not read by any script.\n"
@@ -200,14 +206,14 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help="Path to a .zip model to warm-start from (e.g. models/20260416_190850). "
-             "Loads weights + optimizer state; resets step counter.",
+        "Loads weights + optimizer state; resets step counter.",
     )
     p.add_argument(
         "--resume",
         default=None,
         metavar="PATH",
         help="Path to a checkpoint .zip to resume from. Keeps the step counter and trains "
-             "for the remaining steps (total_timesteps - checkpoint_steps).",
+        "for the remaining steps (total_timesteps - checkpoint_steps).",
     )
     p.add_argument(
         "--verbose",
@@ -264,7 +270,9 @@ def main() -> None:
     # SB3 callback frequencies are in per-env steps; divide by n_envs to get
     # the correct call cadence for VecEnv (e.g. 50_000 // 4 = 12_500 calls).
     eval_freq = max(cfg["training"]["eval"]["eval_freq_steps"] // args.n_envs, 1)
-    checkpoint_freq = max(cfg["training"]["callbacks"]["checkpoint_freq_steps"] // args.n_envs, 1)
+    checkpoint_freq = max(
+        cfg["training"]["callbacks"]["checkpoint_freq_steps"] // args.n_envs, 1
+    )
     video_freq = max(cfg["training"]["callbacks"]["video_freq_steps"] // args.n_envs, 1)
 
     checkpoint_cb = CheckpointCallback(
@@ -303,7 +311,9 @@ def main() -> None:
         )
         resumed_at = model.num_timesteps
         remaining = max(args.timesteps - resumed_at, 0)
-        print(f"{_ts()} ⏱  Checkpoint at {resumed_at:,} steps; {remaining:,} remaining to {args.timesteps:,}")
+        print(
+            f"{_ts()} ⏱  Checkpoint at {resumed_at:,} steps; {remaining:,} remaining to {args.timesteps:,}"
+        )
     elif args.pretrain:
         print(f"{_ts()} 🔄 Warm-starting from {args.pretrain}")
         model = PPO.load(
@@ -338,16 +348,29 @@ def main() -> None:
             seed=seed,
         )
 
-    resume_info = {"checkpoint": args.resume, "resumed_at": resumed_at} if args.resume else None
-    _write_run_info(run_info_path, name=args.run_name, trial=trial,
-                    started=start_time, resume=resume_info)
+    resume_info = (
+        {"checkpoint": args.resume, "resumed_at": resumed_at} if args.resume else None
+    )
+    _write_run_info(
+        run_info_path,
+        name=args.run_name,
+        trial=trial,
+        started=start_time,
+        resume=resume_info,
+    )
 
-    print(f"{_ts()} 🚀 Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)")
+    print(
+        f"{_ts()} 🚀 Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)"
+    )
     print(f"{_ts()} 📁 Trial       : {trial_dir}")
     print(f"{_ts()} 📊 Tensorboard : {trial_dir}/PPO_1")
     print()
 
-    extra_callbacks = [] if (args.verbose or args.resume is None) else [ResumeProgressCallback(args.timesteps)]
+    extra_callbacks = (
+        []
+        if (args.verbose or args.resume is None)
+        else [ResumeProgressCallback(args.timesteps)]
+    )
     model.learn(
         total_timesteps=args.timesteps,
         callback=[checkpoint_cb, eval_cb, video_cb, *extra_callbacks],
@@ -359,13 +382,19 @@ def main() -> None:
     model.save(final_path)
 
     elapsed_s = (datetime.now() - start_time).total_seconds()
-    _write_run_info(run_info_path, name=args.run_name, trial=trial,
-                    started=start_time,
-                    elapsed_s=elapsed_s,
-                    best=_load_best_metrics(trial_dir),
-                    resume=resume_info)
+    _write_run_info(
+        run_info_path,
+        name=args.run_name,
+        trial=trial,
+        started=start_time,
+        elapsed_s=elapsed_s,
+        best=_load_best_metrics(trial_dir),
+        resume=resume_info,
+    )
 
-    print(f"\n{_ts()} ✅ Training done in {_fmt_elapsed(elapsed_s)}. Final model saved to {final_path}.zip")
+    print(
+        f"\n{_ts()} ✅ Training done in {_fmt_elapsed(elapsed_s)}. Final model saved to {final_path}.zip"
+    )
 
 
 if __name__ == "__main__":

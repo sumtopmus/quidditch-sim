@@ -1,12 +1,13 @@
 """Fly a single QuadX through a sequence of waypoints, with visible target markers.
 
-Stepping stone toward the Phase-2 hoop env: exercises position-setpoint flight
-mode (mode 7 — x, y, yaw, z), waypoint switching, and translucent-sphere markers.
+Runs in an *empty* scene (floor + waypoint markers only — no hoop, no arena
+wall) so the flight path is unobstructed.  Exercises mode-7 position-setpoint
+flight and waypoint switching.
 
 Unlike PyFlyt's Aviary, MuJoCo's launch_passive viewer does NOT auto-pace to
 real time, so we sleep `quad.step_period` after each step when rendering.
 
-Run:  make waypoint   (or:  mjpython demo/waypoint_demo.py)
+Run:  make demo  (and pick "waypoint")   or:  mjpython demo/waypoint_demo.py
 """
 
 import sys
@@ -43,15 +44,15 @@ START_ORN = np.array([[0.0, 0.0, 0.0]])
 def fly_to(quad: Quadrotor, wp: np.ndarray, yaw: float, seconds: float) -> np.ndarray:
     """Command a position setpoint and step for `seconds` of sim time."""
     setpoint = np.array([wp[0], wp[1], yaw, wp[2]], dtype=np.float32)
-    quad.set_setpoint(0, setpoint)
+    quad.set_setpoint(setpoint)
 
     steps = int(seconds / quad.step_period)
     log_every = max(1, steps // int(seconds * 2))
-    pos = quad.state(0)[-1]
+    pos = quad.state()[-1]
     for step in range(steps):
         quad.step()
         time.sleep(quad.step_period)  # pace to real-time so the viewer is watchable
-        pos = quad.state(0)[-1]
+        pos = quad.state()[-1]
         if step % log_every == 0:
             dist = float(np.linalg.norm(pos - wp))
             print(
@@ -68,7 +69,7 @@ def main() -> None:
         for wp in WAYPOINTS
     ]
 
-    quad = Quadrotor(
+    quad = Quadrotor.standalone(
         start_pos=START_POS,
         start_orn=START_ORN,
         render=True,

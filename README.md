@@ -230,8 +230,10 @@ quidditch-sim/
 │   ├── eval_ppo.py               ← evaluation script
 │   └── callbacks.py              ← checkpoint + video recording callbacks
 ├── demo/
-│   ├── hover_demo.py             ← basic PyFlyt hover smoke test
-│   └── waypoint_demo.py          ← scripted waypoint flight reference
+│   ├── menu.py                   ← interactive demo selector (`make demo`)
+│   ├── hover_demo.py             ← hover smoke test (Quidditch arena)
+│   ├── waypoint_demo.py          ← triangular waypoint flight (empty scene)
+│   └── camera_test.py            ← record hover through fixed cam → mp4
 ├── models/                       ← promoted models (tracked in git)
 │   └── ppo_hoop_YYYYMMDD_HHMMSS/
 │       ├── best_model.zip
