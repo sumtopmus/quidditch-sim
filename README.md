@@ -99,7 +99,7 @@ git clone <this-repo-url>
 make install
 
 # 3. Sanity-check the env
-make check          # headless (fast)
+make check-sim      # headless (fast)
 make check-gui      # opens PyBullet GUI for visual inspection
 ```
 

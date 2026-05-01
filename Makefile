@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check check-viewer demo camera-test train resume eval eval-headless tensorboard promote repro install clean list-runs
+.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard promote repro install clean list-runs
 
 .DEFAULT_GOAL := help
 
@@ -53,17 +53,19 @@ help: ## 📋 Show available targets
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-check: ## ✅ Validate env headless (fast, no window)
+check-sim: ## ✅ Validate env headless (fast, no window)
 	@$(PYTHON) scripts/check_env.py
 
-check-viewer: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
+check-gui: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
 	@$(MJPYTHON) scripts/check_env.py --viewer
+
+camera-test: ## 🎥 Render hover flight through fixed cam → mp4 (edit config/camera.toml)
+	@$(PYTHON) demo/camera_test.py
 
 demo: ## 🎮 Pick a demo to run (hover, waypoint) — opens viewer
 	@$(MJPYTHON) demo/menu.py
 
-camera-test: ## 🎥 Render hover flight through fixed cam → mp4 (edit config/camera.toml)
-	@$(PYTHON) demo/camera_test.py
+# ──────────────────────────────────────────────────────────────────────────────
 
 train: ## 🚀 Run PPO training  [RUN_NAME=...] [PRETRAIN=models/...] [overrides config]
 	@$(PYTHON) scripts/train_ppo.py \
@@ -133,7 +135,7 @@ install: ## 📦 Create or update the $(CONDA_ENV) conda env from environment.ym
 	     echo "config/$$f.toml already exists — not overwritten."; \
 	   fi; \
 	 done
-	@echo "Done. Verify with: make check"
+	@echo "Done. Verify with: make check-sim"
 
 list-runs: ## 🗂️  List training runs grouped by config name
 	@echo "=== $(RUNS_DIR)/ ==="; \
