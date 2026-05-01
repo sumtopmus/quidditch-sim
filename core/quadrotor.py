@@ -63,7 +63,12 @@ _PHYS_PER_CTRL: int = PHYSICS_HZ // CONTROL_HZ  # 2
 # through MuJoCo's contact solver.  This avoids the residual contact force
 # that solimp="0 0 ..." doesn't quite eliminate (a 27g drone gets pinned at
 # the tube's -x face by ~0.1 N of leftover impedance).
-HOOP_SCORE_TUBE_HALF_LEN: float = 0.1  # ± m around the hoop plane
+#
+# NOTE: this Quidditch-specific import lives here only because _hoop_fragment
+# is temporarily defined in this module.  When the fragment factories move
+# to envs/quidditch/scene.py (commit 3 of the refactor), this import goes
+# with them and core/quadrotor.py loses its dependency on envs/.
+from envs.quidditch.constants import HOOP_SCORE_TUBE_HALF_LEN  # noqa: E402
 
 
 class Quadrotor:

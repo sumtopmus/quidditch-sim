@@ -45,19 +45,20 @@ import gymnasium as gym
 from gymnasium import spaces
 
 from core.quadrotor import Quadrotor
+from envs.quidditch.constants import (
+    ARENA_RADIUS,
+    HOOP_CENTER,
+    HOOP_OUTWARD_NORMAL,
+)
 
 
 # ---------------------------------------------------------------------------
 # Environment constants
 # ---------------------------------------------------------------------------
-
-ARENA_RADIUS: float = 3.0  # m (6 m diameter)
-
-# Hoop geometry: vertical ring at x=2, y=0, z=2.  Aperture / scoring volume
-# size is defined in MJCF (core.quadrotor) — the env only needs the centre and
-# normal for the obs vector and entry-side check.
-HOOP_CENTER = np.array([2.0, 0.0, 2.0], dtype=np.float64)
-HOOP_OUTWARD_NORMAL = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+# Scene geometry (ARENA_RADIUS, HOOP_CENTER, HOOP_OUTWARD_NORMAL) is imported
+# from envs.quidditch.constants — single source of truth shared with the MJCF
+# scene builder.  The constants below are RL-specific (rewards, action scale,
+# episode timing) and stay local.
 
 # Drone initial state — used when randomise_start=False
 DRONE_START_POS = np.array([[0.0, 0.0, 0.0]], dtype=np.float64)
