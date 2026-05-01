@@ -56,11 +56,16 @@ def hoop_fragment(
         )
 
     # ── mesh + material asset (namespaced) ────────────────────────────────
+    # hoop_metal: glossy orange enamel (the ring).
+    # hoop_pole_metal: brushed steel (the support pole) — lower specular,
+    # subtler shine, no orange tint.
     v, n, f = _torus_mesh_data(radius, 0.012, n_major=64, n_minor=12)
     mesh_asset = (
         f'<mesh name="{prefix}_ring" vertex="{v}" normal="{n}" face="{f}"/>\n'
         f'    <material name="{prefix}_metal" rgba="1.0 0.45 0.0 1" '
-        f'specular="0.5" shininess="0.5" reflectance="0.15"/>'
+        f'specular="0.5" shininess="0.5" reflectance="0.15"/>\n'
+        f'    <material name="{prefix}_pole_metal" rgba="0.55 0.55 0.55 1" '
+        f'specular="0.4" shininess="0.3" reflectance="0.05"/>'
     )
 
     # ── body: ring + pole + invisible score tube ─────────────────────────
@@ -72,7 +77,7 @@ def hoop_fragment(
         f'contype="0" conaffinity="0"/>\n'
         f'      <geom type="cylinder" size="0.005" '
         f'fromto="{cx:.4f} {cy:.4f} 0  {cx:.4f} {cy:.4f} {base_z:.4f}" '
-        f'rgba="0.55 0.55 0.55 1" contype="0" conaffinity="0"/>\n'
+        f'material="{prefix}_pole_metal" contype="0" conaffinity="0"/>\n'
         f'      <!-- Invisible cylinder along the hoop normal — non-colliding;\n'
         f'           geometric query target for mj_geomDistance.  rgba alpha=0\n'
         f'           keeps it out of every render; bump alpha to e.g. 0.08\n'
