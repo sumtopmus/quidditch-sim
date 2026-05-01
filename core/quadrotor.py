@@ -49,6 +49,7 @@ from core.drone.cf2x import (
     THRUST_COEF,
     TORQUE_COEF,
     MAX_RPM,
+    cf2x_assets,
     cf2x_fragment,
 )
 from core.world import (
@@ -214,7 +215,13 @@ class Quadrotor:
             A ready-to-use `Quadrotor`; the underlying `World` is reachable
             via ``quad._world`` if needed but not exposed publicly.
         """
-        fragments: list[SceneFragment] = [cf2x_fragment(prefix="drone")]
+        # cf2x_assets() declares mesh + material names that are global —
+        # prepend it once; the per-drone cf2x_fragment then references those
+        # meshes by name.
+        fragments: list[SceneFragment] = [
+            cf2x_assets(),
+            cf2x_fragment(prefix="drone"),
+        ]
         fragments.extend(extra_fragments)
         if markers:
             fragments.append(SceneFragment(worldbody=(_markers_xml(markers),)))

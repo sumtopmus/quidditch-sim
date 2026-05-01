@@ -32,7 +32,7 @@ from typing import Iterable
 import numpy as np
 import mujoco
 
-from core.mjcf import SceneFragment, WorldOptions, build_mjcf, load_camera_config
+from core.mjcf import SceneFragment, WorldOptions, build_mjcf, load_camera_config, merge_all
 from core.mjcf.camera import _viewer_params
 
 
@@ -69,8 +69,14 @@ class World:
             timestep=_DT_PHYSICS,
             camera=self._camera,
         )
-        xml = build_mjcf(opts, list(fragments))
-        self.model: mujoco.MjModel = mujoco.MjModel.from_xml_string(xml)
+        merged = merge_all(fragments)
+        xml = build_mjcf(opts, [merged])
+        # Forward any binary mesh / texture payloads (cf2x .obj files, etc.)
+        # so MuJoCo resolves <mesh file="..."> against in-memory bytes.
+        asset_dict = dict(merged.asset_files)
+        self.model: mujoco.MjModel = mujoco.MjModel.from_xml_string(
+            xml, assets=asset_dict
+        )
         self.data:  mujoco.MjData  = mujoco.MjData(self.model)
 
         # Drones register themselves by appending to this list (see

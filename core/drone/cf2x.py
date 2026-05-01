@@ -1,33 +1,124 @@
-"""cf2x quadrotor — physical constants and MJCF fragment factory.
+"""cf2x quadrotor — physical constants and MJCF fragment factories.
 
-The cf2x is a small (27 g) Crazyflie-style quadrotor.  Constants taken
-verbatim from PyFlyt's cf2x.urdf and cf2x.yaml so the dynamics match the
-original baseline.
+The cf2x is a small (27 g) Crazyflie-style quadrotor.
 
-`cf2x_fragment(prefix)` emits a self-contained MJCF fragment for one drone:
-its body (with arms, motor discs, IMU site, scoring probe) plus its four
-sensors (gyro, velocimeter, framequat, framepos), all namespaced by the
-given prefix.  Multi-drone scenes = multiple fragments with distinct
-prefixes (e.g. "red_0", "blue_0", ...).
+Physical-constant provenance (partial adoption from MuJoCo Menagerie):
+
+  - **Mass**: 0.027 kg — agreed across Menagerie's `cf2.xml` and PyFlyt's
+    `cf2x.yaml`.
+  - **Inertia tensor** (`IXX = IYY = 2.3951e-5`, `IZZ = 3.2347e-5`):
+    Menagerie's value, more physically accurate per the Crazyflie 2
+    mechanical specs than PyFlyt's older defaults (1.4e-5, 2.17e-5).
+  - **Motor coefficients** (`THRUST_COEF`, `TORQUE_COEF`, `MAX_RPM`,
+    `ARM`): unchanged from PyFlyt's `cf2x.yaml`.  Menagerie expresses
+    motors via `<motor gear=...>` actuator gears that aren't directly
+    comparable; our RPM-squared thrust + reaction-torque model is
+    independent of how the visual mesh was made and stays.
+
+Two factories:
+
+  - `cf2x_assets()` returns a `SceneFragment` carrying the seven mesh
+    declarations + seven materials + the `.obj` file payloads.  Call it
+    **once per scene**, regardless of how many drones share the world —
+    mesh + material names are global in MJCF.
+  - `cf2x_fragment(prefix)` returns a per-drone `SceneFragment`: one
+    `<body>` (with its inertial, seven mesh geoms, IMU site, scoring
+    probe) plus four sensors (gyro, velocimeter, framequat, framepos),
+    all namespaced by `prefix`.  References meshes by name — `cf2_0`
+    through `cf2_6` — declared by `cf2x_assets()`.
 """
 
 from __future__ import annotations
 
 import math
+from pathlib import Path
 
 from core.mjcf import SceneFragment
 
 
 # ── cf2x physical constants ──────────────────────────────────────────────────
+# Mass + inertia: from Menagerie (commit affef08, file bitcraze_crazyflie_2/cf2.xml).
+# Motor coefficients: from PyFlyt cf2x.yaml — see module docstring.
 MASS: float = 0.027         # kg
-IXX:  float = 1.4e-5        # kg⋅m²
-IYY:  float = 1.4e-5
-IZZ:  float = 2.17e-5
+IXX:  float = 2.3951e-5     # kg⋅m²  (Menagerie)
+IYY:  float = 2.3951e-5     # kg⋅m²  (Menagerie)
+IZZ:  float = 3.2347e-5     # kg⋅m²  (Menagerie)
 ARM:  float = 0.028         # m (motor distance from CoM along each diagonal)
 THRUST_COEF: float = 3.16e-10  # N / RPM²
 TORQUE_COEF: float = 7.94e-12  # N⋅m / RPM²
 # max_rpm = sqrt(total_max_thrust / (4 × kF));  total_max_thrust = 2.0 N (cf2x.yaml)
 MAX_RPM: float = math.sqrt(2.0 / (4.0 * THRUST_COEF))   # ≈ 39 775 RPM
+
+
+# ── cf2x mesh assets ─────────────────────────────────────────────────────────
+# Visual meshes vendored verbatim from MuJoCo Menagerie at
+# repo/assets/cf2x/.  See assets/cf2x/README.md for source + commit hash.
+_CF2X_ASSETS_DIR = (
+    Path(__file__).resolve().parent.parent.parent / "assets" / "cf2x"
+)
+_CF2X_MESH_FILES: tuple[str, ...] = (
+    "cf2_0.obj",
+    "cf2_1.obj",
+    "cf2_2.obj",
+    "cf2_3.obj",
+    "cf2_4.obj",
+    "cf2_5.obj",
+    "cf2_6.obj",
+)
+# (mesh_name, material_name) per mesh — order + names match Menagerie's cf2.xml.
+_CF2X_MESH_MATERIALS: tuple[tuple[str, str], ...] = (
+    ("cf2_0", "propeller_plastic"),
+    ("cf2_1", "medium_gloss_plastic"),
+    ("cf2_2", "polished_gold"),
+    ("cf2_3", "polished_plastic"),
+    ("cf2_4", "burnished_chrome"),
+    ("cf2_5", "body_frame_plastic"),
+    ("cf2_6", "white"),
+)
+
+
+def cf2x_assets() -> SceneFragment:
+    """Mesh + material assets for the Crazyflie 2 visuals.
+
+    Call this **exactly once per scene** — the seven mesh names (cf2_0…
+    cf2_6) and seven material names (propeller_plastic, …, white) are
+    global in MJCF, so a multi-drone scene declares them once and every
+    drone body refers to them by name.
+
+    Returns a `SceneFragment` whose:
+      - `assets` block carries seven `<material/>` declarations (rgba
+        values copied verbatim from Menagerie's cf2.xml) followed by
+        seven `<mesh file="cf2_<i>.obj"/>` declarations.
+      - `asset_files` block carries the seven .obj files as
+        ``(filename, bytes)`` tuples.  `World` forwards them to
+        ``mujoco.MjModel.from_xml_string(assets=...)`` so MuJoCo
+        resolves the mesh `file="..."` references against in-memory
+        bytes — no filesystem lookup at sim-init time.
+
+    Per-drone bodies are emitted by `cf2x_fragment(prefix)`; they
+    reference `cf2_0`…`cf2_6` declared here.
+    """
+    materials: tuple[str, ...] = (
+        '<material name="propeller_plastic"    rgba="0.792 0.820 0.933 1"/>',
+        '<material name="medium_gloss_plastic" rgba="0.109 0.184 0.0 1"/>',
+        '<material name="polished_gold"        rgba="0.969 0.878 0.6 1"/>',
+        '<material name="polished_plastic"     rgba="0.631 0.659 0.678 1"/>',
+        '<material name="burnished_chrome"     rgba="0.898 0.898 0.898 1"/>',
+        '<material name="body_frame_plastic"   rgba="0.102 0.102 0.102 1"/>',
+        '<material name="white"                rgba="1 1 1 1"/>',
+    )
+    meshes: tuple[str, ...] = tuple(
+        f'<mesh name="{name}" file="{filename}"/>'
+        for filename, (name, _mat) in zip(_CF2X_MESH_FILES, _CF2X_MESH_MATERIALS)
+    )
+    file_bytes: tuple[tuple[str, bytes], ...] = tuple(
+        (filename, (_CF2X_ASSETS_DIR / filename).read_bytes())
+        for filename in _CF2X_MESH_FILES
+    )
+    return SceneFragment(
+        assets=materials + meshes,
+        asset_files=file_bytes,
+    )
 
 
 def cf2x_fragment(prefix: str = "drone") -> SceneFragment:
@@ -48,43 +139,25 @@ def cf2x_fragment(prefix: str = "drone") -> SceneFragment:
           rests on the floor at MJCF compile time.  Per-episode start
           positions are written to qpos via `mj_resetData` in the World
           / Quadrotor reset path, not here.
-        - The probe geom is `contype=0 conaffinity=0` and is intended for
-          mj_geomDistance queries (e.g. against a hoop_score_tube).
+        - The body references the seven Menagerie cf2 visual meshes
+          (`cf2_0`…`cf2_6`) by name.  ``cf2x_assets()`` must also be in
+          the scene's fragment list — call it exactly once per scene.
+        - The probe geom is `contype=0 conaffinity=0` and is intended
+          for mj_geomDistance queries (e.g. against a hoop_score_tube).
     """
     body_xml = (
         f'<body name="{prefix}" pos="0 0 0.03">\n'
         f'      <freejoint name="{prefix}_root"/>\n'
         f'      <inertial mass="{MASS}" pos="0 0 0"\n'
         f'                diaginertia="{IXX} {IYY} {IZZ}"/>\n'
-        f'      <!-- central frame -->\n'
-        f'      <geom type="box" size="0.026 0.026 0.009"\n'
-        f'            rgba="0.15 0.15 0.85 1" contype="0" conaffinity="0"/>\n'
-        f'      <!-- four diagonal arms -->\n'
-        f'      <geom type="capsule" size="0.0025"\n'
-        f'            fromto=" 0.028 -0.028 0   0 0 0"\n'
-        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="capsule" size="0.0025"\n'
-        f'            fromto="-0.028  0.028 0   0 0 0"\n'
-        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="capsule" size="0.0025"\n'
-        f'            fromto=" 0.028  0.028 0   0 0 0"\n'
-        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="capsule" size="0.0025"\n'
-        f'            fromto="-0.028 -0.028 0   0 0 0"\n'
-        f'            rgba="0.25 0.25 0.25 1" contype="0" conaffinity="0"/>\n'
-        f'      <!-- motor discs: yellow = CCW (m0,m1), cyan = CW (m2,m3) -->\n'
-        f'      <geom type="cylinder" size="0.013 0.003"\n'
-        f'            pos=" 0.028 -0.028 0.005"\n'
-        f'            rgba="0.95 0.85 0.1 0.9" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="cylinder" size="0.013 0.003"\n'
-        f'            pos="-0.028  0.028 0.005"\n'
-        f'            rgba="0.95 0.85 0.1 0.9" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="cylinder" size="0.013 0.003"\n'
-        f'            pos=" 0.028  0.028 0.005"\n'
-        f'            rgba="0.1 0.85 0.85 0.9" contype="0" conaffinity="0"/>\n'
-        f'      <geom type="cylinder" size="0.013 0.003"\n'
-        f'            pos="-0.028 -0.028 0.005"\n'
-        f'            rgba="0.1 0.85 0.85 0.9" contype="0" conaffinity="0"/>\n'
+        f'      <!-- Menagerie cf2 visuals (7 mesh geoms, all non-colliding) -->\n'
+        f'      <geom mesh="cf2_0" material="propeller_plastic"    contype="0" conaffinity="0"/>\n'
+        f'      <geom mesh="cf2_1" material="medium_gloss_plastic" contype="0" conaffinity="0"/>\n'
+        f'      <geom mesh="cf2_2" material="polished_gold"        contype="0" conaffinity="0"/>\n'
+        f'      <geom mesh="cf2_3" material="polished_plastic"     contype="0" conaffinity="0"/>\n'
+        f'      <geom mesh="cf2_4" material="burnished_chrome"     contype="0" conaffinity="0"/>\n'
+        f'      <geom mesh="cf2_5" material="body_frame_plastic"   contype="0" conaffinity="0"/>\n'
+        f'      <geom mesh="cf2_6" material="white"                contype="0" conaffinity="0"/>\n'
         f'      <!-- IMU site for sensors -->\n'
         f'      <site name="{prefix}_imu" pos="0 0 0" size="0.001"/>\n'
         f'      <!-- Position probe for hoop scoring (non-colliding;\n'

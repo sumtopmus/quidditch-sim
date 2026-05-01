@@ -48,7 +48,7 @@ from gymnasium import spaces
 
 from core.world import World
 from core.quadrotor import Quadrotor
-from core.drone.cf2x import cf2x_fragment
+from core.drone.cf2x import cf2x_assets, cf2x_fragment
 from envs.quidditch.scene import hoop_fragment, arena_wall_fragment
 from envs.quidditch.scoring import GeomDistanceScorer
 from envs.quidditch.constants import (
@@ -147,6 +147,7 @@ class QuidditchSimpleEnv(gym.Env):
 
         if self._world is None:
             fragments = [
+                cf2x_assets(),
                 cf2x_fragment(prefix="drone"),
                 arena_wall_fragment(ARENA_RADIUS, ARENA_WALL_HEIGHT),
                 hoop_fragment(
