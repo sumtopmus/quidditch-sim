@@ -578,6 +578,7 @@ def _build_scene_xml(
   <visual>
     <headlight ambient="0.5 0.5 0.5" diffuse="0.8 0.8 0.8" specular="0.1 0.1 0.1"/>
     <global offwidth="1920" offheight="1080"/>
+    <quality offsamples="8" shadowsize="4096"/>
   </visual>
 
   <asset>
