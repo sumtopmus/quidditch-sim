@@ -8,9 +8,11 @@ Game rules (Phase 1 milestone):
   - Drone starts at a random position on the ground within the arena (randomise_start=True)
     or fixed at the arena center (randomise_start=False).
   - Score: drone enters the hoop's scoring trigger volume (a thin cylinder
-    along the hoop normal, defined in MJCF — see core.quadrotor) from the
-    arena-center side and exits on the outside side.  Detection comes from
-    mjData.contact via Quadrotor.drone_in_hoop, not Python-side geometry.
+    along the hoop normal, defined in MJCF — see envs.quidditch.scene) from
+    the arena-center side and exits on the outside side.  Detection comes
+    from envs.quidditch.scoring.GeomDistanceScorer (mj_geomDistance between
+    the drone's probe geom and the hoop's score tube), not Python-side
+    geometry.
   - Episode ends on score, crash, out-of-bounds, or 2-minute timeout.
 
 Observation (16 floats):
@@ -48,6 +50,7 @@ from core.world import World
 from core.quadrotor import Quadrotor
 from core.drone.cf2x import cf2x_fragment
 from envs.quidditch.scene import hoop_fragment, arena_wall_fragment
+from envs.quidditch.scoring import GeomDistanceScorer
 from envs.quidditch.constants import (
     ARENA_RADIUS,
     ARENA_WALL_HEIGHT,
@@ -115,6 +118,7 @@ class QuidditchSimpleEnv(gym.Env):
 
         self._world: World | None = None
         self._quad: Quadrotor | None = None
+        self._scorer: GeomDistanceScorer | None = None
         self._setpoint = np.zeros(4, dtype=np.float32)
         self._step_count: int = 0
         self._max_steps: int = 0
@@ -155,6 +159,7 @@ class QuidditchSimpleEnv(gym.Env):
                 seed=seed,
             )
             self._quad = Quadrotor(self._world, prefix="drone")
+            self._scorer = GeomDistanceScorer(self._world, ["drone"], ["hoop"])
 
         self._quad.set_start(start_pos[np.newaxis], start_orn[np.newaxis])
         self._world.reset()
@@ -195,7 +200,9 @@ class QuidditchSimpleEnv(gym.Env):
         drone_pos = self._drone_pos()
         curr_signed_dist = self._signed_dist(drone_pos)
 
-        scored = self._detect_score(self._q.drone_in_hoop, curr_signed_dist)
+        scored = self._detect_score(
+            bool(self._scorer.overlaps()[0, 0]), curr_signed_dist
+        )
         self._prev_signed_dist = curr_signed_dist
 
         out_of_bounds = float(np.linalg.norm(drone_pos[:2])) > ARENA_RADIUS
@@ -233,6 +240,7 @@ class QuidditchSimpleEnv(gym.Env):
             self._world.disconnect()
             self._world = None
             self._quad = None
+            self._scorer = None
 
     # -----------------------------------------------------------------------
     # Internal helpers
@@ -272,8 +280,9 @@ class QuidditchSimpleEnv(gym.Env):
         and just exited it on the outside (+x).
 
         The trigger tube is a thin cylinder defined in MJCF, centred on the
-        hoop along its outward normal.  `in_hoop` comes from
-        Quadrotor.drone_in_hoop (a contact-pair check on mjData.contact).
+        hoop along its outward normal.  `in_hoop` comes from the scorer's
+        per-step (drones × hoops) overlap matrix
+        (envs.quidditch.scoring.GeomDistanceScorer).
         """
         if in_hoop:
             if not self._crossing_started:

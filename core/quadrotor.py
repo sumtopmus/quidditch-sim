@@ -1,7 +1,7 @@
 """Per-drone view bound to a `World`.
 
 A `Quadrotor` does not own MjModel/MjData — it borrows them from the World
-and resolves its body, sensors, and probe geom by namespace prefix.  Multiple
+and resolves its body and sensors by namespace prefix.  Multiple
 `Quadrotor` views can share one `World` (multi-drone) as long as they use
 distinct prefixes.
 
@@ -12,7 +12,6 @@ Public surface (per drone):
     Quadrotor.state() -> (4, 3) ndarray      # NO idx parameter
     Quadrotor.set_start(start_pos, start_orn)
     Quadrotor.step_period -> float
-    Quadrotor.drone_in_hoop -> bool          # geom-distance probe vs hoop_score_tube
 
 Convenience for single-drone callers (demos, env):
     Quadrotor.standalone(start_pos, start_orn, *, render=False, camera=None,
@@ -120,18 +119,6 @@ class Quadrotor:
         )
         self._qpos_adr = int(model.jnt_qposadr[joint_id])
 
-        # Scoring geom IDs for mj_geomDistance().  None when the scene has no
-        # hoop (e.g. waypoint demo).  The hoop score tube name is fixed at
-        # "hoop_score_tube" for now (single-hoop assumption); commit 5 makes
-        # scoring multi-aware via a separate scorer module.
-        g_probe = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, f"{prefix}_probe")
-        g_tube  = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_GEOM, "hoop_score_tube")
-        self._score_geoms: tuple[int, int] | None = (
-            (g_probe, g_tube) if (g_probe >= 0 and g_tube >= 0) else None
-        )
-        # Reusable output buffer for mj_geomDistance(fromto[6]).
-        self._geom_dist_fromto = np.zeros(6, dtype=np.float64)
-
         # Flight controller (mode 7 only) + setpoint + PWM state.
         self._controller = Mode7Controller(_DT_CONTROL)
         self._setpoint = np.zeros(4, dtype=np.float64)
@@ -180,30 +167,6 @@ class Quadrotor:
     def step_period(self) -> float:
         """Duration of one control step in seconds (delegates to World)."""
         return self._world.step_period
-
-    @property
-    def drone_in_hoop(self) -> bool:
-        """True iff the drone's probe geom currently overlaps the hoop tube.
-
-        Uses ``mj_geomDistance`` (a pure geometric query — no contact-solver
-        involvement, no force on either geom).  Both probe and tube are
-        ``contype=0/conaffinity=0``, so MuJoCo never tries to resolve a
-        contact between them.  Returns False when the scene has no hoop.
-        """
-        if self._score_geoms is None:
-            return False
-        g_probe, g_tube = self._score_geoms
-        # distmax=0 enables early-exit: returns 0 if separated, else the
-        # actual (negative) penetration distance.
-        dist = mujoco.mj_geomDistance(
-            self._world.model,
-            self._world.data,
-            g_probe,
-            g_tube,
-            0.0,
-            self._geom_dist_fromto,
-        )
-        return bool(dist < 0.0)
 
     # ── façade: route to bound World so single-drone callers don't change ────
 
