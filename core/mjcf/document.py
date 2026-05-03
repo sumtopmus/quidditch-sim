@@ -99,10 +99,13 @@ def build_mjcf(opts: WorldOptions, fragments: Iterable[SceneFragment]) -> str:
     if opts.include_default_floor:
         body_lines.append(_DEFAULT_FLOOR)
     body_lines.extend(merged.worldbody)
-    body_lines.append(f'<camera name="fixed" pos="{cam_pos}" xyaxes="{cam_xyaxes}"/>')
-    for name, eye, lookat in BROADCAST_CAMERAS:
+    body_lines.append(f'<camera name="Fixed" pos="{cam_pos}" xyaxes="{cam_xyaxes}"/>')
+    for name, eye, lookat, fovy in BROADCAST_CAMERAS:
         bpos, bxy = _camera_xyaxes(eye, lookat)
-        body_lines.append(f'<camera name="{name}" pos="{bpos}" xyaxes="{bxy}"/>')
+        fovy_attr = f' fovy="{fovy}"' if fovy is not None else ""
+        body_lines.append(
+            f'<camera name="{name}" pos="{bpos}" xyaxes="{bxy}"{fovy_attr}/>'
+        )
     worldbody_block = "\n    ".join(body_lines)
 
     # ── <visual> ──────────────────────────────────────────────────────────

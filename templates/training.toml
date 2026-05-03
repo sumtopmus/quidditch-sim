@@ -43,13 +43,18 @@ video_fps             = 20
 
 # Checkpoint videos: 2x2 grid stitching four named cameras.
 # `cells` is row-major: [top-left, top-right, bottom-left, bottom-right].
+# Available cams in the scene:
+#   Fixed | North | East | South | West | Top | drone_fpv | drone_tpv
 # Per-cell size 960x540 → final 1920x1080 (1080p).  Each render does 4
 # offscreen passes per frame, so checkpoint video time scales with
 # cell_width * cell_height * 4.  Set grid = false to record only the
-# cinematic "fixed" cam at 640x480 (faster, less informative).
+# cinematic "Fixed" cam at 640x480 (faster, less informative).
 [training.callbacks.video]
 grid        = true
-cells       = ["front", "side", "top", "drone_tpv"]
+# Hoop sits at +X (east); South and West both keep it on the right side
+# of frame for visual consistency.  East would put the hoop pole in the
+# foreground; North would mirror the hoop to the LEFT.
+cells       = ["South", "West", "Top", "drone_tpv"]
 cell_width  = 960
 cell_height = 540
 

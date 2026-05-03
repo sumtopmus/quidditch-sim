@@ -50,17 +50,22 @@ class VideoRecorderCallback(BaseCallback):
     matching the convention used for CheckpointCallback / EvalCallback.
 
     By default writes a 2x2 grid stitching four named cameras together
-    (front / side / top / chase-cam) at 1920x1080.  Pass ``grid=False`` to
+    (South / West / Top / chase-cam) at 1920x1080.  Pass ``grid=False`` to
     fall back to the env's single-cam ``render()`` output (the cinematic
-    "fixed" cam at 640x480).  Grid mode bypasses ``env.render()`` and reaches
+    "Fixed" cam at 640x480).  Grid mode bypasses ``env.render()`` and reaches
     into ``env._quad.render_grid(...)`` directly — same precedent as
     eval_ppo.py reaching into ``env._quad`` for the live viewer.
+
+    Cam choices: hoop sits at +X (east) — South and West both keep the hoop
+    on the right side / centre of frame.  East would put the hoop pole in
+    the foreground; North would mirror the hoop to the LEFT (broadcast
+    convention puts the goal on the right of the wide view).
 
     Requires: pip install imageio imageio-ffmpeg
     """
 
     DEFAULT_GRID_CAMS: tuple[str, str, str, str] = (
-        "front", "side", "top", "drone_tpv",
+        "South", "West", "Top", "drone_tpv",
     )
 
     def __init__(

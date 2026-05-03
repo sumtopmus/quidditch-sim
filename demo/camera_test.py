@@ -1,11 +1,11 @@
 """Render the hover demo and write an mp4 — defaults to the 2x2 grid.
 
-The default mirrors what training videos record (``front``, ``side``,
-``top``, and ``drone_tpv`` stitched at 1080p), so this is the canonical
+The default mirrors what training videos record (``South``, ``West``,
+``Top``, and ``drone_tpv`` stitched at 1080p), so this is the canonical
 "is the next checkpoint video going to look right?" check.  Pass
 ``--cam NAME`` to preview a single named camera instead.
 
-Use this to iterate on config/camera.toml (only affects the "fixed"
+Use this to iterate on config/camera.toml (only affects the "Fixed"
 cam) or on the chase-cam offsets in core/quadrotor.py.  Output filenames
 embed the cam name so multiple previews can co-exist.
 
@@ -13,10 +13,10 @@ Outputs (per --cam choice):
     runs/camera_test/hover_<cam>.mp4   ← full hover video
     runs/camera_test/hover_<cam>.png   ← still preview (last frame)
 
-Available cams:  grid | fixed | front | side | top | drone_fpv | drone_tpv
+Available cams:  grid | Fixed | North | East | South | West | Top | drone_fpv | drone_tpv
 
 Run:  make camera-test                  # → hover_grid.mp4 (default; 1080p 2x2)
-      make camera-test CAM=fixed        # → hover_fixed.mp4
+      make camera-test CAM=Fixed        # → hover_Fixed.mp4
       make camera-test CAM=drone_tpv    # → hover_drone_tpv.mp4
 """
 
@@ -48,11 +48,15 @@ SINGLE_W, SINGLE_H = 960, 540
 # default in templates/training.toml so this preview shows what gets
 # recorded during checkpoint videos.
 GRID_CELL_W, GRID_CELL_H = 960, 540
-GRID_CAMS = ("front", "side", "top", "drone_tpv")
+GRID_CAMS = ("South", "West", "Top", "drone_tpv")
 FPS = 120
 OUT_DIR = Path(__file__).resolve().parents[1] / "runs" / "camera_test"
 
-VALID_CAMS = ("grid", "fixed", "front", "side", "top", "drone_fpv", "drone_tpv")
+VALID_CAMS = (
+    "grid", "Fixed",
+    "North", "East", "South", "West", "Top",
+    "drone_fpv", "drone_tpv",
+)
 
 
 def _parse_args() -> argparse.Namespace:
@@ -93,7 +97,7 @@ def main() -> None:
         capture = lambda: quad.render_grid(GRID_CAMS, GRID_CELL_W, GRID_CELL_H)
     else:
         # Single-cam path: drive the renderer directly so we can pick the
-        # camera by name (World.render_frame is hardcoded to "fixed").
+        # camera by name (World.render_frame is hardcoded to "Fixed").
         renderer = quad._world.get_renderer(SINGLE_W, SINGLE_H)
         def capture() -> np.ndarray:
             renderer.update_scene(quad._world.data, camera=args.cam)

@@ -1,13 +1,17 @@
-# Camera spec for the rendered "fixed" view.
+# Camera spec for the cinematic "Fixed" cam.
 # This is the template — tracked in git.
 #
 # On first `make install`, this file is copied to config/camera.toml.
 # config/camera.toml is gitignored; edit it freely while experimenting.
 #
+# This file ONLY affects the "Fixed" cam.  The compass cardinals
+# (North/East/South/West/Top), FPV, and TPV chase cam are hardcoded to
+# arena geometry in core/mjcf/camera.py and core/drone/cf2x.py.
+#
 # Used by:
-#   - VideoRecorderCallback (checkpoint training videos)
-#   - demo/camera_test.py   (offline preview — `make camera-test`)
-#   - core/quadrotor.py     (initial viewer pose for live demos)
+#   - VideoRecorderCallback when grid=false (single-cam fallback)
+#   - demo/camera_test.py CAM=Fixed (`make camera-test CAM=Fixed`)
+#   - core/quadrotor.py    (initial viewer pose for live demos)
 #
 # eye:    camera position in world coordinates [x, y, z] (metres)
 # lookat: point the camera is aimed at         [x, y, z] (metres)

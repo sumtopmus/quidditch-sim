@@ -1,6 +1,6 @@
 """Camera math: load config, derive MJCF xyaxes, derive live-viewer params.
 
-Used by `build_mjcf` (offscreen "fixed" camera + axis-aligned broadcast cams)
+Used by `build_mjcf` (offscreen "Fixed" camera + axis-aligned broadcast cams)
 and by the World/Quadrotor viewer setup (live mujoco.viewer).  Single source
 of truth for both.
 """
@@ -14,7 +14,7 @@ import numpy as np
 
 
 # ── camera config ────────────────────────────────────────────────────────────
-# Eye and lookat in world coords (metres).  Used for both the offscreen "fixed"
+# Eye and lookat in world coords (metres).  Used for both the offscreen "Fixed"
 # camera (videos) and the live viewer.  Override per-construction by passing
 # `camera={"eye": (...), "lookat": (...)}` to the World; otherwise we try
 # config/camera.toml and fall back to the hardcoded sideline view below.
@@ -25,16 +25,32 @@ _FALLBACK_CAMERA: dict = {
 
 
 # ── broadcast cameras (hardcoded — tied to arena geometry) ───────────────────
-# Three axis-aligned spectator cams emitted by `build_mjcf` alongside `fixed`.
+# Five axis-aligned spectator cams emitted by `build_mjcf` alongside `Fixed`.
 # Used for switching in the live viewer and for the 2x2 checkpoint-video grid.
-# Geometry is locked to the Quidditch arena (radius 3 m, hoop at (2,0,2),
-# drone start (0,0,0)) — not user-tunable.  `top` includes a 1 mm horizontal
-# offset to avoid the degenerate "look parallel to world up" check below.
-BROADCAST_CAMERAS: tuple[tuple[str, tuple, tuple], ...] = (
-    # (name,    eye,                  lookat)
-    ("front",  (5.0, 0.0,   1.5),    (1.0, 0.0, 1.3)),
-    ("side",   (1.0, 5.0,   1.5),    (1.0, 0.0, 1.3)),
-    ("top",    (1.0, 0.001, 5.0),    (1.0, 0.0, 1.3)),
+# Compass cardinals (North/East/South/West) sit on the arena wall at radius
+# 3 m looking at the arena centre at z=1.5; Top is straight down from 5 m.
+# Walls are alpha=0.35 (translucent) so the cardinal cams see through them.
+# Geometry is locked to the Quidditch arena (radius 3 m) — not user-tunable.
+#
+# fovy: MJCF camera vertical FoV in degrees.  Pass None to omit the attribute
+# and let MuJoCo use its default (45°).  Top sets fovy=70° to fit the whole
+# 6 m arena in frame from 5 m up without too much fisheye distortion — at
+# fovy=70° the y-extent at z=0 is 2 * 5 * tan(35°) ≈ 7.0 m, with ~17 %
+# margin past the 6 m arena diameter.
+#
+# `Top.eye.y = -0.001` (1 mm horizontal offset) is required to avoid the
+# degenerate "look parallel to world up" check below.  The sign is chosen
+# so the camera frame derived by `_camera_xyaxes` ends up with cam +X =
+# world +X and cam +Y = world +Y — i.e. map-style "north up": world +Y
+# appears at the top of the image, world +X to the right.  Visually
+# indistinguishable from straight down.
+BROADCAST_CAMERAS: tuple[tuple[str, tuple, tuple, float | None], ...] = (
+    # (name,    eye,                  lookat,           fovy)
+    ("North",  ( 0.0,    3.0, 1.5),  (0.0, 0.0, 1.5),  None),
+    ("East",   ( 3.0,    0.0, 1.5),  (0.0, 0.0, 1.5),  None),
+    ("South",  ( 0.0,   -3.0, 1.5),  (0.0, 0.0, 1.5),  None),
+    ("West",   (-3.0,    0.0, 1.5),  (0.0, 0.0, 1.5),  None),
+    ("Top",    ( 0.0,   -0.001, 5.0), (0.0, 0.0, 0.0), 70.0),
 )
 
 
