@@ -3,8 +3,8 @@
 # override individual values at runtime.
 
 [training]
-run_name        = "ppo_hoop"
-total_timesteps = 2_000_000
+run_name        = "ppo_hoop_rand_start"
+total_timesteps = 20_000_000
 n_envs          = 8
 seed            = 42    # integer ≥ 0 for reproducible runs; -1 to disable
 
@@ -12,7 +12,7 @@ seed            = 42    # integer ≥ 0 for reproducible runs; -1 to disable
 n_steps    = 1024
 batch_size = 256
 n_epochs   = 10
-lr         = 3e-4
+lr         = 1e-4
 gamma      = 0.99
 gae_lambda = 0.95
 clip_range = 0.2

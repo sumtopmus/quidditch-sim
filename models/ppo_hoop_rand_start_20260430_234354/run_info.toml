@@ -1,0 +1,13 @@
+# Run info — written by train_ppo.py.  Not read by any script.
+
+[run]
+name    = "ppo_hoop_rand_start"
+trial   = "20260430_234354"
+started = "2026-04-30T23:43:54"
+elapsed     = "54m07s"  # 3248 s total
+finished    = "2026-05-01T00:38:01"
+
+[best]
+mean_reward = 8.1319
+std_reward  = 0.7644
+at_step     = 2550000

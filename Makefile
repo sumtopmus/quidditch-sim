@@ -15,8 +15,8 @@ MODELS_DIR := models
 #   TRIAL= given on CLI          → runs/$(RUN_NAME)/$(TRIAL)
 #   RUN_NAME= given on CLI only  → latest trial inside that run
 #   nothing given                → latest trial across all runs
-_LATEST_IN_RUN  = $(shell ls -d $(RUNS_DIR)/$(RUN_NAME)/* 2>/dev/null | sort -t/ -k3 | tail -1)
-_LATEST_OVERALL = $(shell ls -d $(RUNS_DIR)/*/* 2>/dev/null | sort -t/ -k3 | tail -1)
+_LATEST_IN_RUN  = $(shell find $(RUNS_DIR)/$(RUN_NAME) -mindepth 1 -maxdepth 1 -type d 2>/dev/null | sort -t/ -k3 | tail -1)
+_LATEST_OVERALL = $(shell find $(RUNS_DIR) -mindepth 2 -maxdepth 2 -type d 2>/dev/null | sort -t/ -k3 | tail -1)
 _TRIAL_DIR      = $(strip $(if $(TRIAL),\
                     $(RUNS_DIR)/$(RUN_NAME)/$(TRIAL),\
                     $(if $(filter command line,$(origin RUN_NAME)),\
@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check check-viewer hover waypoint camera-test train resume eval eval-headless tensorboard promote repro install clean list-runs
+.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard promote repro install clean list-runs
 
 .DEFAULT_GOAL := help
 
@@ -53,20 +53,19 @@ help: ## 📋 Show available targets
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-check: ## ✅ Validate env headless (fast, no window)
+check-sim: ## ✅ Validate env headless (fast, no window)
 	@$(PYTHON) scripts/check_env.py
 
-check-viewer: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
+check-gui: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
 	@$(MJPYTHON) scripts/check_env.py --viewer
 
-hover: ## 🚁 MuJoCo hover smoke test (opens viewer)
-	@$(MJPYTHON) demo/hover_demo.py
-
-waypoint: ## 📍 Fly a waypoint triangle with marker spheres (opens viewer)
-	@$(MJPYTHON) demo/waypoint_demo.py
-
-camera-test: ## 🎥 Render waypoint flight through fixed cam → mp4 (edit config/camera.toml)
+camera-test: ## 🎥 Render hover flight through fixed cam → mp4 (edit config/camera.toml)
 	@$(PYTHON) demo/camera_test.py
+
+demo: ## 🎮 Pick a demo to run (hover, waypoint) — opens viewer
+	@$(MJPYTHON) demo/menu.py
+
+# ──────────────────────────────────────────────────────────────────────────────
 
 train: ## 🚀 Run PPO training  [RUN_NAME=...] [PRETRAIN=models/...] [overrides config]
 	@$(PYTHON) scripts/train_ppo.py \
@@ -100,8 +99,8 @@ promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
 	 dest="$(MODELS_DIR)/$$(echo $$label | tr '/' '_')"; \
 	 mkdir -p "$$dest"; \
 	 cp "$$src"                   "$$dest/best_model.zip"; \
-	 [ -f "$$dir/info.toml" ]            && cp "$$dir/info.toml"            "$$dest/run_info.toml"        || true; \
-	 [ -f "$$dir/config_snapshot.toml" ] && cp "$$dir/config_snapshot.toml" "$$dest/config.toml" || true; \
+	 [ -f "$$dir/info.toml" ]            && cp "$$dir/info.toml"            "$$dest/run_info.toml" || true; \
+	 [ -f "$$dir/config_snapshot.toml" ] && cp "$$dir/config_snapshot.toml" "$$dest/config.toml"   || true; \
 	 echo ""; \
 	 echo "  Trial:    $$dir"; \
 	 echo "  Promoted  →  $$dest/"; \
@@ -117,19 +116,26 @@ repro: ## 🔄 Restore config/training.toml from a promoted model  [MODEL=...]
 	 src="$(MODELS_DIR)/$(MODEL)/config.toml"; \
 	 test -f "$$src" || { echo "ERROR: $$src not found — model promoted before config snapshots were added?"; exit 1; }; \
 	 cp "$$src" config/training.toml; \
-	 echo "Restored config/training.toml from $$src"
+	 echo "Restored config/training.toml from $$src"; \
+	 env_src="$(MODELS_DIR)/$(MODEL)/env.toml"; \
+	 if [ -f "$$env_src" ]; then \
+	   echo "NOTE: $$env_src is from an older promote format; its [env] section is now part of config/training.toml — verify the values match."; \
+	 fi
 
 # ──────────────────────────────────────────────────────────────────────────────
 
 install: ## 📦 Create or update the $(CONDA_ENV) conda env from environment.yml
 	@$(CONDA) env create -f environment.yml 2>/dev/null || $(CONDA) env update -f environment.yml --prune
-	@if [ ! -f config/training.toml ]; then \
-	   cp templates/training.toml config/training.toml; \
-	   echo "Created config/training.toml from templates/training.toml."; \
-	 else \
-	   echo "config/training.toml already exists — not overwritten."; \
-	 fi
-	@echo "Done. Verify with: make check"
+	@mkdir -p config
+	@for f in training camera; do \
+	   if [ ! -f config/$$f.toml ]; then \
+	     cp templates/$$f.toml config/$$f.toml; \
+	     echo "Created config/$$f.toml from templates/$$f.toml."; \
+	   else \
+	     echo "config/$$f.toml already exists — not overwritten."; \
+	   fi; \
+	 done
+	@echo "Done. Verify with: make check-sim"
 
 list-runs: ## 🗂️  List training runs grouped by config name
 	@echo "=== $(RUNS_DIR)/ ==="; \

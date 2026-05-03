@@ -1,4 +1,8 @@
 # Camera spec for the rendered "fixed" view.
+# This is the template — tracked in git.
+#
+# On first `make install`, this file is copied to config/camera.toml.
+# config/camera.toml is gitignored; edit it freely while experimenting.
 #
 # Used by:
 #   - VideoRecorderCallback (checkpoint training videos)

@@ -17,7 +17,7 @@ Run layout:
 To watch all training runs in TensorBoard:
     tensorboard --logdir runs
 
-To evaluate the best model visually (PyBullet GUI):
+To evaluate the best model visually (MuJoCo viewer):
     python eval_ppo.py --model runs/ppo_hoop/20240416_143022/best_model
 """
 
@@ -53,7 +53,7 @@ from stable_baselines3.common.callbacks import (
     EvalCallback,
 )
 
-from envs.quidditch_simple_env import QuidditchSimpleEnv
+from envs.quidditch.simple_env import QuidditchSimpleEnv
 from callbacks import VideoRecorderCallback, ResumeProgressCallback
 
 
@@ -76,9 +76,21 @@ with _CONFIG_PATH.open("rb") as _f:
     cfg = tomllib.load(_f)
 
 
+def _load_env_kwargs() -> dict:
+    """Build env constructor kwargs from the [env] section of config/training.toml."""
+    env = cfg.get("env", {})
+    out: dict = {}
+    if "randomise_start" in env:
+        out["randomise_start"] = bool(env["randomise_start"])
+    if "episode_seconds" in env:
+        out["episode_seconds"] = float(env["episode_seconds"])
+    return out
+
+
 # ---------------------------------------------------------------------------
 # Run-info helpers — write a human-readable TOML snapshot per trial
 # ---------------------------------------------------------------------------
+
 
 def _fmt_elapsed(seconds: float) -> str:
     h, rem = divmod(int(seconds), 3600)
@@ -107,10 +119,12 @@ def _write_run_info(
     training code — it exists purely for human inspection.
     """
     if elapsed_s is not None:
-        elapsed_line = f'elapsed     = "{_fmt_elapsed(elapsed_s)}"  # {elapsed_s:.0f} s total'
+        elapsed_line = (
+            f'elapsed     = "{_fmt_elapsed(elapsed_s)}"  # {elapsed_s:.0f} s total'
+        )
         finished_line = f'finished    = "{(started + timedelta(seconds=elapsed_s)).isoformat(timespec="seconds")}"'
     else:
-        elapsed_line  = 'elapsed     = "in progress"'
+        elapsed_line = 'elapsed     = "in progress"'
         finished_line = 'finished    = "in progress"'
 
     if best:
@@ -124,10 +138,14 @@ def _write_run_info(
         best_block = "\n[best]\n# filled in after training completes\n"
 
     resume_block = (
-        f"\n[resume]\n"
-        f'checkpoint  = "{resume["checkpoint"]}"\n'
-        f"resumed_at  = {resume['resumed_at']}\n"
-    ) if resume else ""
+        (
+            f"\n[resume]\n"
+            f'checkpoint  = "{resume["checkpoint"]}"\n'
+            f"resumed_at  = {resume['resumed_at']}\n"
+        )
+        if resume
+        else ""
+    )
 
     content = (
         "# Run info — written by train_ppo.py.  Not read by any script.\n"
@@ -176,7 +194,7 @@ def parse_args() -> argparse.Namespace:
     )
     p.add_argument("--timesteps", type=int, default=cfg["training"]["total_timesteps"])
     p.add_argument("--n-envs", type=int, default=cfg["training"]["n_envs"])
-    p.add_argument("--lr", type=float, default=cfg["ppo"]["lr"])
+    p.add_argument("--lr", type=float, default=cfg["training"]["ppo"]["lr"])
     p.add_argument(
         "--seed",
         type=int,
@@ -188,14 +206,14 @@ def parse_args() -> argparse.Namespace:
         default=None,
         metavar="PATH",
         help="Path to a .zip model to warm-start from (e.g. models/20260416_190850). "
-             "Loads weights + optimizer state; resets step counter.",
+        "Loads weights + optimizer state; resets step counter.",
     )
     p.add_argument(
         "--resume",
         default=None,
         metavar="PATH",
         help="Path to a checkpoint .zip to resume from. Keeps the step counter and trains "
-             "for the remaining steps (total_timesteps - checkpoint_steps).",
+        "for the remaining steps (total_timesteps - checkpoint_steps).",
     )
     p.add_argument(
         "--verbose",
@@ -229,6 +247,7 @@ def main() -> None:
     shutil.copy(_CONFIG_PATH, os.path.join(trial_dir, "config_snapshot.toml"))
 
     # ---- environments ----
+    base_env_kwargs = _load_env_kwargs()
     # SubprocVecEnv spawns one OS process per env so physics steps run in
     # parallel across CPU cores.  Use class + env_kwargs (not a lambda) so
     # the factory is picklable under macOS's "spawn" multiprocessing start method.
@@ -236,7 +255,7 @@ def main() -> None:
         QuidditchSimpleEnv,
         n_envs=args.n_envs,
         seed=seed,
-        env_kwargs={"render_mode": None},
+        env_kwargs={"render_mode": None, **base_env_kwargs},
         vec_env_cls=SubprocVecEnv,
     )
     # Eval env: single instance, DummyVecEnv is sufficient (no subprocess overhead).
@@ -244,15 +263,17 @@ def main() -> None:
         QuidditchSimpleEnv,
         n_envs=1,
         seed=seed,
-        env_kwargs={"render_mode": None},
+        env_kwargs={"render_mode": None, **base_env_kwargs},
     )
 
     # ---- callbacks ----
     # SB3 callback frequencies are in per-env steps; divide by n_envs to get
     # the correct call cadence for VecEnv (e.g. 50_000 // 4 = 12_500 calls).
-    eval_freq = max(cfg["eval"]["eval_freq_steps"] // args.n_envs, 1)
-    checkpoint_freq = max(cfg["callbacks"]["checkpoint_freq_steps"] // args.n_envs, 1)
-    video_freq = max(cfg["callbacks"]["video_freq_steps"] // args.n_envs, 1)
+    eval_freq = max(cfg["training"]["eval"]["eval_freq_steps"] // args.n_envs, 1)
+    checkpoint_freq = max(
+        cfg["training"]["callbacks"]["checkpoint_freq_steps"] // args.n_envs, 1
+    )
+    video_freq = max(cfg["training"]["callbacks"]["video_freq_steps"] // args.n_envs, 1)
 
     checkpoint_cb = CheckpointCallback(
         save_freq=checkpoint_freq,
@@ -265,15 +286,16 @@ def main() -> None:
         best_model_save_path=trial_dir,  # saves best_model.zip here
         log_path=trial_dir,
         eval_freq=eval_freq,
-        n_eval_episodes=cfg["eval"]["n_eval_episodes"],
+        n_eval_episodes=cfg["training"]["eval"]["n_eval_episodes"],
         deterministic=True,
         verbose=verbose,
     )
     video_cb = VideoRecorderCallback(
-        env_fn=lambda: QuidditchSimpleEnv(render_mode="rgb_array"),
+        env_fn=lambda: QuidditchSimpleEnv(render_mode="rgb_array", **base_env_kwargs),
         video_dir=video_dir,
         record_freq=video_freq,
-        fps=cfg["callbacks"]["video_fps"],
+        fps=cfg["training"]["callbacks"]["video_fps"],
+        sim_hz=CONTROL_HZ,
         verbose=verbose,
     )
 
@@ -289,7 +311,9 @@ def main() -> None:
         )
         resumed_at = model.num_timesteps
         remaining = max(args.timesteps - resumed_at, 0)
-        print(f"{_ts()} ⏱  Checkpoint at {resumed_at:,} steps; {remaining:,} remaining to {args.timesteps:,}")
+        print(
+            f"{_ts()} ⏱  Checkpoint at {resumed_at:,} steps; {remaining:,} remaining to {args.timesteps:,}"
+        )
     elif args.pretrain:
         print(f"{_ts()} 🔄 Warm-starting from {args.pretrain}")
         model = PPO.load(
@@ -298,14 +322,14 @@ def main() -> None:
             verbose=verbose,
             tensorboard_log=trial_dir,
             # Override hyper-params so the loaded model uses the current config
-            n_steps=cfg["ppo"]["n_steps"],
-            batch_size=cfg["ppo"]["batch_size"],
-            n_epochs=cfg["ppo"]["n_epochs"],
+            n_steps=cfg["training"]["ppo"]["n_steps"],
+            batch_size=cfg["training"]["ppo"]["batch_size"],
+            n_epochs=cfg["training"]["ppo"]["n_epochs"],
             learning_rate=args.lr,
-            gamma=cfg["ppo"]["gamma"],
-            gae_lambda=cfg["ppo"]["gae_lambda"],
-            clip_range=cfg["ppo"]["clip_range"],
-            ent_coef=cfg["ppo"]["ent_coef"],
+            gamma=cfg["training"]["ppo"]["gamma"],
+            gae_lambda=cfg["training"]["ppo"]["gae_lambda"],
+            clip_range=cfg["training"]["ppo"]["clip_range"],
+            ent_coef=cfg["training"]["ppo"]["ent_coef"],
         )
     else:
         model = PPO(
@@ -313,27 +337,40 @@ def main() -> None:
             train_env,
             verbose=verbose,
             tensorboard_log=trial_dir,
-            n_steps=cfg["ppo"]["n_steps"],
-            batch_size=cfg["ppo"]["batch_size"],
-            n_epochs=cfg["ppo"]["n_epochs"],
+            n_steps=cfg["training"]["ppo"]["n_steps"],
+            batch_size=cfg["training"]["ppo"]["batch_size"],
+            n_epochs=cfg["training"]["ppo"]["n_epochs"],
             learning_rate=args.lr,
-            gamma=cfg["ppo"]["gamma"],
-            gae_lambda=cfg["ppo"]["gae_lambda"],
-            clip_range=cfg["ppo"]["clip_range"],
-            ent_coef=cfg["ppo"]["ent_coef"],
+            gamma=cfg["training"]["ppo"]["gamma"],
+            gae_lambda=cfg["training"]["ppo"]["gae_lambda"],
+            clip_range=cfg["training"]["ppo"]["clip_range"],
+            ent_coef=cfg["training"]["ppo"]["ent_coef"],
             seed=seed,
         )
 
-    resume_info = {"checkpoint": args.resume, "resumed_at": resumed_at} if args.resume else None
-    _write_run_info(run_info_path, name=args.run_name, trial=trial,
-                    started=start_time, resume=resume_info)
+    resume_info = (
+        {"checkpoint": args.resume, "resumed_at": resumed_at} if args.resume else None
+    )
+    _write_run_info(
+        run_info_path,
+        name=args.run_name,
+        trial=trial,
+        started=start_time,
+        resume=resume_info,
+    )
 
-    print(f"{_ts()} 🚀 Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)")
+    print(
+        f"{_ts()} 🚀 Training PPO for {args.timesteps:,} timesteps  ({args.n_envs} parallel envs)"
+    )
     print(f"{_ts()} 📁 Trial       : {trial_dir}")
     print(f"{_ts()} 📊 Tensorboard : {trial_dir}/PPO_1")
     print()
 
-    extra_callbacks = [] if (args.verbose or args.resume is None) else [ResumeProgressCallback(args.timesteps)]
+    extra_callbacks = (
+        []
+        if (args.verbose or args.resume is None)
+        else [ResumeProgressCallback(args.timesteps)]
+    )
     model.learn(
         total_timesteps=args.timesteps,
         callback=[checkpoint_cb, eval_cb, video_cb, *extra_callbacks],
@@ -345,13 +382,19 @@ def main() -> None:
     model.save(final_path)
 
     elapsed_s = (datetime.now() - start_time).total_seconds()
-    _write_run_info(run_info_path, name=args.run_name, trial=trial,
-                    started=start_time,
-                    elapsed_s=elapsed_s,
-                    best=_load_best_metrics(trial_dir),
-                    resume=resume_info)
+    _write_run_info(
+        run_info_path,
+        name=args.run_name,
+        trial=trial,
+        started=start_time,
+        elapsed_s=elapsed_s,
+        best=_load_best_metrics(trial_dir),
+        resume=resume_info,
+    )
 
-    print(f"\n{_ts()} ✅ Training done in {_fmt_elapsed(elapsed_s)}. Final model saved to {final_path}.zip")
+    print(
+        f"\n{_ts()} ✅ Training done in {_fmt_elapsed(elapsed_s)}. Final model saved to {final_path}.zip"
+    )
 
 
 if __name__ == "__main__":
