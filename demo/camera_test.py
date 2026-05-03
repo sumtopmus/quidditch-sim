@@ -1,20 +1,28 @@
-"""Render the hover demo through the *fixed* camera and write an mp4.
+"""Render the hover demo and write an mp4 — defaults to the 2x2 grid.
 
-Use this to iterate on config/camera.toml — edit the camera position/lookat,
-re-run `make camera-test`, watch the result.  This is what the
-VideoRecorderCallback sees during training (same MJCF "fixed" camera in the
-Quidditch arena), so getting the angle right here gets it right for
-checkpoint videos too.
+The default mirrors what training videos record (``front``, ``side``,
+``top``, and ``drone_tpv`` stitched at 1080p), so this is the canonical
+"is the next checkpoint video going to look right?" check.  Pass
+``--cam NAME`` to preview a single named camera instead.
 
-Output:
-    runs/camera_test/hover_camera_test.mp4   ← full hover video
-    runs/camera_test/last_frame.png          ← still preview (faster to inspect)
+Use this to iterate on config/camera.toml (only affects the "fixed"
+cam) or on the chase-cam offsets in core/quadrotor.py.  Output filenames
+embed the cam name so multiple previews can co-exist.
 
-Run:  make camera-test    (or:  python demo/camera_test.py)
+Outputs (per --cam choice):
+    runs/camera_test/hover_<cam>.mp4   ← full hover video
+    runs/camera_test/hover_<cam>.png   ← still preview (last frame)
+
+Available cams:  grid | fixed | front | side | top | drone_fpv | drone_tpv
+
+Run:  make camera-test                  # → hover_grid.mp4 (default; 1080p 2x2)
+      make camera-test CAM=fixed        # → hover_fixed.mp4
+      make camera-test CAM=drone_tpv    # → hover_drone_tpv.mp4
 """
 
 from __future__ import annotations
 
+import argparse
 import sys
 from pathlib import Path
 
@@ -34,17 +42,39 @@ from envs.quidditch.constants import (
 )
 
 
-VIDEO_W, VIDEO_H = 960, 540
+# Single-cam preview resolution.
+SINGLE_W, SINGLE_H = 960, 540
+# Per-cell resolution for grid preview — matches the training-callback
+# default in templates/training.toml so this preview shows what gets
+# recorded during checkpoint videos.
+GRID_CELL_W, GRID_CELL_H = 960, 540
+GRID_CAMS = ("front", "side", "top", "drone_tpv")
 FPS = 120
 OUT_DIR = Path(__file__).resolve().parents[1] / "runs" / "camera_test"
+
+VALID_CAMS = ("grid", "fixed", "front", "side", "top", "drone_fpv", "drone_tpv")
+
+
+def _parse_args() -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument(
+        "--cam",
+        default="grid",
+        choices=VALID_CAMS,
+        help='Which camera to preview (default: "grid" — the 2x2 1080p stitch '
+             "matching the training video callback).",
+    )
+    return p.parse_args()
 
 
 def main() -> None:
     import imageio.v2 as imageio
 
+    args = _parse_args()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     cam = load_camera_config()
-    print(f"[camera] eye={cam['eye']}  lookat={cam['lookat']}")
+    print(f"[camera.toml] fixed cam: eye={cam['eye']}  lookat={cam['lookat']}")
+    print(f"[preview]     rendering through: {args.cam}")
 
     quad = Quadrotor.standalone(
         start_pos=START_POS,
@@ -59,6 +89,16 @@ def main() -> None:
     quad.set_mode(7)
     quad.set_setpoint(SETPOINT)
 
+    if args.cam == "grid":
+        capture = lambda: quad.render_grid(GRID_CAMS, GRID_CELL_W, GRID_CELL_H)
+    else:
+        # Single-cam path: drive the renderer directly so we can pick the
+        # camera by name (World.render_frame is hardcoded to "fixed").
+        renderer = quad._world.get_renderer(SINGLE_W, SINGLE_H)
+        def capture() -> np.ndarray:
+            renderer.update_scene(quad._world.data, camera=args.cam)
+            return renderer.render()[:, :, :3]
+
     frames: list[np.ndarray] = []
     every = max(1, int((1.0 / FPS) / quad.step_period))
     steps = int(HOVER_SECONDS / quad.step_period)
@@ -67,12 +107,12 @@ def main() -> None:
     for i in range(steps):
         quad.step()
         if i % every == 0:
-            frames.append(quad.render_frame(VIDEO_W, VIDEO_H))
+            frames.append(capture())
 
     quad.disconnect()
 
-    mp4 = OUT_DIR / "hover_camera_test.mp4"
-    png = OUT_DIR / "last_frame.png"
+    mp4 = OUT_DIR / f"hover_{args.cam}.mp4"
+    png = OUT_DIR / f"hover_{args.cam}.png"
     with imageio.get_writer(str(mp4), fps=FPS, macro_block_size=None) as w:
         for f in frames:
             w.append_data(f)  # type: ignore[attr-defined]

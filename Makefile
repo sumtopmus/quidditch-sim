@@ -59,8 +59,9 @@ check-sim: ## ✅ Validate env headless (fast, no window)
 check-gui: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
 	@$(MJPYTHON) scripts/check_env.py --viewer
 
-camera-test: ## 🎥 Render hover flight through fixed cam → mp4 (edit config/camera.toml)
-	@$(PYTHON) demo/camera_test.py
+CAM ?= grid
+camera-test: ## 🎥 Render hover flight as 2x2 grid → mp4 (CAM=grid|fixed|front|side|top|drone_fpv|drone_tpv)
+	@$(PYTHON) demo/camera_test.py --cam $(CAM)
 
 demo: ## 🎮 Pick a demo to run (hover, waypoint) — opens viewer
 	@$(MJPYTHON) demo/menu.py
