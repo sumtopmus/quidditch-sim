@@ -111,7 +111,10 @@ class World:
 
         if self._render and self._viewer is None:
             import mujoco.viewer as _mjv
-            self._viewer = _mjv.launch_passive(self.model, self.data)
+            self._viewer = _mjv.launch_passive(
+                self.model, self.data,
+                key_callback=self._make_key_callback(),
+            )
             az, el, dist, lookat = _viewer_params(
                 self._camera["eye"], self._camera["lookat"]
             )
@@ -167,6 +170,48 @@ class World:
         else:
             while self._viewer.is_running():
                 time.sleep(0.05)
+
+    # ── viewer key bindings ──────────────────────────────────────────────────
+
+    def _make_key_callback(self):
+        """Build a key_callback for `mujoco.viewer.launch_passive`.
+
+        Direct-select named cameras with digit keys; ` (grave accent) returns
+        to free cam.  Tab still cycles through fixed cameras (built into the
+        viewer) — these digit shortcuts are additive, not a replacement.
+
+            ` (grave) → free cam
+            1 → fixed   2 → front   3 → side   4 → top
+            5 → drone_fpv   6 → drone_tpv
+
+        Cameras that don't exist in the model (e.g. drone_fpv before commit 2
+        lands) are silently skipped — pressing their digit is a no-op.
+        """
+        digit_to_cam = {
+            "1": "fixed",
+            "2": "front",
+            "3": "side",
+            "4": "top",
+            "5": "drone_fpv",
+            "6": "drone_tpv",
+        }
+        cam_ids: dict[str, int] = {}
+        for digit, name in digit_to_cam.items():
+            cid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, name)
+            if cid >= 0:
+                cam_ids[digit] = cid
+
+        def cb(keycode: int) -> None:
+            if self._viewer is None:
+                return
+            ch = chr(keycode) if 0 < keycode < 128 else ""
+            if ch == "`":
+                self._viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
+            elif ch in cam_ids:
+                self._viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
+                self._viewer.cam.fixedcamid = cam_ids[ch]
+
+        return cb
 
     # ── rendering ─────────────────────────────────────────────────────────────
 

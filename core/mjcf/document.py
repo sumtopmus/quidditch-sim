@@ -18,7 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import Iterable, Optional
 
-from core.mjcf.camera import _FALLBACK_CAMERA, _camera_xyaxes
+from core.mjcf.camera import BROADCAST_CAMERAS, _FALLBACK_CAMERA, _camera_xyaxes
 from core.mjcf.fragment import SceneFragment, merge_all
 
 
@@ -100,6 +100,9 @@ def build_mjcf(opts: WorldOptions, fragments: Iterable[SceneFragment]) -> str:
         body_lines.append(_DEFAULT_FLOOR)
     body_lines.extend(merged.worldbody)
     body_lines.append(f'<camera name="fixed" pos="{cam_pos}" xyaxes="{cam_xyaxes}"/>')
+    for name, eye, lookat in BROADCAST_CAMERAS:
+        bpos, bxy = _camera_xyaxes(eye, lookat)
+        body_lines.append(f'<camera name="{name}" pos="{bpos}" xyaxes="{bxy}"/>')
     worldbody_block = "\n    ".join(body_lines)
 
     # ── <visual> ──────────────────────────────────────────────────────────

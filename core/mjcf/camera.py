@@ -1,7 +1,8 @@
 """Camera math: load config, derive MJCF xyaxes, derive live-viewer params.
 
-Used by `build_mjcf` (offscreen "fixed" camera) and by the World/Quadrotor
-viewer setup (live mujoco.viewer).  Single source of truth for both.
+Used by `build_mjcf` (offscreen "fixed" camera + axis-aligned broadcast cams)
+and by the World/Quadrotor viewer setup (live mujoco.viewer).  Single source
+of truth for both.
 """
 
 from __future__ import annotations
@@ -21,6 +22,20 @@ _FALLBACK_CAMERA: dict = {
     "eye":    (2.9, -4.7, 2.9),
     "lookat": (0.5,  0.0, 1.3),
 }
+
+
+# ── broadcast cameras (hardcoded — tied to arena geometry) ───────────────────
+# Three axis-aligned spectator cams emitted by `build_mjcf` alongside `fixed`.
+# Used for switching in the live viewer and for the 2x2 checkpoint-video grid.
+# Geometry is locked to the Quidditch arena (radius 3 m, hoop at (2,0,2),
+# drone start (0,0,0)) — not user-tunable.  `top` includes a 1 mm horizontal
+# offset to avoid the degenerate "look parallel to world up" check below.
+BROADCAST_CAMERAS: tuple[tuple[str, tuple, tuple], ...] = (
+    # (name,    eye,                  lookat)
+    ("front",  (5.0, 0.0,   1.5),    (1.0, 0.0, 1.3)),
+    ("side",   (1.0, 5.0,   1.5),    (1.0, 0.0, 1.3)),
+    ("top",    (1.0, 0.001, 5.0),    (1.0, 0.0, 1.3)),
+)
 
 
 def load_camera_config(path: str | Path | None = None) -> dict:
