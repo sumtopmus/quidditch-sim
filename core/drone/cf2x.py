@@ -229,6 +229,13 @@ def cf2x_fragment(
         f'           queried via mj_geomDistance against hoop_score_tube). -->\n'
         f'      <geom name="{prefix}_probe" type="sphere" size="0.012" pos="0 0 0"\n'
         f'            contype="0" conaffinity="0" rgba="1 0 0 0"/>\n'
+        f'      <!-- FPV camera: child of drone body, looks along body +X (forward).\n'
+        f'           xyaxes derivation: body frame ENU (x=fwd, y=left, z=up); MuJoCo\n'
+        f'           cameras look along their own -Z, with +Y up.  Set cam +Y = body +Z\n'
+        f'           and cam +X = body -Y, giving cam -Z = body +X.  fovy=70° is roughly\n'
+        f'           a wide-angle FPV lens. -->\n'
+        f'      <camera name="{prefix}_fpv" pos="0.04 0 0.005"\n'
+        f'              xyaxes="0 -1 0  0 0 1" fovy="70"/>\n'
         f'    </body>'
     )
 
