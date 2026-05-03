@@ -41,6 +41,18 @@ checkpoint_freq_steps = 50_000
 video_freq_steps      = 100_000
 video_fps             = 20
 
+# Checkpoint videos: 2x2 grid stitching four named cameras.
+# `cells` is row-major: [top-left, top-right, bottom-left, bottom-right].
+# Per-cell size 960x540 → final 1920x1080 (1080p).  Each render does 4
+# offscreen passes per frame, so checkpoint video time scales with
+# cell_width * cell_height * 4.  Set grid = false to record only the
+# cinematic "fixed" cam at 640x480 (faster, less informative).
+[training.callbacks.video]
+grid        = true
+cells       = ["front", "side", "top", "drone_tpv"]
+cell_width  = 960
+cell_height = 540
+
 # Environment / task parameters. These shape the task itself, not the PPO
 # hyperparameters above.
 #
