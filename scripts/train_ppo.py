@@ -108,24 +108,32 @@ def _write_run_info(
     name: str,
     trial: str,
     started: datetime,
+    steps_trained: int | None = None,
     elapsed_s: float | None = None,
     best: dict | None = None,
     resume: dict | None = None,
+    pretrain: dict | None = None,
 ) -> None:
     """Write (or overwrite) a human-readable TOML summary of this trial.
 
-    Written once before training (elapsed/best are absent) and again after
-    (elapsed + best eval metrics filled in).  The file is never read by any
-    training code — it exists purely for human inspection.
+    Written once before training (elapsed/best/steps_trained left as
+    "in progress") and again after (filled in).  Read by `scripts/lineage.py`
+    to walk the pretrain ancestry chain.
     """
     if elapsed_s is not None:
         elapsed_line = (
-            f'elapsed     = "{_fmt_elapsed(elapsed_s)}"  # {elapsed_s:.0f} s total'
+            f'elapsed       = "{_fmt_elapsed(elapsed_s)}"  # {elapsed_s:.0f} s total'
         )
-        finished_line = f'finished    = "{(started + timedelta(seconds=elapsed_s)).isoformat(timespec="seconds")}"'
+        finished_line = f'finished      = "{(started + timedelta(seconds=elapsed_s)).isoformat(timespec="seconds")}"'
     else:
-        elapsed_line = 'elapsed     = "in progress"'
-        finished_line = 'finished    = "in progress"'
+        elapsed_line = 'elapsed       = "in progress"'
+        finished_line = 'finished      = "in progress"'
+
+    steps_line = (
+        f"steps_trained = {steps_trained}"
+        if steps_trained is not None
+        else 'steps_trained = "in progress"'
+    )
 
     if best:
         best_block = (
@@ -147,21 +155,65 @@ def _write_run_info(
         else ""
     )
 
+    if pretrain:
+        total_line = (
+            f"total_steps  = {pretrain['total_steps']}"
+            if pretrain.get("total_steps") is not None
+            else 'total_steps  = "in progress"'
+        )
+        pretrain_block = (
+            f"\n[pretrain]\n"
+            f"# parent path is recorded as passed to --pretrain (typically relative to repo root).\n"
+            f'parent       = "{pretrain["parent"]}"\n'
+            f"parent_steps = {pretrain['parent_steps']}\n"
+            f"{total_line}\n"
+        )
+    else:
+        pretrain_block = ""
+
     content = (
-        "# Run info — written by train_ppo.py.  Not read by any script.\n"
+        "# Run info — written by train_ppo.py.  Read by scripts/lineage.py.\n"
         "\n"
         "[run]\n"
-        f'name    = "{name}"\n'
-        f'trial   = "{trial}"\n'
-        f'started = "{started.isoformat(timespec="seconds")}"\n'
+        f'name          = "{name}"\n'
+        f'trial         = "{trial}"\n'
+        f'started       = "{started.isoformat(timespec="seconds")}"\n'
         f"{elapsed_line}\n"
         f"{finished_line}\n"
+        f"{steps_line}\n"
         f"{resume_block}"
+        f"{pretrain_block}"
         f"{best_block}"
     )
 
     with open(path, "w") as fh:
         fh.write(content)
+
+
+def _read_parent_chain_total(pretrain_path: str) -> int | None:
+    """Read parent's [pretrain].total_steps (or [run].steps_trained as fallback).
+
+    Returns None if no info file is found alongside the pretrain checkpoint.
+    `total_steps` already reflects the parent's full ancestry, so child's
+    cumulative = this_value + child's own num_timesteps.
+    """
+    parent_dir = Path(pretrain_path).resolve().parent
+    for fname in ("info.toml", "run_info.toml"):
+        candidate = parent_dir / fname
+        if not candidate.exists():
+            continue
+        try:
+            data = tomllib.loads(candidate.read_text())
+        except Exception:
+            return None
+        total = data.get("pretrain", {}).get("total_steps")
+        if isinstance(total, int):
+            return total
+        steps_trained = data.get("run", {}).get("steps_trained")
+        if isinstance(steps_trained, int):
+            return steps_trained
+        return None
+    return None
 
 
 def _load_best_metrics(trial_dir: str) -> dict | None:
@@ -301,6 +353,8 @@ def main() -> None:
 
     # ---- model ----
     resumed_at: int | None = None
+    pretrain_parent_steps: int | None = None
+    pretrain_chain_total: int | None = None
     if args.resume:
         print(f"{_ts()} ▶️  Resuming from {args.resume}")
         model = PPO.load(
@@ -331,6 +385,18 @@ def main() -> None:
             clip_range=cfg["training"]["ppo"]["clip_range"],
             ent_coef=cfg["training"]["ppo"]["ent_coef"],
         )
+        # Capture parent step count from the loaded checkpoint BEFORE training resets
+        # the counter (reset_num_timesteps=True for pretrain).  Then walk parent's
+        # info.toml to get the cumulative-chain total (handles deeper ancestry).
+        pretrain_parent_steps = int(model.num_timesteps)
+        chain_total = _read_parent_chain_total(args.pretrain)
+        pretrain_chain_total = (
+            chain_total if chain_total is not None else pretrain_parent_steps
+        )
+        print(
+            f"{_ts()} ⛓  Pretrain parent has {pretrain_parent_steps:,} steps; "
+            f"chain total {pretrain_chain_total:,}"
+        )
     else:
         model = PPO(
             "MlpPolicy",
@@ -351,12 +417,22 @@ def main() -> None:
     resume_info = (
         {"checkpoint": args.resume, "resumed_at": resumed_at} if args.resume else None
     )
+    pretrain_info = (
+        {
+            "parent": args.pretrain,
+            "parent_steps": pretrain_parent_steps,
+            "total_steps": None,  # filled in after training (= chain_total + this run's steps)
+        }
+        if args.pretrain
+        else None
+    )
     _write_run_info(
         run_info_path,
         name=args.run_name,
         trial=trial,
         started=start_time,
         resume=resume_info,
+        pretrain=pretrain_info,
     )
 
     print(
@@ -382,14 +458,22 @@ def main() -> None:
     model.save(final_path)
 
     elapsed_s = (datetime.now() - start_time).total_seconds()
+    final_steps_trained = int(model.num_timesteps)
+    if pretrain_info is not None:
+        # Chain total = parent's full ancestry + this trial's actual contribution.
+        # For pretrain, model.num_timesteps was reset to 0 at training start, so
+        # final_steps_trained is exactly this run's contribution.
+        pretrain_info["total_steps"] = (pretrain_chain_total or 0) + final_steps_trained
     _write_run_info(
         run_info_path,
         name=args.run_name,
         trial=trial,
         started=start_time,
+        steps_trained=final_steps_trained,
         elapsed_s=elapsed_s,
         best=_load_best_metrics(trial_dir),
         resume=resume_info,
+        pretrain=pretrain_info,
     )
 
     print(
