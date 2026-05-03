@@ -109,6 +109,21 @@ class World:
         for drone in self.drones:
             drone._reset_controller()
 
+        # mj_resetData restores mocap_pos/quat to the body's MJCF-declared
+        # zero pose; reposition each drone's TPV chase cam now so frame 0
+        # is correct (otherwise it'd snap into place on the first step).
+        # mj_kinematics propagates mocap_pos/quat → xpos/xquat for the
+        # mocap body itself; mj_camlight then propagates xpos/xquat →
+        # cam_xpos/cam_xmat for the camera child.  Both are needed before
+        # the renderer sees the new pose.
+        any_tpv = False
+        for drone in self.drones:
+            drone._update_tpv_mocap()
+            any_tpv = any_tpv or drone._tpv_mocap_id >= 0
+        if any_tpv:
+            mujoco.mj_kinematics(self.model, self.data)
+            mujoco.mj_camlight(self.model, self.data)
+
         if self._render and self._viewer is None:
             import mujoco.viewer as _mjv
             self._viewer = _mjv.launch_passive(
@@ -137,6 +152,17 @@ class World:
             for drone in self.drones:
                 drone._apply_control()
             mujoco.mj_step(self.model, self.data)
+
+        # Reposition TPV chase cams from each drone's fresh post-step pose
+        # before the viewer (or any renderer) reads the scene this frame.
+        # See reset() for why mj_kinematics + mj_camlight are both needed.
+        any_tpv = False
+        for drone in self.drones:
+            drone._update_tpv_mocap()
+            any_tpv = any_tpv or drone._tpv_mocap_id >= 0
+        if any_tpv:
+            mujoco.mj_kinematics(self.model, self.data)
+            mujoco.mj_camlight(self.model, self.data)
 
         if self._viewer is not None and self._viewer.is_running():
             self._viewer.sync()
