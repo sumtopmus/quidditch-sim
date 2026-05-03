@@ -17,7 +17,7 @@ Run layout:
 To watch all training runs in TensorBoard:
     tensorboard --logdir runs
 
-To evaluate the best model visually (PyBullet GUI):
+To evaluate the best model visually (MuJoCo viewer):
     python eval_ppo.py --model runs/ppo_hoop/20240416_143022/best_model
 """
 

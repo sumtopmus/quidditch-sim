@@ -4,7 +4,7 @@ Usage:
     conda activate uav
     cd repo
 
-    # Visual evaluation (PyBullet GUI) — 10 episodes:
+    # Visual evaluation (MuJoCo viewer) — 10 episodes:
     python eval_ppo.py --model runs/ppo_hoop_v1/best_model
 
     # Headless stats over 50 episodes:
