@@ -7,7 +7,6 @@ Run:  make demo  (and pick "hover")   or:  mjpython demo/hover_demo.py
 """
 
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -52,7 +51,6 @@ def main() -> None:
         if i % CONTROL_HZ == 0:  # print once per second
             pos = quad.state()[3]
             print(f"  t={i/CONTROL_HZ:4.1f}s  pos=({pos[0]:+.3f}, {pos[1]:+.3f}, {pos[2]:+.3f})")
-        time.sleep(quad.step_period)  # pace to roughly real-time
 
     quad.idle()
     quad.disconnect()

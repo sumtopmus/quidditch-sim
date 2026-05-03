@@ -4,14 +4,10 @@ Runs in an *empty* scene (floor + waypoint markers only — no hoop, no arena
 wall) so the flight path is unobstructed.  Exercises mode-7 position-setpoint
 flight and waypoint switching.
 
-Unlike PyFlyt's Aviary, MuJoCo's launch_passive viewer does NOT auto-pace to
-real time, so we sleep `quad.step_period` after each step when rendering.
-
 Run:  make demo  (and pick "waypoint")   or:  mjpython demo/waypoint_demo.py
 """
 
 import sys
-import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -51,7 +47,6 @@ def fly_to(quad: Quadrotor, wp: np.ndarray, yaw: float, seconds: float) -> np.nd
     pos = quad.state()[-1]
     for step in range(steps):
         quad.step()
-        time.sleep(quad.step_period)  # pace to real-time so the viewer is watchable
         pos = quad.state()[-1]
         if step % log_every == 0:
             dist = float(np.linalg.norm(pos - wp))

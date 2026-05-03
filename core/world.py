@@ -121,9 +121,12 @@ class World:
             self._viewer.cam.lookat[:] = lookat
 
     def step(self) -> None:
-        """One control step: each drone computes a wrench, then PHYS_PER_CTRL × mj_step."""
-        # Compute control once per drone.  Each drone caches its PWM and writes
-        # the resulting wrench into xfrc_applied during _apply_control().
+        """One control step: each drone computes a wrench, then PHYS_PER_CTRL × mj_step.
+
+        When a viewer is attached, paces the loop to real time — MuJoCo's
+        ``launch_passive`` viewer does not auto-pace, so a tight call loop
+        would replay the episode as fast as the CPU can step physics.
+        """
         for drone in self.drones:
             drone._compute_control()
 
@@ -134,6 +137,7 @@ class World:
 
         if self._viewer is not None and self._viewer.is_running():
             self._viewer.sync()
+            time.sleep(self.step_period)
 
     def disconnect(self) -> None:
         """Close the viewer (if any) and release the offscreen renderer."""
@@ -160,7 +164,6 @@ class World:
         if active:
             while self._viewer.is_running():
                 self.step()
-                time.sleep(self.step_period)
         else:
             while self._viewer.is_running():
                 time.sleep(0.05)
