@@ -117,7 +117,9 @@ def main() -> None:
 
     mp4 = OUT_DIR / f"hover_{args.cam}.mp4"
     png = OUT_DIR / f"hover_{args.cam}.png"
-    with imageio.get_writer(str(mp4), fps=FPS, macro_block_size=None) as w:
+    with imageio.get_writer(
+        str(mp4), fps=FPS, macro_block_size=None, ffmpeg_log_level="error"
+    ) as w:
         for f in frames:
             w.append_data(f)  # type: ignore[attr-defined]
     imageio.imwrite(str(png), frames[-1])
