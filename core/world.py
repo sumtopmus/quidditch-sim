@@ -252,3 +252,38 @@ class World:
         renderer.update_scene(self.data, camera="fixed")
         rgba = renderer.render()          # (H, W, 4) uint8 — mujoco 3.x returns RGBA
         return rgba[:, :, :3]
+
+    def render_grid(
+        self,
+        cam_names: tuple[str, str, str, str],
+        cell_width: int,
+        cell_height: int,
+    ) -> np.ndarray:
+        """Render four cameras and stitch into a 2x2 RGB grid.
+
+        Args:
+            cam_names: row-major (top-left, top-right, bottom-left, bottom-right).
+            cell_width / cell_height: per-cell pixel dimensions.
+
+        Returns:
+            (2*cell_height, 2*cell_width, 3) uint8 RGB array.
+
+        Re-uses the World's single renderer instance — sized via cell_width
+        and cell_height on first call (see ``get_renderer``).  Mixing
+        ``render_frame`` and ``render_grid`` with different sizes in the same
+        World will use whichever size was requested first; pick one or
+        recreate the World.
+        """
+        renderer = self.get_renderer(cell_width, cell_height)
+        cells: list[np.ndarray] = []
+        for name in cam_names:
+            renderer.update_scene(self.data, camera=name)
+            # .copy() because subsequent render() calls may overwrite the
+            # internal pixel buffer; we need all four cells alive at once.
+            cells.append(renderer.render()[:, :, :3].copy())
+        # np.block can't be used here: for 3-D arrays it concatenates the
+        # innermost list along the LAST axis (channels), not the width axis.
+        # Build explicit row-major hstack/vstack instead.
+        top    = np.hstack([cells[0], cells[1]])
+        bottom = np.hstack([cells[2], cells[3]])
+        return np.vstack([top, bottom])

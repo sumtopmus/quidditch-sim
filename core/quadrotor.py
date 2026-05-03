@@ -22,8 +22,9 @@ keep working without learning about the World object:
     Quadrotor.step()             -> world.step()
     Quadrotor.disconnect()       -> world.disconnect()
     Quadrotor.idle(active=False) -> world.idle(active)
-    Quadrotor.render_frame(w, h) -> world.render_frame(w, h)
-    Quadrotor.get_renderer(w, h) -> world.get_renderer(w, h)
+    Quadrotor.render_frame(w, h)         -> world.render_frame(w, h)
+    Quadrotor.render_grid(names, cw, ch) -> world.render_grid(names, cw, ch)
+    Quadrotor.get_renderer(w, h)         -> world.get_renderer(w, h)
 
 `load_camera_config` is re-exported from this module for back-compat with
 demo/camera_test.py and other historical importers.
@@ -194,6 +195,14 @@ class Quadrotor:
 
     def render_frame(self, width: int, height: int) -> np.ndarray:
         return self._world.render_frame(width, height)
+
+    def render_grid(
+        self,
+        cam_names: tuple[str, str, str, str],
+        cell_width: int,
+        cell_height: int,
+    ) -> np.ndarray:
+        return self._world.render_grid(cam_names, cell_width, cell_height)
 
     def get_renderer(self, width: int, height: int) -> mujoco.Renderer:
         return self._world.get_renderer(width, height)
