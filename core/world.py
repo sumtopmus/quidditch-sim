@@ -258,6 +258,27 @@ class World:
         rgba = renderer.render()          # (H, W, 4) uint8 — mujoco 3.x returns RGBA
         return rgba[:, :, :3]
 
+    def render_cells(
+        self,
+        cam_names: tuple[str, ...],
+        cell_width: int,
+        cell_height: int,
+    ) -> list[np.ndarray]:
+        """Render N cameras into separate (cell_height × cell_width × 3) RGB arrays.
+
+        Re-uses the World's single renderer instance — sized via cell_width
+        and cell_height on first call (see ``get_renderer``).  Mixing different
+        sizes in the same World will use whichever size was requested first;
+        pick one or recreate the World.  ``.copy()`` each cell because the
+        renderer's internal pixel buffer is overwritten on the next render().
+        """
+        renderer = self.get_renderer(cell_width, cell_height)
+        cells: list[np.ndarray] = []
+        for name in cam_names:
+            renderer.update_scene(self.data, camera=name)
+            cells.append(renderer.render()[:, :, :3].copy())
+        return cells
+
     def render_grid(
         self,
         cam_names: tuple[str, str, str, str],
@@ -272,20 +293,8 @@ class World:
 
         Returns:
             (2*cell_height, 2*cell_width, 3) uint8 RGB array.
-
-        Re-uses the World's single renderer instance — sized via cell_width
-        and cell_height on first call (see ``get_renderer``).  Mixing
-        ``render_frame`` and ``render_grid`` with different sizes in the same
-        World will use whichever size was requested first; pick one or
-        recreate the World.
         """
-        renderer = self.get_renderer(cell_width, cell_height)
-        cells: list[np.ndarray] = []
-        for name in cam_names:
-            renderer.update_scene(self.data, camera=name)
-            # .copy() because subsequent render() calls may overwrite the
-            # internal pixel buffer; we need all four cells alive at once.
-            cells.append(renderer.render()[:, :, :3].copy())
+        cells = self.render_cells(cam_names, cell_width, cell_height)
         # np.block can't be used here: for 3-D arrays it concatenates the
         # innermost list along the LAST axis (channels), not the width axis.
         # Build explicit row-major hstack/vstack instead.

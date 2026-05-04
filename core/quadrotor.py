@@ -22,9 +22,10 @@ keep working without learning about the World object:
     Quadrotor.step()             -> world.step()
     Quadrotor.disconnect()       -> world.disconnect()
     Quadrotor.idle(active=False) -> world.idle(active)
-    Quadrotor.render_frame(w, h)         -> world.render_frame(w, h)
-    Quadrotor.render_grid(names, cw, ch) -> world.render_grid(names, cw, ch)
-    Quadrotor.get_renderer(w, h)         -> world.get_renderer(w, h)
+    Quadrotor.render_frame(w, h)          -> world.render_frame(w, h)
+    Quadrotor.render_grid(names, cw, ch)  -> world.render_grid(names, cw, ch)
+    Quadrotor.render_cells(names, cw, ch) -> world.render_cells(names, cw, ch)
+    Quadrotor.get_renderer(w, h)          -> world.get_renderer(w, h)
 """
 
 from __future__ import annotations
@@ -198,6 +199,14 @@ class Quadrotor:
         cell_height: int,
     ) -> np.ndarray:
         return self._world.render_grid(cam_names, cell_width, cell_height)
+
+    def render_cells(
+        self,
+        cam_names: tuple[str, ...],
+        cell_width: int,
+        cell_height: int,
+    ) -> list[np.ndarray]:
+        return self._world.render_cells(cam_names, cell_width, cell_height)
 
     def get_renderer(self, width: int, height: int) -> mujoco.Renderer:
         return self._world.get_renderer(width, height)
