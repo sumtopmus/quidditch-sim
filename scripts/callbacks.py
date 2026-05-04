@@ -207,7 +207,8 @@ class VideoRecorderCallback(BaseCallback):
         """Log each cam stream as a separate TB video.
 
         Grid mode emits one ``Video`` per cam under ``eval/video/<cam>``
-        (so TB groups them as a "video" sub-node of "eval").  Single-cam
+        with the cam name lowercased (e.g. ``eval/video/east``) for tag
+        consistency with SB3's other lowercase eval/* keys.  Single-cam
         mode emits one ``Video`` under ``eval/video``.  SB3's ``Video``
         wraps a (N, T, C, H, W) uint8 tensor; the underlying torch
         ``SummaryWriter.add_video`` swallows missing-moviepy as a print
@@ -222,7 +223,7 @@ class VideoRecorderCallback(BaseCallback):
             tensor = torch.from_numpy(
                 np.stack(frames).transpose(0, 3, 1, 2)[None].copy()
             )
-            tag = f"eval/video/{name}" if self.grid else "eval/video"
+            tag = f"eval/video/{name.lower()}" if self.grid else "eval/video"
             self.logger.record(
                 tag,
                 Video(tensor, fps=self.fps),
