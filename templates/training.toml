@@ -39,7 +39,11 @@ n_eval_episodes  = 10
 
 [training.callbacks]
 checkpoint_freq_steps = 50_000
-video_freq_steps      = 100_000
+# Video cadence is expressed in eval-units: video runs every Nth eval, so
+# effective freq = eval_freq_steps × video_every_n_evals.  Set N=1 to record
+# at every eval, or raise to keep videos cheaper than full eval cadence.
+# Each video is also logged to TensorBoard (eval/video) in addition to mp4.
+video_every_n_evals   = 2
 video_fps             = 20
 
 # Checkpoint videos: 2x2 grid stitching four named cameras.

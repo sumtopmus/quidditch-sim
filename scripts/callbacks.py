@@ -9,6 +9,7 @@ from typing import Callable
 import numpy as np
 
 from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.logger import Video
 
 
 class ResumeProgressCallback(BaseCallback):
@@ -62,7 +63,12 @@ class VideoRecorderCallback(BaseCallback):
     drone-start side, East frames the goal head-on from behind the hoop.
     North would mirror the hoop to the LEFT and is usually avoided.
 
-    Requires: pip install imageio imageio-ffmpeg
+    Each recorded episode is also logged to TensorBoard under ``eval/video``
+    via SB3's ``Video`` log type — appears in TB's "Images" tab.  TB embedding
+    needs ``moviepy`` (used by torch's SummaryWriter.add_video); if it's
+    missing the mp4 still gets written and we just warn once.
+
+    Requires: pip install imageio imageio-ffmpeg moviepy
     """
 
     DEFAULT_GRID_CAMS: tuple[str, str, str, str] = (
@@ -95,7 +101,9 @@ class VideoRecorderCallback(BaseCallback):
         self.cell_height = cell_height
         os.makedirs(video_dir, exist_ok=True)
 
-        # Lazy import so training still works if imageio is missing
+        # Lazy imports so training still works if optional video deps are missing.
+        # imageio writes the on-disk mp4; moviepy is required by torch's
+        # SummaryWriter.add_video to embed the video in TB events.
         try:
             import imageio  # noqa: F401
 
@@ -104,6 +112,14 @@ class VideoRecorderCallback(BaseCallback):
             self._imageio_ok = False
             print(f"{_ts()} ⚠️  [VideoRecorder] imageio not found. "
                   "Install with: pip install imageio imageio-ffmpeg")
+        try:
+            import moviepy  # noqa: F401
+
+            self._moviepy_ok = True
+        except ImportError:
+            self._moviepy_ok = False
+            print(f"{_ts()} ⚠️  [VideoRecorder] moviepy not found — TB video "
+                  "logging disabled. Install with: pip install moviepy")
 
     def _capture_frame(self, env) -> np.ndarray | None:
         """Render one frame in the configured mode (single-cam or 2x2 grid)."""
@@ -147,6 +163,32 @@ class VideoRecorderCallback(BaseCallback):
             for frame in frames:
                 writer.append_data(frame)  # type: ignore[attr-defined]
 
+        self._log_to_tensorboard(frames)
+
         if self.verbose:
             print(f"{_ts()} 🎬 [VideoRecorder] {len(frames)} frames → {path}")
         return True
+
+    def _log_to_tensorboard(self, frames: list[np.ndarray]) -> None:
+        """Embed the recorded episode in TB under ``eval/video``.
+
+        SB3's ``Video`` wraps a (N, T, C, H, W) uint8 tensor; the underlying
+        torch ``SummaryWriter.add_video`` swallows missing-moviepy as a print
+        and returns None, so we gate on the init-time probe.
+        """
+        if not self._moviepy_ok:
+            return
+        import torch
+
+        # (T, H, W, 3) uint8  →  (1, T, 3, H, W) uint8
+        tensor = torch.from_numpy(
+            np.stack(frames).transpose(0, 3, 1, 2)[None].copy()
+        )
+        self.logger.record(
+            "eval/video",
+            Video(tensor, fps=self.fps),
+            exclude=("stdout", "log", "json", "csv"),
+        )
+        # Force-flush so the video shows up at this exact timestep instead
+        # of waiting for the next rollout-end dump.
+        self.logger.dump(self.model.num_timesteps)

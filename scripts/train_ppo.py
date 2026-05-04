@@ -326,7 +326,12 @@ def main() -> None:
     checkpoint_freq = max(
         cfg["training"]["callbacks"]["checkpoint_freq_steps"] // args.n_envs, 1
     )
-    video_freq = max(cfg["training"]["callbacks"]["video_freq_steps"] // args.n_envs, 1)
+    # Video cadence is a multiple of eval cadence; default 2 preserves the
+    # legacy 100k-step interval when eval_freq_steps=50k.
+    video_every_n_evals = int(
+        cfg["training"]["callbacks"].get("video_every_n_evals", 2)
+    )
+    video_freq = eval_freq * video_every_n_evals
 
     checkpoint_cb = CheckpointCallback(
         save_freq=checkpoint_freq,

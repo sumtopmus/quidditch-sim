@@ -13,6 +13,11 @@ rich
 # Monitoring / logging
 tensorboard
 
-# Video recording
+# Video recording (imageio writes mp4s on disk; moviepy is required by
+# torch.utils.tensorboard.SummaryWriter.add_video to embed videos in TB events).
+# moviepy is pinned <2.0 because torch's add_video imports `moviepy.editor`,
+# which was removed in moviepy 2.x — without the pin, TB videos silently
+# fail to encode (torch prints a warning to stdout and writes an empty image).
 imageio
 imageio-ffmpeg
+moviepy<2.0
