@@ -3,6 +3,13 @@
 Used by `build_mjcf` (offscreen "Fixed" camera + axis-aligned broadcast cams)
 and by the World/Quadrotor viewer setup (live mujoco.viewer).  Single source
 of truth for both.
+
+Camera definitions live in ``config/camera.toml`` (copied from
+``templates/camera.toml`` by ``make install``).  The file is REQUIRED:
+``load_camera_config`` raises FileNotFoundError if it's missing or any
+required cam below is absent, with a hint to run ``make install``.
+
+Required cams in the toml: Fixed | North | East | South | West | Top.
 """
 
 from __future__ import annotations
@@ -13,65 +20,93 @@ from pathlib import Path
 import numpy as np
 
 
-# ── camera config ────────────────────────────────────────────────────────────
-# Eye and lookat in world coords (metres).  Used for both the offscreen "Fixed"
-# camera (videos) and the live viewer.  Override per-construction by passing
-# `camera={"eye": (...), "lookat": (...)}` to the World; otherwise we try
-# config/camera.toml and fall back to the hardcoded sideline view below.
-_FALLBACK_CAMERA: dict = {
-    "eye":    (2.9, -4.7, 2.9),
-    "lookat": (0.5,  0.0, 1.3),
-}
+# Cams the toml MUST declare; the loaders below raise if any are missing.
+_REQUIRED_CAMS: tuple[str, ...] = (
+    "Fixed", "North", "East", "South", "West", "Top",
+)
 
-
-# ── broadcast cameras (hardcoded — tied to arena geometry) ───────────────────
-# Five axis-aligned spectator cams emitted by `build_mjcf` alongside `Fixed`.
-# Used for switching in the live viewer and for the 2x2 checkpoint-video grid.
-# Compass cardinals (North/East/South/West) sit on the arena wall at radius
-# 3 m looking at the arena centre at z=1.5; Top is straight down from 5 m.
-# Walls are alpha=0.35 (translucent) so the cardinal cams see through them.
-# Geometry is locked to the Quidditch arena (radius 3 m) — not user-tunable.
-#
-# fovy: MJCF camera vertical FoV in degrees.  Pass None to omit the attribute
-# and let MuJoCo use its default (45°).  Top sets fovy=70° to fit the whole
-# 6 m arena in frame from 5 m up without too much fisheye distortion — at
-# fovy=70° the y-extent at z=0 is 2 * 5 * tan(35°) ≈ 7.0 m, with ~17 %
-# margin past the 6 m arena diameter.
-#
-# `Top.eye.y = -0.001` (1 mm horizontal offset) is required to avoid the
-# degenerate "look parallel to world up" check below.  The sign is chosen
-# so the camera frame derived by `_camera_xyaxes` ends up with cam +X =
-# world +X and cam +Y = world +Y — i.e. map-style "north up": world +Y
-# appears at the top of the image, world +X to the right.  Visually
-# indistinguishable from straight down.
-BROADCAST_CAMERAS: tuple[tuple[str, tuple, tuple, float | None], ...] = (
-    # (name,    eye,                  lookat,           fovy)
-    ("North",  ( 0.0,    3.0, 1.5),  (0.0, 0.0, 1.5),  None),
-    ("East",   ( 3.0,    0.0, 1.5),  (0.0, 0.0, 1.5),  None),
-    ("South",  ( 0.0,   -3.0, 1.5),  (0.0, 0.0, 1.5),  None),
-    ("West",   (-3.0,    0.0, 1.5),  (0.0, 0.0, 1.5),  None),
-    ("Top",    ( 0.0,   -0.001, 5.0), (0.0, 0.0, 0.0), 70.0),
+_INSTALL_HINT = (
+    "Run `make install` to copy templates/camera.toml → config/camera.toml."
 )
 
 
-def load_camera_config(path: str | Path | None = None) -> dict:
-    """Load {'eye': (x,y,z), 'lookat': (x,y,z)} from a TOML file.
+def _default_camera_config_path() -> Path:
+    """Resolve to ``<repo>/config/camera.toml`` from this file's location."""
+    # core/mjcf/camera.py → core → repo
+    return Path(__file__).resolve().parents[2] / "config" / "camera.toml"
 
-    Defaults to ``<repo>/config/camera.toml``.  Falls back to the hardcoded
-    sideline view if the file is missing or malformed.
-    """
+
+def _load_camera_toml(path: str | Path | None) -> dict:
+    """Open + parse the toml.  Raises FileNotFoundError with install hint."""
     import tomllib
 
-    if path is None:
-        # repo root = three levels up from this file: core/mjcf/camera.py -> core -> repo
-        path = Path(__file__).resolve().parents[2] / "config" / "camera.toml"
+    p = Path(path) if path is not None else _default_camera_config_path()
     try:
-        with open(path, "rb") as f:
+        with open(p, "rb") as f:
             data = tomllib.load(f)
-        cam = data["camera"]
-        return {"eye": tuple(cam["eye"]), "lookat": tuple(cam["lookat"])}
-    except (FileNotFoundError, KeyError):
-        return dict(_FALLBACK_CAMERA)
+    except FileNotFoundError as e:
+        raise FileNotFoundError(
+            f"{p} not found — {_INSTALL_HINT}"
+        ) from e
+
+    cams = data.get("camera")
+    if not isinstance(cams, dict):
+        raise KeyError(
+            f"{p}: expected a top-level [camera.<Name>] section per cam; "
+            f"got {type(cams).__name__}.  {_INSTALL_HINT}"
+        )
+
+    missing = [n for n in _REQUIRED_CAMS if n not in cams]
+    if missing:
+        raise KeyError(
+            f"{p}: missing required cam(s): {', '.join(missing)}.  "
+            f"Required: {', '.join(_REQUIRED_CAMS)}.  {_INSTALL_HINT}"
+        )
+    return cams
+
+
+def _cam_entry(name: str, entry: dict) -> tuple[tuple, tuple, float | None]:
+    """Validate one [camera.<Name>] entry → (eye, lookat, fovy_or_None)."""
+    for key in ("eye", "lookat"):
+        if key not in entry:
+            raise KeyError(f"camera.{name}: missing required key '{key}'.")
+    fovy = float(entry["fovy"]) if "fovy" in entry else None
+    return tuple(entry["eye"]), tuple(entry["lookat"]), fovy
+
+
+# Type alias — one cam entry as it travels through WorldOptions / build_mjcf.
+CameraSpec = tuple[str, tuple, tuple, float | None]   # (name, eye, lookat, fovy)
+
+
+def load_camera_config(
+    path: str | Path | None = None,
+) -> tuple[CameraSpec, ...]:
+    """Load all cameras from config/camera.toml as a tuple of (name, eye, lookat, fovy).
+
+    Required cams: Fixed | North | East | South | West | Top.  Order in the
+    returned tuple matches ``_REQUIRED_CAMS`` (Fixed first, compass cardinals
+    in NESW order, Top last).
+
+    Raises ``FileNotFoundError`` if the toml is missing, or ``KeyError`` if
+    any required cam is absent or missing eye/lookat.  Both errors include
+    a hint to run ``make install`` to copy templates/camera.toml.
+    """
+    cams = _load_camera_toml(path)
+    out: list[CameraSpec] = []
+    for name in _REQUIRED_CAMS:
+        eye, lookat, fovy = _cam_entry(name, cams[name])
+        out.append((name, eye, lookat, fovy))
+    return tuple(out)
+
+
+def find_camera(cams: tuple[CameraSpec, ...], name: str) -> CameraSpec:
+    """Look up one camera by name.  Raises KeyError if not present."""
+    for entry in cams:
+        if entry[0] == name:
+            return entry
+    raise KeyError(
+        f"Camera {name!r} not in cam set; have: {[c[0] for c in cams]!r}."
+    )
 
 
 def _camera_xyaxes(eye: tuple, lookat: tuple) -> tuple[str, str]:

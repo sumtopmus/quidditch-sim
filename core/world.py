@@ -9,11 +9,14 @@ share a single `MjModel` (required for shared contacts) while each drone
 keeps its own controller, setpoint, and ID resolution under its own prefix.
 
 Public surface:
-    World(fragments, camera=None, render=False, seed=None)
+    World(fragments, render=False, seed=None)
     World.reset()                       — reset every registered drone
     World.step()                        — apply each drone's control, then
                                           PHYS_PER_CTRL × mj_step
     World.render_frame(w, h) -> ndarray — RGB frame from the "Fixed" camera
+
+Camera definitions are loaded from config/camera.toml (raises if missing —
+run ``make install`` to copy templates/camera.toml).
     World.disconnect()                  — close viewer + release renderer
     World.idle(active=False)            — block until the viewer window closes
     World.step_period -> float          — 1 / CONTROL_HZ
@@ -33,7 +36,7 @@ import numpy as np
 import mujoco
 
 from core.mjcf import SceneFragment, WorldOptions, build_mjcf, load_camera_config, merge_all
-from core.mjcf.camera import _viewer_params
+from core.mjcf.camera import _viewer_params, find_camera
 
 
 # ── timing ───────────────────────────────────────────────────────────────────
@@ -56,18 +59,17 @@ class World:
     def __init__(
         self,
         fragments: Iterable[SceneFragment],
-        camera: dict | None = None,
         render: bool = False,
         seed: int | None = None,
     ) -> None:
         self._render = render
         self.np_random = np.random.default_rng(seed)
-        self._camera = camera if camera is not None else load_camera_config()
+        self._cameras = load_camera_config()
 
         opts = WorldOptions(
+            cameras=self._cameras,
             name="world",
             timestep=_DT_PHYSICS,
-            camera=self._camera,
         )
         merged = merge_all(fragments)
         xml = build_mjcf(opts, [merged])
@@ -130,9 +132,8 @@ class World:
                 self.model, self.data,
                 key_callback=self._make_key_callback(),
             )
-            az, el, dist, lookat = _viewer_params(
-                self._camera["eye"], self._camera["lookat"]
-            )
+            _, fixed_eye, fixed_lookat, _ = find_camera(self._cameras, "Fixed")
+            az, el, dist, lookat = _viewer_params(fixed_eye, fixed_lookat)
             self._viewer.cam.azimuth   = az
             self._viewer.cam.elevation = el
             self._viewer.cam.distance  = dist

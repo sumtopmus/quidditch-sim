@@ -1,26 +1,59 @@
-# Camera spec for the cinematic "Fixed" cam.
+# Camera definitions for the Quidditch scene.
 # This is the template — tracked in git.
 #
 # On first `make install`, this file is copied to config/camera.toml.
 # config/camera.toml is gitignored; edit it freely while experimenting.
 #
-# This file ONLY affects the "Fixed" cam.  The compass cardinals
-# (North/East/South/West/Top), FPV, and TPV chase cam are hardcoded to
-# arena geometry in core/mjcf/camera.py and core/drone/cf2x.py.
+# This file is REQUIRED — `core/mjcf/camera.py:load_camera_config` halts
+# with a FileNotFoundError if it's missing or any required cam below is
+# absent.  Recovery: `make install` regenerates it from this template.
 #
-# Used by:
-#   - VideoRecorderCallback when grid=false (single-cam fallback)
-#   - demo/camera_test.py CAM=Fixed (`make camera-test CAM=Fixed`)
-#   - core/quadrotor.py    (initial viewer pose for live demos)
+# Schema: one [camera.<Name>] sub-table per cam.  Required cams:
+#   Fixed | North | East | South | West | Top
+# (FPV and TPV chase cam are per-drone — declared in core/drone/cf2x.py
+#  and not configurable here.)
 #
-# eye:    camera position in world coordinates [x, y, z] (metres)
-# lookat: point the camera is aimed at         [x, y, z] (metres)
+# Per-cam keys:
+#   eye    — camera position in world coordinates [x, y, z] (metres)  REQUIRED
+#   lookat — point the camera is aimed at         [x, y, z] (metres)  REQUIRED
+#   fovy   — vertical field of view in degrees                        OPTIONAL
+#            (omit to use MuJoCo's default of 45°)
 #
 # Scene reference points:
 #   arena radius 3 m, wall height 4.5 m,
 #   drone start (0, 0, 0), hoop centre (2, 0, 2), hoop plane ⊥ +x.
-# Walls are alpha=0.35 (translucent), so a camera outside the arena also works.
+# Walls are alpha=0.35 (translucent), so cams on the wall see through them.
 
-[camera]
-eye    = [-2.5, -1.0, 2.0]    # south side, just inside the wall, slightly above hoop bottom
+# Cinematic single-cam used by `make camera-test CAM=Fixed` and as the
+# fallback when [training.callbacks.video] grid = false.
+[camera.Fixed]
+eye    = [-2.5, -1.0, 2.0]    # south side, just inside the wall, above hoop bottom
 lookat = [ 1.5,  0.0, 1.3]    # between drone-start and hoop, ~1.3 m up
+
+# Compass cardinals — sit on the arena wall at radius 3 m, all looking
+# at the centre at z=1.5.  Walls are translucent so the cams see through.
+[camera.North]
+eye    = [ 0.0,  3.0, 1.5]
+lookat = [ 0.0,  0.0, 1.5]
+
+[camera.East]
+eye    = [ 3.0,  0.0, 1.5]
+lookat = [ 0.0,  0.0, 1.5]
+
+[camera.South]
+eye    = [ 0.0, -3.0, 1.5]
+lookat = [ 0.0,  0.0, 1.5]
+
+[camera.West]
+eye    = [-3.0,  0.0, 1.5]
+lookat = [ 0.0,  0.0, 1.5]
+
+# Top-down "broadcast skycam".  The 1 mm offset on eye.y dodges the
+# look-parallel-to-up degenerate AND orients the auto-derived camera
+# frame as a map (north up, east right) — sign matters; flip y to flip
+# image-up.  fovy=70° fits the whole 6 m arena from 5 m up with ~17 %
+# margin, without too much fisheye distortion.
+[camera.Top]
+eye    = [ 0.0, -0.001, 5.0]
+lookat = [ 0.0,  0.0,   0.0]
+fovy   = 70.0

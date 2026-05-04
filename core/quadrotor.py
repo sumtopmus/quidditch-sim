@@ -25,9 +25,6 @@ keep working without learning about the World object:
     Quadrotor.render_frame(w, h)         -> world.render_frame(w, h)
     Quadrotor.render_grid(names, cw, ch) -> world.render_grid(names, cw, ch)
     Quadrotor.get_renderer(w, h)         -> world.get_renderer(w, h)
-
-`load_camera_config` is re-exported from this module for back-compat with
-demo/camera_test.py and other historical importers.
 """
 
 from __future__ import annotations
@@ -39,7 +36,7 @@ import numpy as np
 import mujoco
 
 from core.position_controller import Mode7Controller
-from core.mjcf import SceneFragment, load_camera_config
+from core.mjcf import SceneFragment
 from core.mjcf.meshes import _markers_xml
 from core.drone.cf2x import (
     MASS,
@@ -63,10 +60,8 @@ from core.world import (
 )
 
 
-# Re-export so `from core.quadrotor import load_camera_config` keeps working.
 __all__ = [
     "Quadrotor",
-    "load_camera_config",
     "PHYSICS_HZ",
     "CONTROL_HZ",
 ]
@@ -216,7 +211,6 @@ class Quadrotor:
         start_orn: np.ndarray,
         *,
         render: bool = False,
-        camera: dict | None = None,
         seed: int | None = None,
         markers: list[tuple] | None = None,
         extra_fragments: Iterable[SceneFragment] = (),
@@ -227,7 +221,6 @@ class Quadrotor:
             start_pos: (1, 3) initial xyz [m]
             start_orn: (1, 3) initial euler [roll, pitch, yaw] [rad]
             render:    open the interactive viewer
-            camera:    optional ``{"eye": ..., "lookat": ...}``
             seed:      RNG seed
             markers:   list of (pos, rgba_str, radius) sphere markers
             extra_fragments: additional `SceneFragment`s (hoop, arena wall, ...)
@@ -235,6 +228,9 @@ class Quadrotor:
         Returns:
             A ready-to-use `Quadrotor`; the underlying `World` is reachable
             via ``quad._world`` if needed but not exposed publicly.
+
+        Camera definitions are loaded from config/camera.toml — edit that
+        file (or templates/camera.toml + ``make install``) to override.
         """
         # cf2x_assets() declares mesh + material names that are global —
         # prepend it once; the per-drone cf2x_fragment then references those
@@ -247,7 +243,7 @@ class Quadrotor:
         if markers:
             fragments.append(SceneFragment(worldbody=(_markers_xml(markers),)))
 
-        world = World(fragments, camera=camera, render=render, seed=seed)
+        world = World(fragments, render=render, seed=seed)
         quad = cls(world, prefix="drone")
         quad.set_start(start_pos, start_orn)
         world.reset()

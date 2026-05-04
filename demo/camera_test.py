@@ -30,7 +30,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
 
-from core.quadrotor import Quadrotor, load_camera_config
+from core.quadrotor import Quadrotor
 from demo.hover_demo import HOVER_SECONDS, START_POS, START_ORN, SETPOINT
 from envs.quidditch.scene import hoop_fragment, arena_wall_fragment
 from envs.quidditch.constants import (
@@ -76,15 +76,12 @@ def main() -> None:
 
     args = _parse_args()
     OUT_DIR.mkdir(parents=True, exist_ok=True)
-    cam = load_camera_config()
-    print(f"[camera.toml] fixed cam: eye={cam['eye']}  lookat={cam['lookat']}")
-    print(f"[preview]     rendering through: {args.cam}")
+    print(f"[preview] rendering through: {args.cam}")
 
     quad = Quadrotor.standalone(
         start_pos=START_POS,
         start_orn=START_ORN,
         render=False,
-        camera=cam,
         extra_fragments=[
             arena_wall_fragment(ARENA_RADIUS, ARENA_WALL_HEIGHT),
             hoop_fragment("hoop", HOOP_CENTER, HOOP_OUTWARD_NORMAL, HOOP_RADIUS),
