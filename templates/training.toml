@@ -1,8 +1,9 @@
 # PPO training + env configuration for QuidditchSimpleEnv.
 # This is the template — tracked in git.
 #
-# On first `make install`, this file is copied to config/training.toml.
-# config/training.toml is gitignored; edit it freely while experimenting.
+# `make configs` copies this file to config/training.toml (also invoked
+# by `make install`).  config/training.toml is gitignored; edit it freely
+# while experimenting.
 # `make promote` snapshots your working training.toml into models/<run>/ so
 # any run can be reproduced later with `make repro MODEL=<name>`.
 #

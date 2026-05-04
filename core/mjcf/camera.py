@@ -5,9 +5,10 @@ and by the World/Quadrotor viewer setup (live mujoco.viewer).  Single source
 of truth for both.
 
 Camera definitions live in ``config/camera.toml`` (copied from
-``templates/camera.toml`` by ``make install``).  The file is REQUIRED:
-``load_camera_config`` raises FileNotFoundError if it's missing or any
-required cam below is absent, with a hint to run ``make install``.
+``templates/camera.toml`` by ``make configs``, which is also invoked
+by ``make install``).  The file is REQUIRED: ``load_camera_config``
+raises FileNotFoundError if it's missing or any required cam below is
+absent, with a hint to run ``make configs``.
 
 Required cams in the toml: Fixed | North | East | South | West | Top.
 """
@@ -26,7 +27,7 @@ _REQUIRED_CAMS: tuple[str, ...] = (
 )
 
 _INSTALL_HINT = (
-    "Run `make install` to copy templates/camera.toml → config/camera.toml."
+    "Run `make configs` to copy templates/camera.toml → config/camera.toml."
 )
 
 
@@ -89,7 +90,7 @@ def load_camera_config(
 
     Raises ``FileNotFoundError`` if the toml is missing, or ``KeyError`` if
     any required cam is absent or missing eye/lookat.  Both errors include
-    a hint to run ``make install`` to copy templates/camera.toml.
+    a hint to run ``make configs`` to copy templates/camera.toml.
     """
     cams = _load_camera_toml(path)
     out: list[CameraSpec] = []

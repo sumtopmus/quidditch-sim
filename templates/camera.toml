@@ -1,12 +1,13 @@
 # Camera definitions for the Quidditch scene.
 # This is the template — tracked in git.
 #
-# On first `make install`, this file is copied to config/camera.toml.
-# config/camera.toml is gitignored; edit it freely while experimenting.
+# `make configs` copies this file to config/camera.toml (also invoked by
+# `make install`).  config/camera.toml is gitignored; edit it freely while
+# experimenting.
 #
 # This file is REQUIRED — `core/mjcf/camera.py:load_camera_config` halts
 # with a FileNotFoundError if it's missing or any required cam below is
-# absent.  Recovery: `make install` regenerates it from this template.
+# absent.  Recovery: `make configs`.
 #
 # Schema: one [camera.<Name>] sub-table per cam.  Required cams:
 #   Fixed | North | East | South | West | Top

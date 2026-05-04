@@ -70,7 +70,7 @@ _CONFIG_PATH = Path(__file__).parent.parent / "config" / "training.toml"
 
 if not _CONFIG_PATH.exists():
     raise FileNotFoundError(
-        f"{_CONFIG_PATH} not found. Run `make install` to create it from templates/training.toml."
+        f"{_CONFIG_PATH} not found. Run `make configs` to create it from templates/training.toml."
     )
 
 with _CONFIG_PATH.open("rb") as _f:

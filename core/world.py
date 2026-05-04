@@ -16,7 +16,7 @@ Public surface:
     World.render_frame(w, h) -> ndarray — RGB frame from the "Fixed" camera
 
 Camera definitions are loaded from config/camera.toml (raises if missing —
-run ``make install`` to copy templates/camera.toml).
+run ``make configs`` to copy templates/camera.toml).
     World.disconnect()                  — close viewer + release renderer
     World.idle(active=False)            — block until the viewer window closes
     World.step_period -> float          — 1 / CONTROL_HZ

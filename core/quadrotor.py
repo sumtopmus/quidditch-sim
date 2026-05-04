@@ -230,7 +230,7 @@ class Quadrotor:
             via ``quad._world`` if needed but not exposed publicly.
 
         Camera definitions are loaded from config/camera.toml — edit that
-        file (or templates/camera.toml + ``make install``) to override.
+        file (or templates/camera.toml + ``make configs``) to override.
         """
         # cf2x_assets() declares mesh + material names that are global —
         # prepend it once; the per-drone cf2x_fragment then references those
