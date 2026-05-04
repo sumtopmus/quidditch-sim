@@ -52,10 +52,11 @@ video_fps             = 20
 # cinematic "Fixed" cam at 640x480 (faster, less informative).
 [training.callbacks.video]
 grid        = true
-# Hoop sits at +X (east); South and West both keep it on the right side
-# of frame for visual consistency.  East would put the hoop pole in the
-# foreground; North would mirror the hoop to the LEFT.
-cells       = ["South", "West", "Top", "drone_tpv"]
+# Hoop sits at +X.  South pairs naturally with either East or West:
+# West frames the approach from the drone-start side, East frames the
+# goal head-on from behind the hoop.  North would mirror the hoop to
+# the LEFT and is usually avoided.
+cells       = ["South", "East", "Top", "drone_tpv"]
 cell_width  = 960
 cell_height = 540
 

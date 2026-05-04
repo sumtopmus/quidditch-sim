@@ -1,6 +1,6 @@
 """Render the hover demo and write an mp4 — defaults to the 2x2 grid.
 
-The default mirrors what training videos record (``South``, ``West``,
+The default mirrors what training videos record (``South``, ``East``,
 ``Top``, and ``drone_tpv`` stitched at 1080p), so this is the canonical
 "is the next checkpoint video going to look right?" check.  Pass
 ``--cam NAME`` to preview a single named camera instead.
@@ -48,7 +48,7 @@ SINGLE_W, SINGLE_H = 960, 540
 # default in templates/training.toml so this preview shows what gets
 # recorded during checkpoint videos.
 GRID_CELL_W, GRID_CELL_H = 960, 540
-GRID_CAMS = ("South", "West", "Top", "drone_tpv")
+GRID_CAMS = ("South", "East", "Top", "drone_tpv")
 FPS = 120
 OUT_DIR = Path(__file__).resolve().parents[1] / "runs" / "camera_test"
 
