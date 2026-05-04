@@ -16,9 +16,9 @@ Defaults can be suppressed via WorldOptions flags.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Iterable, Optional
+from typing import Iterable
 
-from core.mjcf.camera import _FALLBACK_CAMERA, _camera_xyaxes
+from core.mjcf.camera import CameraSpec, _camera_xyaxes
 from core.mjcf.fragment import SceneFragment, merge_all
 
 
@@ -26,13 +26,18 @@ from core.mjcf.fragment import SceneFragment, merge_all
 class WorldOptions:
     """Configuration for the top-level <mujoco> document.
 
+    ``cameras`` is REQUIRED — load it from config/camera.toml via
+    ``core.mjcf.camera.load_camera_config``, which halts with
+    FileNotFoundError if the toml is missing or any required cam is absent.
+
     Attributes:
+        cameras: tuple of (name, eye, lookat, fovy_or_None) for every
+            scene-level camera.  build_mjcf emits one ``<camera>`` per
+            entry in order; downstream code looks them up by name (e.g.
+            World extracts "Fixed" for the live-viewer initial pose).
         name: model name, used as ``<mujoco model="...">``.
         timestep: physics timestep in seconds.
         gravity: world gravity vector.
-        camera: dict {"eye": (x,y,z), "lookat": (x,y,z)} for the fixed
-            offscreen camera + viewer.  Defaults to the hardcoded fallback
-            if None.
         offwidth/offheight: max offscreen render resolution.
         offsamples: MSAA samples for offscreen rendering.
         shadowsize: shadow map resolution.
@@ -41,10 +46,10 @@ class WorldOptions:
         include_default_floor: emit a 12 m × 12 m grid-textured plane at z=0.
     """
 
+    cameras: tuple[CameraSpec, ...]
     name: str = "world"
     timestep: float = 1.0 / 240.0
     gravity: tuple[float, float, float] = (0.0, 0.0, -9.81)
-    camera: Optional[dict] = None
     offwidth: int = 1920
     offheight: int = 1080
     offsamples: int = 8
@@ -82,9 +87,6 @@ def build_mjcf(opts: WorldOptions, fragments: Iterable[SceneFragment]) -> str:
     """
     merged = merge_all(fragments)
 
-    cam = opts.camera if opts.camera is not None else _FALLBACK_CAMERA
-    cam_pos, cam_xyaxes = _camera_xyaxes(cam["eye"], cam["lookat"])
-
     # ── <asset> ───────────────────────────────────────────────────────────
     asset_lines: list[str] = []
     if opts.include_default_skybox:
@@ -99,7 +101,12 @@ def build_mjcf(opts: WorldOptions, fragments: Iterable[SceneFragment]) -> str:
     if opts.include_default_floor:
         body_lines.append(_DEFAULT_FLOOR)
     body_lines.extend(merged.worldbody)
-    body_lines.append(f'<camera name="fixed" pos="{cam_pos}" xyaxes="{cam_xyaxes}"/>')
+    for name, eye, lookat, fovy in opts.cameras:
+        cpos, cxy = _camera_xyaxes(eye, lookat)
+        fovy_attr = f' fovy="{fovy}"' if fovy is not None else ""
+        body_lines.append(
+            f'<camera name="{name}" pos="{cpos}" xyaxes="{cxy}"{fovy_attr}/>'
+        )
     worldbody_block = "\n    ".join(body_lines)
 
     # ── <visual> ──────────────────────────────────────────────────────────

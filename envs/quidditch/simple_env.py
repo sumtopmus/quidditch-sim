@@ -182,7 +182,7 @@ class QuidditchSimpleEnv(gym.Env):
         self._prev_signed_dist = self._signed_dist(drone_pos)
 
         if self.render_mode == "human":
-            time.sleep(10)  # pause so the arena can be examined before the episode starts
+            time.sleep(1)  # brief pause so episode boundaries are visible
 
         return self._obs(), {}
 
