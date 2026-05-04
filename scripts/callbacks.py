@@ -49,8 +49,24 @@ class VideoRecorderCallback(BaseCallback):
     record_freq should be in per-env steps (divide target total steps by n_envs),
     matching the convention used for CheckpointCallback / EvalCallback.
 
+    By default writes a 2x2 grid stitching four named cameras together
+    (South / West / Top / chase-cam) at 1920x1080.  Pass ``grid=False`` to
+    fall back to the env's single-cam ``render()`` output (the cinematic
+    "Fixed" cam at 640x480).  Grid mode bypasses ``env.render()`` and reaches
+    into ``env._quad.render_grid(...)`` directly — same precedent as
+    eval_ppo.py reaching into ``env._quad`` for the live viewer.
+
+    Cam choices: hoop sits at +X (east) — South and West both keep the hoop
+    on the right side / centre of frame.  East would put the hoop pole in
+    the foreground; North would mirror the hoop to the LEFT (broadcast
+    convention puts the goal on the right of the wide view).
+
     Requires: pip install imageio imageio-ffmpeg
     """
+
+    DEFAULT_GRID_CAMS: tuple[str, str, str, str] = (
+        "South", "West", "Top", "drone_tpv",
+    )
 
     def __init__(
         self,
@@ -60,6 +76,11 @@ class VideoRecorderCallback(BaseCallback):
         fps: int = 20,
         sim_hz: int = 120,
         verbose: int = 1,
+        *,
+        grid: bool = True,
+        grid_cams: tuple[str, str, str, str] | None = None,
+        cell_width: int = 960,
+        cell_height: int = 540,
     ) -> None:
         super().__init__(verbose)
         self.env_fn = env_fn
@@ -67,6 +88,10 @@ class VideoRecorderCallback(BaseCallback):
         self.record_freq = record_freq
         self.fps = fps
         self.frame_stride = max(1, round(sim_hz / fps))
+        self.grid = grid
+        self.grid_cams = tuple(grid_cams) if grid_cams else self.DEFAULT_GRID_CAMS
+        self.cell_width = cell_width
+        self.cell_height = cell_height
         os.makedirs(video_dir, exist_ok=True)
 
         # Lazy import so training still works if imageio is missing
@@ -78,6 +103,14 @@ class VideoRecorderCallback(BaseCallback):
             self._imageio_ok = False
             print(f"{_ts()} ⚠️  [VideoRecorder] imageio not found. "
                   "Install with: pip install imageio imageio-ffmpeg")
+
+    def _capture_frame(self, env) -> np.ndarray | None:
+        """Render one frame in the configured mode (single-cam or 2x2 grid)."""
+        if self.grid:
+            return env._quad.render_grid(
+                self.grid_cams, self.cell_width, self.cell_height
+            )
+        return env.render()
 
     def _on_step(self) -> bool:
         if not self._imageio_ok:
@@ -97,7 +130,7 @@ class VideoRecorderCallback(BaseCallback):
             action, _ = self.model.predict(obs, deterministic=True)
             obs, _, terminated, truncated, _ = env.step(action)
             if step_idx % self.frame_stride == 0:
-                frame = env.render()
+                frame = self._capture_frame(env)
                 if frame is not None:
                     frames.append(frame)
             step_idx += 1

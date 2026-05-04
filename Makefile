@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install clean list-runs
+.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs
 
 .DEFAULT_GOAL := help
 
@@ -59,8 +59,9 @@ check-sim: ## ✅ Validate env headless (fast, no window)
 check-gui: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
 	@$(MJPYTHON) scripts/check_env.py --viewer
 
-camera-test: ## 🎥 Render hover flight through fixed cam → mp4 (edit config/camera.toml)
-	@$(PYTHON) demo/camera_test.py
+CAM ?= grid
+camera-test: ## 🎥 Render hover flight as 2x2 grid → mp4 (CAM=grid|fixed|front|side|top|drone_fpv|drone_tpv)
+	@$(PYTHON) demo/camera_test.py --cam $(CAM)
 
 demo: ## 🎮 Pick a demo to run (hover, waypoint) — opens viewer
 	@$(MJPYTHON) demo/menu.py
@@ -129,18 +130,21 @@ repro: ## 🔄 Restore config/training.toml from a promoted model  [MODEL=...]
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-install: ## 📦 Create or update the $(CONDA_ENV) conda env from environment.yml
+install: ## 📦 Create/update the $(CONDA_ENV) conda env + populate config/ from templates
 	@$(CONDA) env create -f environment.yml 2>/dev/null || $(CONDA) env update -f environment.yml --prune
+	@$(MAKE) --no-print-directory configs
+	@echo "Done. Verify with: make check-sim"
+
+configs: ## 🛠  Populate config/ from templates/ (idempotent — never overwrites)
 	@mkdir -p config
 	@for f in training camera; do \
 	   if [ ! -f config/$$f.toml ]; then \
 	     cp templates/$$f.toml config/$$f.toml; \
-	     echo "Created config/$$f.toml from templates/$$f.toml."; \
+	     echo "config/$$f.toml << templates/$$f.toml."; \
 	   else \
-	     echo "config/$$f.toml already exists — not overwritten."; \
+	     echo "config/$$f.toml already exists — not overwritten"; \
 	   fi; \
 	 done
-	@echo "Done. Verify with: make check-sim"
 
 list-runs: ## 🗂️  List training runs grouped by config name
 	@echo "=== $(RUNS_DIR)/ ==="; \

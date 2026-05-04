@@ -54,6 +54,7 @@ from stable_baselines3.common.callbacks import (
 )
 
 from envs.quidditch.simple_env import QuidditchSimpleEnv
+from core.quadrotor import CONTROL_HZ
 from callbacks import VideoRecorderCallback, ResumeProgressCallback
 
 
@@ -69,7 +70,7 @@ _CONFIG_PATH = Path(__file__).parent.parent / "config" / "training.toml"
 
 if not _CONFIG_PATH.exists():
     raise FileNotFoundError(
-        f"{_CONFIG_PATH} not found. Run `make install` to create it from templates/training.toml."
+        f"{_CONFIG_PATH} not found. Run `make configs` to create it from templates/training.toml."
     )
 
 with _CONFIG_PATH.open("rb") as _f:
@@ -342,6 +343,10 @@ def main() -> None:
         deterministic=True,
         verbose=verbose,
     )
+    # Video sub-section is optional in older configs; defaults match the
+    # template ([training.callbacks.video] grid=true with 960x540 cells →
+    # 1080p stitched, cams = front/side/top/drone_tpv).
+    video_cfg = cfg["training"]["callbacks"].get("video", {})
     video_cb = VideoRecorderCallback(
         env_fn=lambda: QuidditchSimpleEnv(render_mode="rgb_array", **base_env_kwargs),
         video_dir=video_dir,
@@ -349,6 +354,10 @@ def main() -> None:
         fps=cfg["training"]["callbacks"]["video_fps"],
         sim_hz=CONTROL_HZ,
         verbose=verbose,
+        grid=video_cfg.get("grid", True),
+        grid_cams=tuple(video_cfg["cells"]) if "cells" in video_cfg else None,
+        cell_width=video_cfg.get("cell_width", 960),
+        cell_height=video_cfg.get("cell_height", 540),
     )
 
     # ---- model ----

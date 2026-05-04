@@ -22,11 +22,9 @@ keep working without learning about the World object:
     Quadrotor.step()             -> world.step()
     Quadrotor.disconnect()       -> world.disconnect()
     Quadrotor.idle(active=False) -> world.idle(active)
-    Quadrotor.render_frame(w, h) -> world.render_frame(w, h)
-    Quadrotor.get_renderer(w, h) -> world.get_renderer(w, h)
-
-`load_camera_config` is re-exported from this module for back-compat with
-demo/camera_test.py and other historical importers.
+    Quadrotor.render_frame(w, h)         -> world.render_frame(w, h)
+    Quadrotor.render_grid(names, cw, ch) -> world.render_grid(names, cw, ch)
+    Quadrotor.get_renderer(w, h)         -> world.get_renderer(w, h)
 """
 
 from __future__ import annotations
@@ -38,7 +36,7 @@ import numpy as np
 import mujoco
 
 from core.position_controller import Mode7Controller
-from core.mjcf import SceneFragment, load_camera_config
+from core.mjcf import SceneFragment
 from core.mjcf.meshes import _markers_xml
 from core.drone.cf2x import (
     MASS,
@@ -62,10 +60,8 @@ from core.world import (
 )
 
 
-# Re-export so `from core.quadrotor import load_camera_config` keeps working.
 __all__ = [
     "Quadrotor",
-    "load_camera_config",
     "PHYSICS_HZ",
     "CONTROL_HZ",
 ]
@@ -119,6 +115,18 @@ class Quadrotor:
             model, mujoco.mjtObj.mjOBJ_JOINT, f"{prefix}_root"
         )
         self._qpos_adr = int(model.jnt_qposadr[joint_id])
+
+        # TPV chase-cam mocap body.  cf2x_fragment declares it as a sibling
+        # of the drone body; if a different fragment factory is used (e.g.
+        # tests) and the mocap body isn't present, _update_tpv_mocap()
+        # silently no-ops.  Mocap bodies are addressed by `body_mocapid[bid]`
+        # into `data.mocap_pos / mocap_quat`, NOT by body id.
+        mocap_body_id = mujoco.mj_name2id(
+            model, mujoco.mjtObj.mjOBJ_BODY, f"{prefix}_tpv_mocap"
+        )
+        self._tpv_mocap_id = (
+            int(model.body_mocapid[mocap_body_id]) if mocap_body_id >= 0 else -1
+        )
 
         # Flight controller (mode 7 only) + setpoint + PWM state.
         self._controller = Mode7Controller(_DT_CONTROL)
@@ -183,6 +191,14 @@ class Quadrotor:
     def render_frame(self, width: int, height: int) -> np.ndarray:
         return self._world.render_frame(width, height)
 
+    def render_grid(
+        self,
+        cam_names: tuple[str, str, str, str],
+        cell_width: int,
+        cell_height: int,
+    ) -> np.ndarray:
+        return self._world.render_grid(cam_names, cell_width, cell_height)
+
     def get_renderer(self, width: int, height: int) -> mujoco.Renderer:
         return self._world.get_renderer(width, height)
 
@@ -195,7 +211,6 @@ class Quadrotor:
         start_orn: np.ndarray,
         *,
         render: bool = False,
-        camera: dict | None = None,
         seed: int | None = None,
         markers: list[tuple] | None = None,
         extra_fragments: Iterable[SceneFragment] = (),
@@ -206,7 +221,6 @@ class Quadrotor:
             start_pos: (1, 3) initial xyz [m]
             start_orn: (1, 3) initial euler [roll, pitch, yaw] [rad]
             render:    open the interactive viewer
-            camera:    optional ``{"eye": ..., "lookat": ...}``
             seed:      RNG seed
             markers:   list of (pos, rgba_str, radius) sphere markers
             extra_fragments: additional `SceneFragment`s (hoop, arena wall, ...)
@@ -214,6 +228,9 @@ class Quadrotor:
         Returns:
             A ready-to-use `Quadrotor`; the underlying `World` is reachable
             via ``quad._world`` if needed but not exposed publicly.
+
+        Camera definitions are loaded from config/camera.toml — edit that
+        file (or templates/camera.toml + ``make configs``) to override.
         """
         # cf2x_assets() declares mesh + material names that are global —
         # prepend it once; the per-drone cf2x_fragment then references those
@@ -226,7 +243,7 @@ class Quadrotor:
         if markers:
             fragments.append(SceneFragment(worldbody=(_markers_xml(markers),)))
 
-        world = World(fragments, camera=camera, render=render, seed=seed)
+        world = World(fragments, render=render, seed=seed)
         quad = cls(world, prefix="drone")
         quad.set_start(start_pos, start_orn)
         world.reset()
@@ -297,6 +314,75 @@ class Quadrotor:
         R = data.xmat[self._drone_id].reshape(3, 3)
         data.xfrc_applied[self._drone_id, :3] = R @ np.array([0.0, 0.0, F_z])
         data.xfrc_applied[self._drone_id, 3:] = R @ np.array([tau_x, tau_y, tau_z])
+
+    # Chase-cam offsets in the drone-yaw frame (ENU: x=fwd, y=left, z=up).
+    # Pulled out so they're easy to tune without scrolling through the math.
+    _TPV_LOCAL_OFFSET  = np.array([-0.5, 0.0, 0.25])  # 0.5 m behind, 0.25 m up
+    _TPV_LOOKAT_OFFSET = np.array([ 0.0, 0.0, 0.05])  # look 5 cm above CoM
+
+    def _update_tpv_mocap(self) -> None:
+        """Reposition the TPV chase-cam mocap body for this drone.
+
+        Computes the cam world pose from the drone's current pos+yaw (roll
+        and pitch are intentionally ignored — keeps the horizon level), then
+        writes ``data.mocap_pos`` and ``data.mocap_quat`` for our mocap slot.
+
+        No-op when the model has no ``f"{prefix}_tpv_mocap"`` body (e.g. a
+        fragment factory other than cf2x_fragment was used).
+        """
+        if self._tpv_mocap_id < 0:
+            return
+        data = self._world.data
+
+        drone_pos  = data.xpos[self._drone_id].copy()
+        drone_quat = data.xquat[self._drone_id]
+
+        # Yaw from drone quat (ZYX yaw component).
+        w, x, y, z = (
+            float(drone_quat[0]), float(drone_quat[1]),
+            float(drone_quat[2]), float(drone_quat[3]),
+        )
+        siny = 2.0 * (w * z + x * y)
+        cosy = 1.0 - 2.0 * (y * y + z * z)
+        yaw = math.atan2(siny, cosy)
+        cy, sy = math.cos(yaw), math.sin(yaw)
+        R_yaw = np.array([
+            [cy, -sy, 0.0],
+            [sy,  cy, 0.0],
+            [0.0, 0.0, 1.0],
+        ])
+
+        cam_pos = drone_pos + R_yaw @ self._TPV_LOCAL_OFFSET
+        lookat  = drone_pos + self._TPV_LOOKAT_OFFSET
+
+        # Build a look-at frame.  MuJoCo cam convention: looks along -Z, +Y up.
+        # The mocap body's frame IS the cam frame (cam declared with identity
+        # xyaxes inside the body), so we need world-from-mocap rotation R with
+        # columns [right, up, -forward].
+        forward = lookat - cam_pos
+        fnorm = float(np.linalg.norm(forward))
+        if fnorm < 1e-9:
+            return
+        forward /= fnorm
+
+        right = np.cross(forward, [0.0, 0.0, 1.0])
+        rnorm = float(np.linalg.norm(right))
+        if rnorm < 1e-6:
+            # Degenerate (looking straight up/down) — fall back to drone-yaw
+            # right vector so the cam doesn't pop.  Won't normally happen with
+            # the configured offsets but cheap insurance.
+            right = R_yaw @ np.array([0.0, -1.0, 0.0])
+            rnorm = float(np.linalg.norm(right))
+        right /= rnorm
+        up = np.cross(right, forward)
+
+        R = np.column_stack([right, up, -forward])
+        quat = np.empty(4, dtype=np.float64)
+        # mju_mat2Quat takes a row-major flattened 3x3 matrix.
+        mujoco.mju_mat2Quat(quat, R.flatten())
+
+        data.mocap_pos[self._tpv_mocap_id]  = cam_pos
+        data.mocap_quat[self._tpv_mocap_id] = quat
 
 
 # ── quaternion → ZYX Euler ────────────────────────────────────────────────────
