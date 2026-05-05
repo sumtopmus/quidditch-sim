@@ -1,0 +1,32 @@
+# PPO training + env configuration for QuidditchSimpleEnv.
+# Loaded by train_ppo.py at startup; CLI flags (--timesteps, --n-envs, --lr, --seed)
+# override individual values at runtime.
+
+[training]
+run_name        = "ppo_hoop_fixed_start"
+total_timesteps = 20_000_000
+n_envs          = 8
+seed            = 42    # integer ≥ 0 for reproducible runs; -1 to disable
+
+[training.ppo]
+n_steps    = 1024
+batch_size = 256
+n_epochs   = 10
+lr         = 5e-4
+gamma      = 0.99
+gae_lambda = 0.95
+clip_range = 0.2
+ent_coef   = 0.01
+
+[training.eval]
+eval_freq_steps  = 50_000
+n_eval_episodes  = 10
+
+[training.callbacks]
+checkpoint_freq_steps = 50_000
+video_every_n_evals   = 4          # video runs every Nth eval (eval=50k, N=2 → 100k)
+video_fps             = 20
+
+[env]
+randomise_start = false
+episode_seconds = 30.0

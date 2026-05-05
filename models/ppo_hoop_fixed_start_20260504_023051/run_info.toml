@@ -1,0 +1,14 @@
+# Run info — written by train_ppo.py.  Read by scripts/lineage.py.
+
+[run]
+name          = "ppo_hoop_fixed_start"
+trial         = "20260504_023051"
+started       = "2026-05-04T02:30:51"
+elapsed       = "11h38m57s"  # 41937 s total
+finished      = "2026-05-04T14:09:48"
+steps_trained = 20004864
+
+[best]
+mean_reward = 8.6725
+std_reward  = 0.0000
+at_step     = 5350000
