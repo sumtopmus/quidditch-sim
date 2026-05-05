@@ -246,17 +246,22 @@ def cf2x_fragment(
         f'<framepos    name="{prefix}_framepos"    objtype="body" objname="{prefix}"/>',
     )
 
-    # tpv chase-cam mocap body.  Sibling of the drone body (mocap bodies must
-    # be top-level children of <worldbody>).  Camera lives at the mocap
-    # body's origin with identity-in-body orientation; the body's pos+quat
-    # is rewritten every World.step()/reset() by Quadrotor._update_tpv_mocap
-    # to position it 0.5 m behind and 0.25 m above the drone in its yaw
-    # frame, looking at the drone's CoM.  No inertia, no contacts.
-    tpv_mocap_xml = (
-        f'<body name="{prefix}_tpv_mocap" mocap="true" pos="0 0 0">\n'
-        f'      <camera name="tpv" pos="0 0 0"\n'
+    # Chase-cam mocap bodies (tpv, port, starboard).  Siblings of the drone
+    # body (mocap bodies must be top-level children of <worldbody>).  Each
+    # camera lives at its mocap body's origin with identity-in-body
+    # orientation; the body's pos+quat is rewritten every
+    # World.step()/reset() by Quadrotor._update_chase_mocaps to position
+    # it 0.5 m offset (behind / port / starboard) and 0.25 m above the
+    # drone in its yaw frame, looking at the drone's CoM.  No inertia,
+    # no contacts.
+    chase_mocap_xmls = tuple(
+        f'<body name="{prefix}_{cam}_mocap" mocap="true" pos="0 0 0">\n'
+        f'      <camera name="{cam}" pos="0 0 0"\n'
         f'              xyaxes="1 0 0  0 1 0" fovy="60"/>\n'
         f'    </body>'
+        for cam in ("tpv", "port", "starboard")
     )
 
-    return SceneFragment(worldbody=(body_xml, tpv_mocap_xml), sensors=sensors)
+    return SceneFragment(
+        worldbody=(body_xml, *chase_mocap_xmls), sensors=sensors
+    )

@@ -13,7 +13,7 @@ Outputs (per --cam choice):
     runs/camera_test/hover_<cam>.mp4   ← full hover video
     runs/camera_test/hover_<cam>.png   ← still preview (last frame)
 
-Available cams:  grid | fixed | north | east | south | west | top | fpv | tpv
+Available cams:  grid | fixed | north | east | south | west | top | fpv | tpv | port | starboard
 
 Run:  make camera-test                  # → hover_grid.mp4 (default; 1080p 2x2)
       make camera-test CAM=fixed        # → hover_fixed.mp4
@@ -61,6 +61,8 @@ VALID_CAMS = (
     "top",
     "fpv",
     "tpv",
+    "port",
+    "starboard",
 )
 
 

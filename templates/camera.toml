@@ -11,8 +11,8 @@
 #
 # Schema: one [camera.<name>] sub-table per cam.  Required cams:
 #   fixed | north | east | south | west | top
-# (fpv and tpv chase cam are per-drone — declared in core/drone/cf2x.py
-#  and not configurable here.)
+# (fpv | tpv | port | starboard chase cams are per-drone — declared in
+#  core/drone/cf2x.py and not configurable here.)
 #
 # Per-cam keys:
 #   eye    — camera position in world coordinates [x, y, z] (metres)  REQUIRED

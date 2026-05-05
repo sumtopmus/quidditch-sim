@@ -111,18 +111,18 @@ class World:
         for drone in self.drones:
             drone._reset_controller()
 
-        # mj_resetData restores mocap_pos/quat to the body's MJCF-declared
-        # zero pose; reposition each drone's TPV chase cam now so frame 0
-        # is correct (otherwise it'd snap into place on the first step).
+        # mj_resetData restores mocap_pos/quat to each body's MJCF-declared
+        # zero pose; reposition every drone's chase cams now so frame 0 is
+        # correct (otherwise they'd snap into place on the first step).
         # mj_kinematics propagates mocap_pos/quat → xpos/xquat for the
         # mocap body itself; mj_camlight then propagates xpos/xquat →
         # cam_xpos/cam_xmat for the camera child.  Both are needed before
         # the renderer sees the new pose.
-        any_tpv = False
+        any_chase = False
         for drone in self.drones:
-            drone._update_tpv_mocap()
-            any_tpv = any_tpv or drone._tpv_mocap_id >= 0
-        if any_tpv:
+            drone._update_chase_mocaps()
+            any_chase = any_chase or bool(drone._chase_mocaps)
+        if any_chase:
             mujoco.mj_kinematics(self.model, self.data)
             mujoco.mj_camlight(self.model, self.data)
 
@@ -154,14 +154,14 @@ class World:
                 drone._apply_control()
             mujoco.mj_step(self.model, self.data)
 
-        # Reposition TPV chase cams from each drone's fresh post-step pose
+        # Reposition chase cams from each drone's fresh post-step pose
         # before the viewer (or any renderer) reads the scene this frame.
         # See reset() for why mj_kinematics + mj_camlight are both needed.
-        any_tpv = False
+        any_chase = False
         for drone in self.drones:
-            drone._update_tpv_mocap()
-            any_tpv = any_tpv or drone._tpv_mocap_id >= 0
-        if any_tpv:
+            drone._update_chase_mocaps()
+            any_chase = any_chase or bool(drone._chase_mocaps)
+        if any_chase:
             mujoco.mj_kinematics(self.model, self.data)
             mujoco.mj_camlight(self.model, self.data)
 
@@ -208,8 +208,9 @@ class World:
         viewer) — these digit shortcuts are additive, not a replacement.
 
             ` (grave) → free cam
-            1 → north   2 → east    3 → south   4 → west
-            5 → top     6 → fixed.  7 → fpv     8 → tpv
+            1 → north  2 → east       3 → south  4 → west
+            5 → tpv    6 → port       7 → starboard
+            8 → fpv    9 → top        0 → fixed
 
         Cameras that don't exist in the model (e.g. fpv on a custom
         scene without cf2x_fragment) are silently skipped at callback build
@@ -220,10 +221,12 @@ class World:
             "2": "east",
             "3": "south",
             "4": "west",
-            "5": "top",
-            "6": "fixed",
-            "7": "fpv",
-            "8": "tpv",
+            "5": "tpv",
+            "6": "port",
+            "7": "starboard",
+            "8": "fpv",
+            "9": "top",
+            "0": "fixed",
         }
         cam_ids: dict[str, int] = {}
         for digit, name in digit_to_cam.items():

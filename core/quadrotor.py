@@ -117,17 +117,21 @@ class Quadrotor:
         )
         self._qpos_adr = int(model.jnt_qposadr[joint_id])
 
-        # TPV chase-cam mocap body.  cf2x_fragment declares it as a sibling
+        # Chase-cam mocap bodies.  cf2x_fragment declares them as siblings
         # of the drone body; if a different fragment factory is used (e.g.
-        # tests) and the mocap body isn't present, _update_tpv_mocap()
-        # silently no-ops.  Mocap bodies are addressed by `body_mocapid[bid]`
-        # into `data.mocap_pos / mocap_quat`, NOT by body id.
-        mocap_body_id = mujoco.mj_name2id(
-            model, mujoco.mjtObj.mjOBJ_BODY, f"{prefix}_tpv_mocap"
-        )
-        self._tpv_mocap_id = (
-            int(model.body_mocapid[mocap_body_id]) if mocap_body_id >= 0 else -1
-        )
+        # tests) the missing bodies are silently skipped here, leaving
+        # _update_chase_mocaps() with fewer (or zero) cams to update.
+        # Mocap bodies are addressed by `body_mocapid[bid]` into
+        # `data.mocap_pos / mocap_quat`, NOT by body id.
+        self._chase_mocaps: list[tuple[int, np.ndarray]] = []
+        for cam_name, local_offset in self._CHASE_OFFSETS.items():
+            bid = mujoco.mj_name2id(
+                model, mujoco.mjtObj.mjOBJ_BODY, f"{prefix}_{cam_name}_mocap"
+            )
+            if bid >= 0:
+                self._chase_mocaps.append(
+                    (int(model.body_mocapid[bid]), local_offset)
+                )
 
         # Flight controller (mode 7 only) + setpoint + PWM state.
         self._controller = Mode7Controller(_DT_CONTROL)
@@ -326,20 +330,25 @@ class Quadrotor:
 
     # Chase-cam offsets in the drone-yaw frame (ENU: x=fwd, y=left, z=up).
     # Pulled out so they're easy to tune without scrolling through the math.
-    _TPV_LOCAL_OFFSET  = np.array([-0.5, 0.0, 0.25])  # 0.5 m behind, 0.25 m up
-    _TPV_LOOKAT_OFFSET = np.array([ 0.0, 0.0, 0.05])  # look 5 cm above CoM
+    _CHASE_OFFSETS: dict[str, np.ndarray] = {
+        "tpv":       np.array([-0.5,  0.0, 0.25]),  # 0.5 m behind,   0.25 m up
+        "port":      np.array([ 0.0,  0.5, 0.25]),  # 0.5 m to left,  0.25 m up
+        "starboard": np.array([ 0.0, -0.5, 0.25]),  # 0.5 m to right, 0.25 m up
+    }
+    _CHASE_LOOKAT_OFFSET = np.array([0.0, 0.0, 0.05])  # look 5 cm above CoM
 
-    def _update_tpv_mocap(self) -> None:
-        """Reposition the TPV chase-cam mocap body for this drone.
+    def _update_chase_mocaps(self) -> None:
+        """Reposition every chase-cam mocap body registered for this drone.
 
-        Computes the cam world pose from the drone's current pos+yaw (roll
-        and pitch are intentionally ignored — keeps the horizon level), then
-        writes ``data.mocap_pos`` and ``data.mocap_quat`` for our mocap slot.
+        Each cam's world pose is computed from the drone's current pos+yaw
+        (roll and pitch are intentionally ignored — keeps the horizon level),
+        then written into ``data.mocap_pos`` / ``data.mocap_quat`` at the
+        cam's mocap slot.
 
-        No-op when the model has no ``f"{prefix}_tpv_mocap"`` body (e.g. a
-        fragment factory other than cf2x_fragment was used).
+        No-op when the drone has no chase-cam mocap bodies (e.g. a fragment
+        factory other than cf2x_fragment was used).
         """
-        if self._tpv_mocap_id < 0:
+        if not self._chase_mocaps:
             return
         data = self._world.data
 
@@ -361,37 +370,39 @@ class Quadrotor:
             [0.0, 0.0, 1.0],
         ])
 
-        cam_pos = drone_pos + R_yaw @ self._TPV_LOCAL_OFFSET
-        lookat  = drone_pos + self._TPV_LOOKAT_OFFSET
+        lookat = drone_pos + self._CHASE_LOOKAT_OFFSET
 
-        # Build a look-at frame.  MuJoCo cam convention: looks along -Z, +Y up.
-        # The mocap body's frame IS the cam frame (cam declared with identity
-        # xyaxes inside the body), so we need world-from-mocap rotation R with
-        # columns [right, up, -forward].
-        forward = lookat - cam_pos
-        fnorm = float(np.linalg.norm(forward))
-        if fnorm < 1e-9:
-            return
-        forward /= fnorm
+        for mocap_id, local_offset in self._chase_mocaps:
+            cam_pos = drone_pos + R_yaw @ local_offset
 
-        right = np.cross(forward, [0.0, 0.0, 1.0])
-        rnorm = float(np.linalg.norm(right))
-        if rnorm < 1e-6:
-            # Degenerate (looking straight up/down) — fall back to drone-yaw
-            # right vector so the cam doesn't pop.  Won't normally happen with
-            # the configured offsets but cheap insurance.
-            right = R_yaw @ np.array([0.0, -1.0, 0.0])
+            # Build a look-at frame.  MuJoCo cam convention: looks along -Z,
+            # +Y up.  The mocap body's frame IS the cam frame (cam declared
+            # with identity xyaxes inside the body), so we need world-from-
+            # mocap rotation R with columns [right, up, -forward].
+            forward = lookat - cam_pos
+            fnorm = float(np.linalg.norm(forward))
+            if fnorm < 1e-9:
+                continue
+            forward /= fnorm
+
+            right = np.cross(forward, [0.0, 0.0, 1.0])
             rnorm = float(np.linalg.norm(right))
-        right /= rnorm
-        up = np.cross(right, forward)
+            if rnorm < 1e-6:
+                # Degenerate (looking straight up/down) — fall back to drone-
+                # yaw right vector so the cam doesn't pop.  Won't normally
+                # happen with the configured offsets but cheap insurance.
+                right = R_yaw @ np.array([0.0, -1.0, 0.0])
+                rnorm = float(np.linalg.norm(right))
+            right /= rnorm
+            up = np.cross(right, forward)
 
-        R = np.column_stack([right, up, -forward])
-        quat = np.empty(4, dtype=np.float64)
-        # mju_mat2Quat takes a row-major flattened 3x3 matrix.
-        mujoco.mju_mat2Quat(quat, R.flatten())
+            R = np.column_stack([right, up, -forward])
+            quat = np.empty(4, dtype=np.float64)
+            # mju_mat2Quat takes a row-major flattened 3x3 matrix.
+            mujoco.mju_mat2Quat(quat, R.flatten())
 
-        data.mocap_pos[self._tpv_mocap_id]  = cam_pos
-        data.mocap_quat[self._tpv_mocap_id] = quat
+            data.mocap_pos[mocap_id]  = cam_pos
+            data.mocap_quat[mocap_id] = quat
 
 
 # ── quaternion → ZYX Euler ────────────────────────────────────────────────────

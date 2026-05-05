@@ -49,7 +49,7 @@ video_fps             = 20
 # Checkpoint videos: 2x2 grid stitching four named cameras.
 # `cells` is row-major: [top-left, top-right, bottom-left, bottom-right].
 # Available cams in the scene:
-#   fixed | north | east | south | west | top | fpv | tpv
+#   fixed | north | east | south | west | top | fpv | tpv | port | starboard
 # Per-cell size 960x540 → final 1920x1080 (1080p).  Each render does 4
 # offscreen passes per frame, so checkpoint video time scales with
 # cell_width * cell_height * 4.  Set grid = false to record only the
