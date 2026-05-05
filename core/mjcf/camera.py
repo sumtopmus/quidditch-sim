@@ -1,6 +1,6 @@
 """Camera math: load config, derive MJCF xyaxes, derive live-viewer params.
 
-Used by `build_mjcf` (offscreen "Fixed" camera + axis-aligned broadcast cams)
+Used by `build_mjcf` (offscreen "fixed" camera + axis-aligned broadcast cams)
 and by the World/Quadrotor viewer setup (live mujoco.viewer).  Single source
 of truth for both.
 
@@ -10,7 +10,7 @@ by ``make install``).  The file is REQUIRED: ``load_camera_config``
 raises FileNotFoundError if it's missing or any required cam below is
 absent, with a hint to run ``make configs``.
 
-Required cams in the toml: Fixed | North | East | South | West | Top.
+Required cams in the toml: fixed | north | east | south | west | top.
 """
 
 from __future__ import annotations
@@ -23,7 +23,7 @@ import numpy as np
 
 # Cams the toml MUST declare; the loaders below raise if any are missing.
 _REQUIRED_CAMS: tuple[str, ...] = (
-    "Fixed", "North", "East", "South", "West", "Top",
+    "fixed", "north", "east", "south", "west", "top",
 )
 
 _INSTALL_HINT = (
@@ -84,9 +84,9 @@ def load_camera_config(
 ) -> tuple[CameraSpec, ...]:
     """Load all cameras from config/camera.toml as a tuple of (name, eye, lookat, fovy).
 
-    Required cams: Fixed | North | East | South | West | Top.  Order in the
-    returned tuple matches ``_REQUIRED_CAMS`` (Fixed first, compass cardinals
-    in NESW order, Top last).
+    Required cams: fixed | north | east | south | west | top.  Order in the
+    returned tuple matches ``_REQUIRED_CAMS`` (fixed first, compass cardinals
+    in NESW order, top last).
 
     Raises ``FileNotFoundError`` if the toml is missing, or ``KeyError`` if
     any required cam is absent or missing eye/lookat.  Both errors include

@@ -60,7 +60,7 @@ check-gui: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
 	@$(MJPYTHON) scripts/check_env.py --viewer
 
 CAM ?= grid
-camera-test: ## 🎥 Render hover flight as 2x2 grid → mp4 (CAM=grid|fixed|front|side|top|drone_fpv|drone_tpv)
+camera-test: ## 🎥 Render hover flight as 2x2 grid → mp4 (CAM=grid|fixed|front|side|top|fpv|tpv)
 	@$(PYTHON) demo/camera_test.py --cam $(CAM)
 
 demo: ## 🎮 Pick a demo to run (hover, waypoint) — opens viewer

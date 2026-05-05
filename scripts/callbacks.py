@@ -25,7 +25,9 @@ class ResumeProgressCallback(BaseCallback):
             from tqdm.rich import tqdm
         except ImportError:
             from tqdm import tqdm
-        self.pbar = tqdm(total=self._total, initial=self.model.num_timesteps, unit="step")
+        self.pbar = tqdm(
+            total=self._total, initial=self.model.num_timesteps, unit="step"
+        )
 
     def _on_step(self) -> bool:
         if self.pbar is not None:
@@ -51,17 +53,17 @@ class VideoRecorderCallback(BaseCallback):
     matching the convention used for CheckpointCallback / EvalCallback.
 
     By default writes a 2x2 grid stitching four named cameras together
-    (South / East / Top / chase-cam) at 1920x1080.  Pass ``grid=False`` to
+    (south / east / top / chase-cam) at 1920x1080.  Pass ``grid=False`` to
     fall back to the env's single-cam ``render()`` output (the cinematic
-    "Fixed" cam at 640x480).  Grid mode bypasses ``env.render()`` and reaches
+    "fixed" cam at 640x480).  Grid mode bypasses ``env.render()`` and reaches
     into ``env._quad.render_grid(...)`` directly — same precedent as
     eval_ppo.py reaching into ``env._quad`` for the live viewer.
 
-    Cam choices: hoop sits at +X — South works well as the wide side view
+    Cam choices: hoop sits at +X — south works well as the wide side view
     (broadcast convention puts the goal on the right of frame).  Either
-    East or West can be paired with it: West frames the approach from the
-    drone-start side, East frames the goal head-on from behind the hoop.
-    North would mirror the hoop to the LEFT and is usually avoided.
+    east or west can be paired with it: west frames the approach from the
+    drone-start side, east frames the goal head-on from behind the hoop.
+    north would mirror the hoop to the LEFT and is usually avoided.
 
     Each recorded episode is also logged to TensorBoard.  In grid mode every
     cell becomes its own video under ``eval/video/<cam>`` (so TB shows four
@@ -75,7 +77,10 @@ class VideoRecorderCallback(BaseCallback):
     """
 
     DEFAULT_GRID_CAMS: tuple[str, str, str, str] = (
-        "South", "East", "Top", "drone_tpv",
+        "south",
+        "east",
+        "top",
+        "tpv",
     )
 
     def __init__(
@@ -113,23 +118,27 @@ class VideoRecorderCallback(BaseCallback):
             self._imageio_ok = True
         except ImportError:
             self._imageio_ok = False
-            print(f"{_ts()} ⚠️  [VideoRecorder] imageio not found. "
-                  "Install with: pip install imageio imageio-ffmpeg")
+            print(
+                f"{_ts()} ⚠️  [VideoRecorder] imageio not found. "
+                "Install with: pip install imageio imageio-ffmpeg"
+            )
         try:
             import moviepy  # noqa: F401
 
             self._moviepy_ok = True
         except ImportError:
             self._moviepy_ok = False
-            print(f"{_ts()} ⚠️  [VideoRecorder] moviepy not found — TB video "
-                  "logging disabled. Install with: pip install moviepy")
+            print(
+                f"{_ts()} ⚠️  [VideoRecorder] moviepy not found — TB video "
+                "logging disabled. Install with: pip install moviepy"
+            )
 
     def _capture_cells(self, env) -> list[np.ndarray] | None:
         """Capture per-cam frames for one timestep.
 
         Grid mode returns one (cell_h × cell_w × 3) array per cam in
         ``self.grid_cams``.  Single-cam mode returns a 1-element list
-        wrapping ``env.render()`` (the cinematic "Fixed" cam).  Stored
+        wrapping ``env.render()`` (the cinematic "fixed" cam).  Stored
         unstitched so each cam can be logged to TB independently; the
         on-disk mp4 stitches them at write-time.
         """
@@ -151,8 +160,8 @@ class VideoRecorderCallback(BaseCallback):
         env = self.env_fn()
         # Per-cam streams: one list of frames per cam name.  In grid mode the
         # cam names are self.grid_cams; in single-cam mode there's just one
-        # entry tagged "Fixed".
-        cam_keys = self.grid_cams if self.grid else ("Fixed",)
+        # entry tagged "fixed".
+        cam_keys = self.grid_cams if self.grid else ("fixed",)
         per_cam: dict[str, list[np.ndarray]] = {k: [] for k in cam_keys}
 
         obs, _ = env.reset()
@@ -183,7 +192,7 @@ class VideoRecorderCallback(BaseCallback):
                 for i in range(n_frames)
             ]
         else:
-            mp4_frames = per_cam["Fixed"]
+            mp4_frames = per_cam["fixed"]
 
         path = os.path.join(self.video_dir, f"step_{self.model.num_timesteps:08d}.mp4")
         with imageio.v2.get_writer(path, fps=self.fps, macro_block_size=None) as writer:
@@ -199,7 +208,7 @@ class VideoRecorderCallback(BaseCallback):
     @staticmethod
     def _stitch_2x2(cells: list[np.ndarray]) -> np.ndarray:
         """Row-major 2x2 stitch — same scheme as World.render_grid."""
-        top    = np.hstack([cells[0], cells[1]])
+        top = np.hstack([cells[0], cells[1]])
         bottom = np.hstack([cells[2], cells[3]])
         return np.vstack([top, bottom])
 

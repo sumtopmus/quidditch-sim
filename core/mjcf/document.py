@@ -34,7 +34,7 @@ class WorldOptions:
         cameras: tuple of (name, eye, lookat, fovy_or_None) for every
             scene-level camera.  build_mjcf emits one ``<camera>`` per
             entry in order; downstream code looks them up by name (e.g.
-            World extracts "Fixed" for the live-viewer initial pose).
+            World extracts "fixed" for the live-viewer initial pose).
         name: model name, used as ``<mujoco model="...">``.
         timestep: physics timestep in seconds.
         gravity: world gravity vector.

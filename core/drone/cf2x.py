@@ -229,12 +229,12 @@ def cf2x_fragment(
         f'           queried via mj_geomDistance against hoop_score_tube). -->\n'
         f'      <geom name="{prefix}_probe" type="sphere" size="0.012" pos="0 0 0"\n'
         f'            contype="0" conaffinity="0" rgba="1 0 0 0"/>\n'
-        f'      <!-- FPV camera: child of drone body, looks along body +X (forward).\n'
+        f'      <!-- fpv camera: child of drone body, looks along body +X (forward).\n'
         f'           xyaxes derivation: body frame ENU (x=fwd, y=left, z=up); MuJoCo\n'
         f'           cameras look along their own -Z, with +Y up.  Set cam +Y = body +Z\n'
         f'           and cam +X = body -Y, giving cam -Z = body +X.  fovy=70° is roughly\n'
-        f'           a wide-angle FPV lens. -->\n'
-        f'      <camera name="{prefix}_fpv" pos="0.04 0 0.005"\n'
+        f'           a wide-angle fpv lens. -->\n'
+        f'      <camera name="fpv" pos="0.04 0 0.005"\n'
         f'              xyaxes="0 -1 0  0 0 1" fovy="70"/>\n'
         f'    </body>'
     )
@@ -246,7 +246,7 @@ def cf2x_fragment(
         f'<framepos    name="{prefix}_framepos"    objtype="body" objname="{prefix}"/>',
     )
 
-    # TPV chase-cam mocap body.  Sibling of the drone body (mocap bodies must
+    # tpv chase-cam mocap body.  Sibling of the drone body (mocap bodies must
     # be top-level children of <worldbody>).  Camera lives at the mocap
     # body's origin with identity-in-body orientation; the body's pos+quat
     # is rewritten every World.step()/reset() by Quadrotor._update_tpv_mocap
@@ -254,7 +254,7 @@ def cf2x_fragment(
     # frame, looking at the drone's CoM.  No inertia, no contacts.
     tpv_mocap_xml = (
         f'<body name="{prefix}_tpv_mocap" mocap="true" pos="0 0 0">\n'
-        f'      <camera name="{prefix}_tpv" pos="0 0 0"\n'
+        f'      <camera name="tpv" pos="0 0 0"\n'
         f'              xyaxes="1 0 0  0 1 0" fovy="60"/>\n'
         f'    </body>'
     )

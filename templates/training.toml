@@ -19,7 +19,7 @@
 
 [training]
 run_name        = "ppo_hoop"
-total_timesteps = 2_000_000
+total_timesteps = 10_000_000
 n_envs          = 8
 seed            = 42    # integer ≥ 0 for reproducible runs; -1 to disable
 
@@ -43,24 +43,24 @@ checkpoint_freq_steps = 50_000
 # effective freq = eval_freq_steps × video_every_n_evals.  Set N=1 to record
 # at every eval, or raise to keep videos cheaper than full eval cadence.
 # Each video is also logged to TensorBoard (eval/video) in addition to mp4.
-video_every_n_evals   = 2
+video_every_n_evals   = 4 # video runs every Nth eval (eval=50k, N=4 → 200k)
 video_fps             = 20
 
 # Checkpoint videos: 2x2 grid stitching four named cameras.
 # `cells` is row-major: [top-left, top-right, bottom-left, bottom-right].
 # Available cams in the scene:
-#   Fixed | North | East | South | West | Top | drone_fpv | drone_tpv
+#   fixed | north | east | south | west | top | fpv | tpv
 # Per-cell size 960x540 → final 1920x1080 (1080p).  Each render does 4
 # offscreen passes per frame, so checkpoint video time scales with
 # cell_width * cell_height * 4.  Set grid = false to record only the
-# cinematic "Fixed" cam at 640x480 (faster, less informative).
+# cinematic "fixed" cam at 640x480 (faster, less informative).
 [training.callbacks.video]
 grid        = true
-# Hoop sits at +X.  South pairs naturally with either East or West:
-# West frames the approach from the drone-start side, East frames the
-# goal head-on from behind the hoop.  North would mirror the hoop to
+# Hoop sits at +X.  south pairs naturally with either east or west:
+# west frames the approach from the drone-start side, east frames the
+# goal head-on from behind the hoop.  north would mirror the hoop to
 # the LEFT and is usually avoided.
-cells       = ["South", "East", "Top", "drone_tpv"]
+cells       = ["south", "east", "top", "tpv"]
 cell_width  = 960
 cell_height = 540
 

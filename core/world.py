@@ -13,7 +13,7 @@ Public surface:
     World.reset()                       — reset every registered drone
     World.step()                        — apply each drone's control, then
                                           PHYS_PER_CTRL × mj_step
-    World.render_frame(w, h) -> ndarray — RGB frame from the "Fixed" camera
+    World.render_frame(w, h) -> ndarray — RGB frame from the "fixed" camera
 
 Camera definitions are loaded from config/camera.toml (raises if missing —
 run ``make configs`` to copy templates/camera.toml).
@@ -132,7 +132,7 @@ class World:
                 self.model, self.data,
                 key_callback=self._make_key_callback(),
             )
-            _, fixed_eye, fixed_lookat, _ = find_camera(self._cameras, "Fixed")
+            _, fixed_eye, fixed_lookat, _ = find_camera(self._cameras, "fixed")
             az, el, dist, lookat = _viewer_params(fixed_eye, fixed_lookat)
             self._viewer.cam.azimuth   = az
             self._viewer.cam.elevation = el
@@ -208,23 +208,22 @@ class World:
         viewer) — these digit shortcuts are additive, not a replacement.
 
             ` (grave) → free cam
-            1 → North   2 → East    3 → South   4 → West
-            5 → Top     6 → Fixed
-            7 → drone_fpv (FPV)     8 → drone_tpv (TPV)
+            1 → north   2 → east    3 → south   4 → west
+            5 → top     6 → fixed.  7 → fpv     8 → tpv
 
-        Cameras that don't exist in the model (e.g. drone_fpv on a custom
+        Cameras that don't exist in the model (e.g. fpv on a custom
         scene without cf2x_fragment) are silently skipped at callback build
         time — pressing their digit is a no-op.
         """
         digit_to_cam = {
-            "1": "North",
-            "2": "East",
-            "3": "South",
-            "4": "West",
-            "5": "Top",
-            "6": "Fixed",
-            "7": "drone_fpv",
-            "8": "drone_tpv",
+            "1": "north",
+            "2": "east",
+            "3": "south",
+            "4": "west",
+            "5": "top",
+            "6": "fixed",
+            "7": "fpv",
+            "8": "tpv",
         }
         cam_ids: dict[str, int] = {}
         for digit, name in digit_to_cam.items():
@@ -252,9 +251,9 @@ class World:
         return self._renderer
 
     def render_frame(self, width: int, height: int) -> np.ndarray:
-        """Render to an RGB (H×W×3) uint8 array using the scene's "Fixed" camera."""
+        """Render to an RGB (H×W×3) uint8 array using the scene's "fixed" camera."""
         renderer = self.get_renderer(width, height)
-        renderer.update_scene(self.data, camera="Fixed")
+        renderer.update_scene(self.data, camera="fixed")
         rgba = renderer.render()          # (H, W, 4) uint8 — mujoco 3.x returns RGBA
         return rgba[:, :, :3]
 
