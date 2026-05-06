@@ -5,9 +5,6 @@ Two scenarios run back-to-back in a single MuJoCo viewer:
   B) Through despite the tag — Red gets tagged once but still scores.
 
 Run via:  make demo  -> pick "scenarios"
-
-NOTE: As of this commit, the scripted policies are placeholder zero-actions.
-The narrative beats are tuned in subsequent commits.
 """
 from __future__ import annotations
 
@@ -29,11 +26,6 @@ SHOW_EVENT_MARKERS = False
 
 # Type alias for a single-side policy: takes that side's obs, returns its action.
 Policy = Callable[[np.ndarray], np.ndarray]
-
-
-def _placeholder_policy(_obs: np.ndarray) -> np.ndarray:
-    """Zero-action placeholder until per-scenario policies are tuned."""
-    return np.zeros(4, dtype=np.float32)
 
 
 # === Shared helpers ====================================================
@@ -123,6 +115,44 @@ def _scenario_a_blue_factory():
 
         if state["phase"] == "ram":
             return _delta_action(to_red * RAM_GAIN)
+
+        return np.zeros(4, dtype=np.float32)
+
+    return policy
+
+
+# === Scenario B: Through despite the tag ===============================
+
+
+def _scenario_b_blue_factory():
+    """One-tag-then-peel-off:
+      intercept -> in_sphere -> peel_off
+
+    Blue closes once, lets the tag pulse fire, then retreats along
+    `PEEL_OFF_DIR` so Red is free to continue toward the hoop.
+    """
+    INSIDE_THR  = 0.18
+    PEEL_OFF_DIR = np.array([0.0, 1.5, 0.5], dtype=np.float64)  # +y mostly, slight up
+
+    state = {"phase": "intercept"}
+
+    def policy(obs: np.ndarray) -> np.ndarray:
+        to_red = obs[16:19].astype(np.float64)
+        dist   = float(np.linalg.norm(to_red))
+
+        if state["phase"] == "intercept":
+            if dist < INSIDE_THR:
+                state["phase"] = "in_sphere"
+            return _delta_action(to_red)
+
+        if state["phase"] == "in_sphere":
+            # Hold for one step inside the sphere — tag_entry fires —
+            # then retreat.
+            state["phase"] = "peel_off"
+            return _delta_action(to_red)
+
+        if state["phase"] == "peel_off":
+            return _delta_action(PEEL_OFF_DIR)
 
         return np.zeros(4, dtype=np.float32)
 
@@ -232,13 +262,13 @@ def main() -> None:
         )
         _idle_pause(env, seconds=1.5)
 
-        # Scenario B — Through despite the tag (placeholder policies for now).
+        # Scenario B — Through despite the tag.
         _run_scenario(
             "B: Through despite the tag",
             env,
-            red_policy=_placeholder_policy,
-            blue_policy=_placeholder_policy,
-            max_seconds=10.0,
+            red_policy=_scoring_red_factory(),
+            blue_policy=_scenario_b_blue_factory(),
+            max_seconds=15.0,
         )
 
         # Hold the viewer open for inspection.
