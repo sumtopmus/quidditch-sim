@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check-warm
+.PHONY: help camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check-warm
 
 .DEFAULT_GOAL := help
 
@@ -52,12 +52,6 @@ help: ## 📋 Show available targets
 	@echo "Override variables:  make train RUN_NAME=my_run  PRETRAIN=models/...  CONDA_ENV=uav"
 
 # ──────────────────────────────────────────────────────────────────────────────
-
-check-sim: ## ✅ Validate env headless (fast, no window)
-	@$(PYTHON) scripts/check_env.py
-
-check-gui: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
-	@$(MJPYTHON) scripts/check_env.py --viewer
 
 CAM ?= grid
 camera-test: ## 🎥 Render hover flight as 2x2 grid → mp4 (CAM=grid|fixed|north|east|south|west|top|fpv|tpv|port|starboard)
@@ -133,7 +127,7 @@ repro: ## 🔄 Restore config/training.toml from a promoted model  [MODEL=...]
 install: ## 📦 Create/update the $(CONDA_ENV) conda env + populate config/ from templates
 	@$(CONDA) env create -f environment.yml 2>/dev/null || $(CONDA) env update -f environment.yml --prune
 	@$(MAKE) --no-print-directory configs
-	@echo "Done. Verify with: make check-sim"
+	@echo "Done. Verify with: make test"
 
 configs: ## 🛠  Populate config/ from templates/ (idempotent — never overwrites)
 	@mkdir -p config
