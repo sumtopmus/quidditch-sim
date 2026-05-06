@@ -219,8 +219,38 @@ class QuidditchTeamEnv(ParallelEnv):
         dict[str, np.ndarray], dict[str, float],
         dict[str, bool], dict[str, bool], dict[str, dict[str, Any]],
     ]:
-        # Filled in by Task 10.
-        raise NotImplementedError("step() implemented in Task 10")
+        assert self._red is not None and self._blue is not None
+
+        for agent_id, action in actions.items():
+            delta = np.asarray(action, dtype=np.float32) * ACTION_SCALE
+            if agent_id == self._red_id:
+                self._setpoint_red += delta
+                self._setpoint_red[0] = np.clip(self._setpoint_red[0], -ARENA_RADIUS, ARENA_RADIUS)
+                self._setpoint_red[1] = np.clip(self._setpoint_red[1], -ARENA_RADIUS, ARENA_RADIUS)
+                self._setpoint_red[2] = (self._setpoint_red[2] + np.pi) % (2 * np.pi) - np.pi
+                self._setpoint_red[3] = np.clip(self._setpoint_red[3], 0.01, 4.0)
+                self._red.set_setpoint(self._setpoint_red)
+            else:
+                self._setpoint_blue += delta
+                self._setpoint_blue[0] = np.clip(self._setpoint_blue[0], -ARENA_RADIUS, ARENA_RADIUS)
+                self._setpoint_blue[1] = np.clip(self._setpoint_blue[1], -ARENA_RADIUS, ARENA_RADIUS)
+                self._setpoint_blue[2] = (self._setpoint_blue[2] + np.pi) % (2 * np.pi) - np.pi
+                self._setpoint_blue[3] = np.clip(self._setpoint_blue[3], 0.01, 4.0)
+                self._blue.set_setpoint(self._setpoint_blue)
+
+        self._world.step()
+        self._step_count += 1
+
+        rewards = {self._red_id: 0.0, self._blue_id: 0.0}
+        terminations = {self._red_id: False, self._blue_id: False}
+        truncations  = {self._red_id: False, self._blue_id: False}
+        infos: dict[str, dict[str, Any]] = {self._red_id: {}, self._blue_id: {}}
+
+        if self._step_count >= self._max_steps:
+            truncations = {self._red_id: True, self._blue_id: True}
+            self.agents = []
+
+        return self._all_obs(), rewards, terminations, truncations, infos
 
     def render(self) -> np.ndarray | None:
         if self.render_mode != "rgb_array" or self._world is None:
