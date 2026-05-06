@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check team-check-tag team-check-crash team-check-warm
+.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check team-check-tag team-check-warm
 
 .DEFAULT_GOAL := help
 
@@ -193,9 +193,6 @@ team-check: ## ✅ Team-env scripted-vs-scripted canary
 
 team-check-tag: ## ✅ Tag state machine canary (6 phases)
 	@$(PYTHON) scripts/check_team_tag.py
-
-team-check-crash: ## ✅ Crash detector — wall + slow-drone-drone + fast-drone-drone
-	@$(PYTHON) scripts/check_team_crash.py
 
 team-check-warm: ## ✅ Warm-start preserves single-agent behavior  OLD=models/<run>
 	@test -n "$(OLD)" || { echo "ERROR: OLD=models/<run> required"; exit 1; }; \
