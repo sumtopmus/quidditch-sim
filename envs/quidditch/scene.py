@@ -95,6 +95,8 @@ def hoop_fragment(
 def arena_wall_fragment(
     radius: float,
     height: float = ARENA_WALL_HEIGHT,
+    *,
+    with_collisions: bool = False,
 ) -> SceneFragment:
     """Translucent cylindrical arena wall (closed thin-shell mesh).
 
@@ -102,17 +104,53 @@ def arena_wall_fragment(
     polycarbonate-like material.  Only one wall per scene; no prefix
     parameter (the mesh asset, material, body, and geom are all named
     "arena_wall" / "arena_glass" / "arena").
+
+    When `with_collisions=True`, also emits a ring of 16 thin box geoms
+    arranged tangent to the perimeter at `radius` — these are what drones
+    actually collide with.  The visual mesh itself stays non-colliding
+    (its convex hull is a solid disc, which would make the inside of the
+    arena a permanent penetration zone).  Each box spans 22.5° of arc.
     """
+    n_seg = 16
     v, n, f = _arena_wall_mesh_data(radius, height, thickness=0.016, n=64)
     mesh_asset = (
         f'<mesh name="arena_wall" vertex="{v}" normal="{n}" face="{f}"/>\n'
         f'    <material name="arena_glass" rgba="0.6 0.85 1.0 0.35" '
         f'specular="0.3" shininess="0.5"/>'
     )
+    visual_geom = (
+        '<geom type="mesh" mesh="arena_wall" material="arena_glass" '
+        'contype="0" conaffinity="0"/>'
+    )
+    if with_collisions:
+        half_arc      = np.pi / n_seg                 # 22.5° / 2 = 11.25°
+        half_chord    = radius * float(np.sin(half_arc))   # ~0.585 m at r=3
+        half_thick    = 0.025                              # 5 cm thick wall
+        half_height   = height / 2.0
+        boxes: list[str] = []
+        for i in range(n_seg):
+            theta_center = (2.0 * i + 1) * half_arc        # 11.25°, 33.75°, ...
+            cx = radius * float(np.cos(theta_center))
+            cy = radius * float(np.sin(theta_center))
+            cz = half_height
+            # Box yaw aligns its long axis tangent to the perimeter.
+            yaw = theta_center + np.pi / 2.0
+            quat_w = float(np.cos(yaw / 2.0))
+            quat_z = float(np.sin(yaw / 2.0))
+            boxes.append(
+                f'      <geom name="arena_wall_seg_{i:02d}" type="box" '
+                f'size="{half_chord:.4f} {half_thick:.4f} {half_height:.4f}" '
+                f'pos="{cx:.4f} {cy:.4f} {cz:.4f}" '
+                f'quat="{quat_w:.6f} 0 0 {quat_z:.6f}" '
+                f'contype="1" conaffinity="1" group="3" rgba="0.5 0.5 0.5 0"/>'
+            )
+        ring_block = "\n" + "\n".join(boxes)
+    else:
+        ring_block = ""
+
     body_xml = (
-        '<body name="arena" pos="0 0 0">\n'
-        '      <geom type="mesh" mesh="arena_wall" material="arena_glass" '
-        'contype="0" conaffinity="0"/>\n'
-        '    </body>'
+        f'<body name="arena" pos="0 0 0">\n'
+        f'      {visual_geom}{ring_block}\n'
+        f'    </body>'
     )
     return SceneFragment(assets=(mesh_asset,), worldbody=(body_xml,))

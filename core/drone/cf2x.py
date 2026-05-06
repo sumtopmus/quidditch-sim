@@ -153,6 +153,8 @@ def cf2x_fragment(
     prefix: str = "drone",
     *,
     with_collisions: bool = False,
+    with_tag_sphere: bool = False,
+    tag_sphere_rgba: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.15),
 ) -> SceneFragment:
     """A single cf2x drone (body + sensors) as a composable MJCF fragment.
 
@@ -209,6 +211,22 @@ def cf2x_fragment(
     else:
         collision_block = ""
 
+    # Optional tag sphere: non-colliding child geom used by TagDistanceScorer.
+    # When enabled, gets group="3" so it's hidden in the viewer by default
+    # but available for mj_geomDistance via its global name.
+    if with_tag_sphere:
+        from envs.quidditch.constants import TAG_RADIUS  # local import: avoid cycle
+        r, g, b, a = tag_sphere_rgba
+        tag_sphere_block = (
+            f'      <!-- Tag sphere (non-colliding; queried by TagDistanceScorer). -->\n'
+            f'      <geom name="{prefix}_tag_sphere" type="sphere" '
+            f'size="{TAG_RADIUS:.4f}" pos="0 0 0" '
+            f'contype="0" conaffinity="0" group="3" '
+            f'rgba="{r:.4f} {g:.4f} {b:.4f} {a:.4f}"/>\n'
+        )
+    else:
+        tag_sphere_block = ""
+
     body_xml = (
         f'<body name="{prefix}" pos="0 0 0.03">\n'
         f'      <freejoint name="{prefix}_root"/>\n'
@@ -229,12 +247,13 @@ def cf2x_fragment(
         f'           queried via mj_geomDistance against hoop_score_tube). -->\n'
         f'      <geom name="{prefix}_probe" type="sphere" size="0.012" pos="0 0 0"\n'
         f'            contype="0" conaffinity="0" rgba="1 0 0 0"/>\n'
+        f'{tag_sphere_block}'
         f'      <!-- fpv camera: child of drone body, looks along body +X (forward).\n'
         f'           xyaxes derivation: body frame ENU (x=fwd, y=left, z=up); MuJoCo\n'
         f'           cameras look along their own -Z, with +Y up.  Set cam +Y = body +Z\n'
         f'           and cam +X = body -Y, giving cam -Z = body +X.  fovy=70° is roughly\n'
         f'           a wide-angle fpv lens. -->\n'
-        f'      <camera name="fpv" pos="0.04 0 0.005"\n'
+        f'      <camera name="{prefix}_fpv" pos="0.04 0 0.005"\n'
         f'              xyaxes="0 -1 0  0 0 1" fovy="70"/>\n'
         f'    </body>'
     )
@@ -256,7 +275,7 @@ def cf2x_fragment(
     # no contacts.
     chase_mocap_xmls = tuple(
         f'<body name="{prefix}_{cam}_mocap" mocap="true" pos="0 0 0">\n'
-        f'      <camera name="{cam}" pos="0 0 0"\n'
+        f'      <camera name="{prefix}_{cam}" pos="0 0 0"\n'
         f'              xyaxes="1 0 0  0 1 0" fovy="60"/>\n'
         f'    </body>'
         for cam in ("tpv", "port", "starboard")

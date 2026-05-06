@@ -58,6 +58,11 @@ from envs.quidditch.constants import (
     HOOP_OUTWARD_NORMAL,
     HOOP_RADIUS,
 )
+from envs.quidditch.rewards import (
+    SCORE_REWARD,
+    CRASH_PENALTY,
+    DIST_REWARD_SCALE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -79,10 +84,7 @@ START_SAMPLE_RADIUS: float = ARENA_RADIUS - 0.1
 EPISODE_SECONDS: float = 120.0
 ACTION_SCALE = np.array([0.2, 0.2, 0.5, 0.1], dtype=np.float32)
 
-# Reward
-SCORE_REWARD: float = 10.0
-CRASH_PENALTY: float = -20.0
-DIST_REWARD_SCALE: float = 0.01
+# Reward magnitudes are imported from envs.quidditch.rewards.
 TAKEOFF_GRACE_STEPS: int = 30
 
 # Camera / video parameters (used by VideoRecorderCallback)
@@ -269,6 +271,12 @@ class QuidditchSimpleEnv(gym.Env):
         unit_to_hoop = vec_to_hoop / (dist + 1e-8)
         signed_dist_norm = self._signed_dist(lin_pos) / ARENA_RADIUS
 
+        # NB: Slots [0:16] are contractually frozen — the team env's per-agent obs
+        # uses the SAME encoding for slots 0:15 (and the same signed_dist_norm at
+        # slot 15) so that warm_start_ppo can copy the input layer of the
+        # single-agent best into the team env's policy as weight surgery.  Do not
+        # reorder these slots without also updating envs/quidditch/team_env.py
+        # AND core/policies/warm_start.py.
         return np.concatenate(
             [ang_vel, ang_pos, lin_vel, lin_pos, unit_to_hoop, [signed_dist_norm]],
             dtype=np.float32,
