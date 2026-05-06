@@ -52,11 +52,15 @@ from envs.quidditch.constants import (
     CRASH_VEL_THR,
     TAG_ENTRY_REWARD,
     TAG_DURATION_REWARD,
+    DRONE_CRASH_REWARD,
 )
 
 
 EPISODE_SECONDS_DEFAULT: float = 30.0
 ACTION_SCALE = np.array([0.2, 0.2, 0.5, 0.1], dtype=np.float32)
+SCORE_REWARD: float = 10.0
+SOLO_CRASH_PENALTY: float = -20.0
+DIST_REWARD_SCALE: float = 0.01
 TAKEOFF_GRACE_STEPS: int = 30
 START_SAMPLE_RADIUS: float = ARENA_RADIUS - 0.1
 
@@ -277,16 +281,97 @@ class QuidditchTeamEnv(ParallelEnv):
             rewards[self._blue_id] += TAG_DURATION_REWARD
             rewards[self._red_id]  -= TAG_DURATION_REWARD
 
-        terminations = {self._red_id: False, self._blue_id: False}
-        truncations  = {self._red_id: False, self._blue_id: False}
         infos: dict[str, dict[str, Any]] = {
             self._red_id:  {"tag_entry": tag_entry, "tag_during": tag_during},
             self._blue_id: {"tag_entry": tag_entry, "tag_during": tag_during},
         }
 
-        if self._step_count >= self._max_steps:
+        # ── Crash detection ──────────────────────────────────────────────────
+        ev = self._crash_detector.events()
+        if self._red_takeoff_grace > 0:
+            self._red_takeoff_grace -= 1
+            ev.solo_floor[self._red_id] = False
+        if self._blue_takeoff_grace > 0:
+            self._blue_takeoff_grace -= 1
+            ev.solo_floor[self._blue_id] = False
+
+        red_floor   = ev.solo_floor[self._red_id]
+        blue_floor  = ev.solo_floor[self._blue_id]
+        red_wall_v  = ev.wall[self._red_id]
+        blue_wall_v = ev.wall[self._blue_id]
+        red_wall_crash  = red_wall_v  > self.cfg.crash_vel_thr
+        blue_wall_crash = blue_wall_v > self.cfg.crash_vel_thr
+        drone_drone_crash = (
+            ev.drone_drone is not None and ev.drone_drone[2] > self.cfg.crash_vel_thr
+        )
+
+        # ── OOB ──────────────────────────────────────────────────────────────
+        red_pos  = self._red_pos()
+        blue_pos = self._blue_pos()
+        red_oob  = float(np.linalg.norm(red_pos[:2]))  > ARENA_RADIUS
+        blue_oob = float(np.linalg.norm(blue_pos[:2])) > ARENA_RADIUS
+
+        # ── Score detection ──────────────────────────────────────────────────
+        red_in_hoop  = bool(self._hoop_scorer.overlaps()[0, 0])
+        red_signed   = self._signed_dist_to_hoop_plane(red_pos)
+        scored = False
+        if red_in_hoop:
+            if not self._red_crossing_started:
+                self._red_crossing_started = True
+                self._red_enter_signed_dist = self._red_prev_signed_dist
+        else:
+            if self._red_crossing_started:
+                self._red_crossing_started = False
+                if self._red_enter_signed_dist < 0.0 and red_signed > 0.0:
+                    scored = True
+        self._red_prev_signed_dist = red_signed
+
+        # ── Distance shaping ─────────────────────────────────────────────────
+        dist_red  = float(np.linalg.norm(red_pos - HOOP_CENTER))
+        dist_blue = float(np.linalg.norm(blue_pos - self._midpoint()))
+        rewards[self._red_id]  -= (dist_red  / ARENA_RADIUS) * DIST_REWARD_SCALE
+        rewards[self._blue_id] -= (dist_blue / ARENA_RADIUS) * DIST_REWARD_SCALE
+
+        # ── Score reward (terminal, asymmetric) ──────────────────────────────
+        if scored:
+            rewards[self._red_id]  += SCORE_REWARD
+            rewards[self._blue_id] -= SCORE_REWARD
+
+        # ── Crash rewards ────────────────────────────────────────────────────
+        if drone_drone_crash:
+            rewards[self._blue_id] += DRONE_CRASH_REWARD
+            rewards[self._red_id]  -= DRONE_CRASH_REWARD
+
+        if red_floor or red_wall_crash or red_oob:
+            rewards[self._red_id]  += SOLO_CRASH_PENALTY
+        if blue_floor or blue_wall_crash or blue_oob:
+            rewards[self._blue_id] += SOLO_CRASH_PENALTY
+
+        # ── Termination ──────────────────────────────────────────────────────
+        any_terminal = (
+            scored
+            or drone_drone_crash
+            or red_floor or red_wall_crash or red_oob
+            or blue_floor or blue_wall_crash or blue_oob
+        )
+        terminations = {self._red_id: any_terminal, self._blue_id: any_terminal}
+        truncations  = {self._red_id: False, self._blue_id: False}
+        if not any_terminal and self._step_count >= self._max_steps:
             truncations = {self._red_id: True, self._blue_id: True}
             self.agents = []
+        elif any_terminal:
+            self.agents = []
+
+        infos[self._red_id].update({
+            "scored": scored, "drone_drone_crash": drone_drone_crash,
+            "red_floor": red_floor, "red_wall_crash": red_wall_crash,
+            "red_oob": red_oob, "step": self._step_count,
+        })
+        infos[self._blue_id].update({
+            "scored": scored, "drone_drone_crash": drone_drone_crash,
+            "blue_floor": blue_floor, "blue_wall_crash": blue_wall_crash,
+            "blue_oob": blue_oob, "step": self._step_count,
+        })
 
         return self._all_obs(), rewards, terminations, truncations, infos
 
