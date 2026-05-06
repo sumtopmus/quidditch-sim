@@ -20,6 +20,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
 
+from envs.quidditch.constants import HOOP_CENTER, HOOP_OUTWARD_NORMAL
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 
 # Toggle to draw colored event markers in the 3D scene (deferred — the
@@ -33,6 +34,99 @@ Policy = Callable[[np.ndarray], np.ndarray]
 def _placeholder_policy(_obs: np.ndarray) -> np.ndarray:
     """Zero-action placeholder until per-scenario policies are tuned."""
     return np.zeros(4, dtype=np.float32)
+
+
+# === Shared helpers ====================================================
+
+_HOOP_CENTER    = np.asarray(HOOP_CENTER, dtype=np.float64)
+_HOOP_NORMAL    = np.asarray(HOOP_OUTWARD_NORMAL, dtype=np.float64)
+_APPROACH_POINT = np.array([0.0, 0.0, _HOOP_CENTER[2]], dtype=np.float64)
+_THROUGH_POINT  = _HOOP_CENTER + 0.7 * _HOOP_NORMAL
+
+# Action-scale constants matching simple_env / team_env: dx, dy at +/-0.2,
+# dz at +/-0.1 per step. Scaling a target-relative vector by these gains and
+# clipping yields a saturated delta-setpoint action.
+_DX_SCALE = 0.2
+_DZ_SCALE = 0.1
+
+
+def _delta_action(vec: np.ndarray) -> np.ndarray:
+    """Convert a world-frame target-relative vector into a delta-setpoint action."""
+    if float(np.linalg.norm(vec)) < 0.01:
+        return np.zeros(4, dtype=np.float32)
+    return np.array([
+        np.clip(vec[0] / _DX_SCALE, -1.0, 1.0),
+        np.clip(vec[1] / _DX_SCALE, -1.0, 1.0),
+        0.0,
+        np.clip(vec[2] / _DZ_SCALE, -1.0, 1.0),
+    ], dtype=np.float32)
+
+
+# === Scenario A: Tagged out ============================================
+
+
+def _scoring_red_factory():
+    """Two-phase Red: climb to hoop altitude at origin, then push past hoop
+    along its outward normal. Same pattern as test_scoring_canary so Red can
+    actually score when not interfered with."""
+    state = {"phase2": False}
+
+    def policy(obs: np.ndarray) -> np.ndarray:
+        pos = obs[9:12].astype(np.float64)
+        if (not state["phase2"]) and np.linalg.norm(pos - _APPROACH_POINT) < 0.3:
+            state["phase2"] = True
+        target = _THROUGH_POINT if state["phase2"] else _APPROACH_POINT
+        return _delta_action(target - pos)
+
+    return policy
+
+
+def _scenario_a_blue_factory():
+    """Stateful Blue for Scenario A:
+      intercept_1 -> in_sphere_1 -> pullback -> intercept_2 -> ram
+
+    Distances tuned against the env's tag-sphere radius (~0.2 m) and
+    cooldown geometry. INSIDE = 0.18 m; OUTSIDE = 0.55 m so cooldown fully
+    elapses between tags. RAM_GAIN scales the to-Red vector before
+    `_delta_action` clipping, ensuring saturation throughout the ram so
+    the contact velocity exceeds CRASH_VEL_THR.
+    """
+    INSIDE_THR  = 0.18
+    OUTSIDE_THR = 0.55
+    RAM_GAIN    = 5.0
+
+    state = {"phase": "intercept_1"}
+
+    def policy(obs: np.ndarray) -> np.ndarray:
+        to_red = obs[16:19].astype(np.float64)
+        dist   = float(np.linalg.norm(to_red))
+
+        if state["phase"] == "intercept_1":
+            if dist < INSIDE_THR:
+                state["phase"] = "in_sphere_1"
+            return _delta_action(to_red)
+
+        if state["phase"] == "in_sphere_1":
+            if dist > INSIDE_THR + 0.05:
+                state["phase"] = "pullback"
+            return _delta_action(to_red)
+
+        if state["phase"] == "pullback":
+            if dist > OUTSIDE_THR:
+                state["phase"] = "intercept_2"
+            return _delta_action(-to_red)
+
+        if state["phase"] == "intercept_2":
+            if dist < INSIDE_THR:
+                state["phase"] = "ram"
+            return _delta_action(to_red)
+
+        if state["phase"] == "ram":
+            return _delta_action(to_red * RAM_GAIN)
+
+        return np.zeros(4, dtype=np.float32)
+
+    return policy
 
 
 def _log_event(t: float, label: str, rew: dict[str, float],
@@ -128,12 +222,12 @@ def main() -> None:
         randomise_red_start=False, episode_seconds=30.0,
     ))
     try:
-        # Scenario A — Tagged out (placeholder policies for now).
+        # Scenario A — Tagged out.
         _run_scenario(
             "A: Tagged out",
             env,
-            red_policy=_placeholder_policy,
-            blue_policy=_placeholder_policy,
+            red_policy=_scoring_red_factory(),
+            blue_policy=_scenario_a_blue_factory(),
             max_seconds=25.0,
         )
         _idle_pause(env, seconds=1.5)
