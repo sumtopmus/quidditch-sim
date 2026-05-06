@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check team-check-warm
+.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check-warm
 
 .DEFAULT_GOAL := help
 
@@ -187,9 +187,6 @@ eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI
 	   $(if $(EPISODES),--episodes $(EPISODES)) \
 	   $(if $(GUI),--gui) \
 	   $(if $(DETERMINISTIC),--deterministic)
-
-team-check: ## ✅ Team-env scripted-vs-scripted canary
-	@$(PYTHON) scripts/check_team_env.py
 
 team-check-warm: ## ✅ Warm-start preserves single-agent behavior  OLD=models/<run>
 	@test -n "$(OLD)" || { echo "ERROR: OLD=models/<run> required"; exit 1; }; \
