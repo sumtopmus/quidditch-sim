@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team
+.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team
 
 .DEFAULT_GOAL := help
 
@@ -53,11 +53,21 @@ help: ## 📋 Show available targets
 
 # ──────────────────────────────────────────────────────────────────────────────
 
+test: ## ✅ Run all tests (unit + integration)
+	@$(PYTHON) -m pytest
+
+test-fast: ## ⚡ Unit tests only (skip slow integration canaries)
+	@$(PYTHON) -m pytest tests/unit
+
+test-warm: ## ✅ Warm-start preserves single-agent behavior  OLD=models/<run>
+	@test -n "$(OLD)" || { echo "ERROR: OLD=models/<run> required"; exit 1; }; \
+	 OLD_MODEL="$(OLD)/best_model" $(PYTHON) -m pytest tests/integration/test_warm_start.py
+
 CAM ?= grid
 camera-test: ## 🎥 Render hover flight as 2x2 grid → mp4 (CAM=grid|fixed|north|east|south|west|top|fpv|tpv|port|starboard)
 	@$(PYTHON) demo/camera_test.py --cam $(CAM)
 
-demo: ## 🎮 Pick a demo to run (hover, waypoint) — opens viewer
+demo: ## 🎮 Pick a demo to run (hover, waypoint, scenarios) — opens viewer
 	@$(MJPYTHON) demo/menu.py
 
 # ──────────────────────────────────────────────────────────────────────────────
