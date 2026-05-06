@@ -26,3 +26,25 @@ HOOP_RADIUS:   float = HOOP_DIAMETER / 2.0  # 0.25 m
 # Half-length (along the hoop's outward normal) of the cylinder used for
 # mj_geomDistance-based hoop scoring.  See decisions.md 2026-04-30 for the ADR.
 HOOP_SCORE_TUBE_HALF_LEN: float = 0.1  # ± m around the hoop plane
+
+# ── Team-play (Phase 2) ──────────────────────────────────────────────────────
+# Soft-tag: Blue scoring on proximity to Red.
+TAG_RADIUS: float = 0.3                # m, radius of the tag sphere on each drone
+TAG_COOLDOWN_SECONDS: float = 1.0      # post-exit gate on the tag-entry pulse
+
+# Crashes: drone-vs-{drone, wall} contact magnitudes.  At |v_rel| > threshold
+# the contact is treated as a decisive crash; below threshold contacts apply
+# physics but do not terminate the episode.
+CRASH_VEL_THR: float = 1.5             # m/s, |v_rel · contact_normal| threshold
+
+# Reward magnitudes (per-event; signs vary by role — see team_env.py reward table).
+TAG_ENTRY_REWARD:    float = 5.0       # one-shot pulse on first entry into zone
+TAG_DURATION_REWARD: float = 0.02      # per simulation step while in zone
+DRONE_CRASH_REWARD:  float = 20.0      # |v_rel| > CRASH_VEL_THR drone-drone OR drone-wall
+
+# Default Blue start (hovering 1 m in front of the hoop, slightly below hoop height).
+BLUE_START_POS = np.array([1.0, 0.0, 1.5], dtype=np.float64)
+BLUE_START_YAW: float = float(np.pi)   # facing arena center (−x direction)
+
+# Defender shaping target: midpoint = α·red_pos + (1−α)·hoop_center.
+DEFAULT_MIDPOINT_ALPHA: float = 0.5
