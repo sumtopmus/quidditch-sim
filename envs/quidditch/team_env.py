@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import time
 from dataclasses import dataclass
+from math import ceil
 from typing import Any
 
 import numpy as np
@@ -49,6 +50,8 @@ from envs.quidditch.constants import (
     TAG_RADIUS,
     TAG_COOLDOWN_SECONDS,
     CRASH_VEL_THR,
+    TAG_ENTRY_REWARD,
+    TAG_DURATION_REWARD,
 )
 
 
@@ -125,6 +128,7 @@ class QuidditchTeamEnv(ParallelEnv):
         self._setpoint_blue = np.zeros(4, dtype=np.float32)
         self._step_count: int = 0
         self._max_steps:  int = 0
+        self._cooldown_ticks: int = 0
 
         self._red_takeoff_grace:  int = 0
         self._blue_takeoff_grace: int = 0
@@ -198,6 +202,7 @@ class QuidditchTeamEnv(ParallelEnv):
         self._blue.set_setpoint(self._setpoint_blue)
 
         self._max_steps = int(self.cfg.episode_seconds / self._red.step_period)
+        self._cooldown_ticks = int(ceil(self.cfg.tag_cooldown_s / self._red.step_period))
         self._step_count = 0
         self._red_takeoff_grace  = TAKEOFF_GRACE_STEPS
         self._blue_takeoff_grace = 0
@@ -241,10 +246,43 @@ class QuidditchTeamEnv(ParallelEnv):
         self._world.step()
         self._step_count += 1
 
+        # ── Tag state machine (single pair: blue defending vs red attacker) ─
+        # tag_during reflects whether Blue is in the zone *this step*
+        # (independent of state), so a step that exits doesn't pay a duration.
+        # tag_entry fires only on IDLE→IN_ZONE; cooldown gates re-entry pulses.
+        in_zone = bool(self._tag_scorer.in_zone()[0, 0])
+        ts = self._tag_blue_on_red
+
+        tag_entry  = False
+        tag_during = in_zone
+
+        if ts.state == _TagState.IDLE:
+            if in_zone:
+                tag_entry = True
+                ts.state = _TagState.IN_ZONE
+        elif ts.state == _TagState.IN_ZONE:
+            if not in_zone:
+                ts.state = _TagState.COOLDOWN
+                ts.cooldown_ticks = self._cooldown_ticks
+        elif ts.state == _TagState.COOLDOWN:
+            ts.cooldown_ticks -= 1
+            if ts.cooldown_ticks <= 0:
+                ts.state = _TagState.IN_ZONE if in_zone else _TagState.IDLE
+
         rewards = {self._red_id: 0.0, self._blue_id: 0.0}
+        if tag_entry:
+            rewards[self._blue_id] += TAG_ENTRY_REWARD
+            rewards[self._red_id]  -= TAG_ENTRY_REWARD
+        if tag_during:
+            rewards[self._blue_id] += TAG_DURATION_REWARD
+            rewards[self._red_id]  -= TAG_DURATION_REWARD
+
         terminations = {self._red_id: False, self._blue_id: False}
         truncations  = {self._red_id: False, self._blue_id: False}
-        infos: dict[str, dict[str, Any]] = {self._red_id: {}, self._blue_id: {}}
+        infos: dict[str, dict[str, Any]] = {
+            self._red_id:  {"tag_entry": tag_entry, "tag_during": tag_during},
+            self._blue_id: {"tag_entry": tag_entry, "tag_during": tag_during},
+        }
 
         if self._step_count >= self._max_steps:
             truncations = {self._red_id: True, self._blue_id: True}
