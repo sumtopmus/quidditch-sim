@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check team-check-mjcf team-check-tag team-check-crash team-check-warm
+.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check team-check-tag team-check-crash team-check-warm
 
 .DEFAULT_GOAL := help
 
@@ -190,9 +190,6 @@ eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI
 
 team-check: ## ✅ Team-env scripted-vs-scripted canary
 	@$(PYTHON) scripts/check_team_env.py
-
-team-check-mjcf: ## ✅ Team-env MJCF assembly check
-	@$(PYTHON) scripts/check_team_mjcf.py
 
 team-check-tag: ## ✅ Tag state machine canary (6 phases)
 	@$(PYTHON) scripts/check_team_tag.py
