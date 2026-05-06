@@ -46,21 +46,24 @@ from envs.quidditch.constants import (
     HOOP_RADIUS,
     BLUE_START_POS,
     BLUE_START_YAW,
-    DEFAULT_MIDPOINT_ALPHA,
     TAG_RADIUS,
     TAG_COOLDOWN_SECONDS,
     CRASH_VEL_THR,
+)
+from envs.quidditch.rewards import (
+    SCORE_REWARD,
+    CRASH_PENALTY,
+    DIST_REWARD_SCALE,
     TAG_ENTRY_REWARD,
     TAG_DURATION_REWARD,
-    DRONE_CRASH_REWARD,
+    TAKE_DOWN_REWARD,
+    TAKE_DOWN_PENALTY,
+    DEFAULT_MIDPOINT_ALPHA,
 )
 
 
 EPISODE_SECONDS_DEFAULT: float = 30.0
 ACTION_SCALE = np.array([0.2, 0.2, 0.5, 0.1], dtype=np.float32)
-SCORE_REWARD: float = 10.0
-SOLO_CRASH_PENALTY: float = -20.0
-DIST_REWARD_SCALE: float = 0.01
 TAKEOFF_GRACE_STEPS: int = 30
 START_SAMPLE_RADIUS: float = ARENA_RADIUS - 0.1
 
@@ -339,13 +342,13 @@ class QuidditchTeamEnv(ParallelEnv):
 
         # ── Crash rewards ────────────────────────────────────────────────────
         if drone_drone_crash:
-            rewards[self._blue_id] += DRONE_CRASH_REWARD
-            rewards[self._red_id]  -= DRONE_CRASH_REWARD
+            rewards[self._blue_id] += TAKE_DOWN_REWARD
+            rewards[self._red_id]  += TAKE_DOWN_PENALTY
 
         if red_floor or red_wall_crash or red_oob:
-            rewards[self._red_id]  += SOLO_CRASH_PENALTY
+            rewards[self._red_id]  += CRASH_PENALTY
         if blue_floor or blue_wall_crash or blue_oob:
-            rewards[self._blue_id] += SOLO_CRASH_PENALTY
+            rewards[self._blue_id] += CRASH_PENALTY
 
         # ── Termination ──────────────────────────────────────────────────────
         any_terminal = (

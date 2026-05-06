@@ -58,6 +58,11 @@ from envs.quidditch.constants import (
     HOOP_OUTWARD_NORMAL,
     HOOP_RADIUS,
 )
+from envs.quidditch.rewards import (
+    SCORE_REWARD,
+    CRASH_PENALTY,
+    DIST_REWARD_SCALE,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -79,10 +84,7 @@ START_SAMPLE_RADIUS: float = ARENA_RADIUS - 0.1
 EPISODE_SECONDS: float = 120.0
 ACTION_SCALE = np.array([0.2, 0.2, 0.5, 0.1], dtype=np.float32)
 
-# Reward
-SCORE_REWARD: float = 10.0
-CRASH_PENALTY: float = -20.0
-DIST_REWARD_SCALE: float = 0.01
+# Reward magnitudes are imported from envs.quidditch.rewards.
 TAKEOFF_GRACE_STEPS: int = 30
 
 # Camera / video parameters (used by VideoRecorderCallback)
