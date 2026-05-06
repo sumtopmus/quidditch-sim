@@ -171,11 +171,10 @@ train-team-red: ## 🔴 Phase 2a: train Red against scripted Blue
 	@$(PYTHON) scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \
 	  $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
 
-train-team-red-warm: ## 🔴 Phase 2a (warm-start variant)  WARM_START=models/<run>
-	@test -n "$(WARM_START)" || { echo "ERROR: WARM_START=models/<run> required"; exit 1; }; \
-	 $(PYTHON) scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \
-	   --warm-start "$(WARM_START)/best_model" \
-	   $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
+train-team-red-warm: ## 🔴 Phase 2a (warm-start variant)  WARM_START=models/<run> (or set [training.team].warm_start_from)
+	@$(PYTHON) scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \
+	  $(if $(WARM_START),--warm-start "$(WARM_START)/best_model") \
+	  $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
 
 train-team-blue: ## 🔵 Phase 2b: train Blue against frozen Red  RED=models/<run>
 	@test -n "$(RED)" || { echo "ERROR: RED=models/<run> required"; exit 1; }; \

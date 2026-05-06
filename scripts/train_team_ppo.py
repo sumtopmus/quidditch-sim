@@ -53,6 +53,11 @@ def main() -> None:
     args = parse_args()
     config = load_config(args.config)
 
+    if not args.warm_start:
+        ws_from = config.get("training", {}).get("team", {}).get("warm_start_from", "").strip()
+        if ws_from:
+            args.warm_start = f"{ws_from.rstrip('/')}/best_model"
+
     run_name = args.run_name or config["training"].get("run_name", "team_red")
     run_dir = make_run_dir(run_name=run_name, runs_root="runs")
 
