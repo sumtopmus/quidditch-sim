@@ -21,3 +21,6 @@ tensorboard
 imageio
 imageio-ffmpeg
 moviepy<2.0
+
+# Multi-agent env API for the team env (Phase 2).
+pettingzoo>=1.24
