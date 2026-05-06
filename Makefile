@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs
+.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check team-check-mjcf team-check-tag team-check-crash team-check-warm
 
 .DEFAULT_GOAL := help
 
@@ -163,6 +163,44 @@ list-runs: ## 🗂️  List training runs grouped by config name
 	     ls -1 "$$d" 2>/dev/null | sed 's/^/      /'; \
 	   done; \
 	 else echo "  (none — run 'make promote' after a successful training run)"; fi
+
+# ──────────────────────────────────────────────────────────────────────────────
+# Team play (Phase 2)
+
+train-team-red: ## 🔴 Phase 2a: train Red against scripted Blue
+	@$(PYTHON) scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \
+	  $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
+
+train-team-red-warm: ## 🔴 Phase 2a (warm-start variant)  WARM_START=models/<run>
+	@test -n "$(WARM_START)" || { echo "ERROR: WARM_START=models/<run> required"; exit 1; }; \
+	 $(PYTHON) scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \
+	   --warm-start "$(WARM_START)/best_model" \
+	   $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
+
+train-team-blue: ## 🔵 Phase 2b: train Blue against frozen Red  RED=models/<run>
+	@test -n "$(RED)" || { echo "ERROR: RED=models/<run> required"; exit 1; }; \
+	 $(PYTHON) scripts/train_team_ppo.py --learner blue_0 --opponent "frozen:$(RED)/best_model" \
+	   $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
+
+eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=100]
+	@test -n "$(RED)" -a -n "$(BLUE)" || { echo "ERROR: RED=<spec> BLUE=<spec> required"; exit 1; }; \
+	 $(PYTHON) scripts/eval_team.py --red "$(RED)" --blue "$(BLUE)" --episodes $(or $(EPISODES),100)
+
+team-check: ## ✅ Team-env scripted-vs-scripted canary
+	@$(PYTHON) scripts/check_team_env.py
+
+team-check-mjcf: ## ✅ Team-env MJCF assembly check
+	@$(PYTHON) scripts/check_team_mjcf.py
+
+team-check-tag: ## ✅ Tag state machine canary (6 phases)
+	@$(PYTHON) scripts/check_team_tag.py
+
+team-check-crash: ## ✅ Crash detector — wall + slow-drone-drone + fast-drone-drone
+	@$(PYTHON) scripts/check_team_crash.py
+
+team-check-warm: ## ✅ Warm-start preserves single-agent behavior  OLD=models/<run>
+	@test -n "$(OLD)" || { echo "ERROR: OLD=models/<run> required"; exit 1; }; \
+	 $(PYTHON) scripts/check_team_warm.py --old "$(OLD)/best_model"
 
 clean: ## 🧹 Remove __pycache__ and .pyc files
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
