@@ -10,7 +10,10 @@ from __future__ import annotations
 
 from typing import Protocol, runtime_checkable
 
+import gymnasium as gym
 import numpy as np
+
+from envs.quidditch.team_env import QuidditchTeamEnv
 
 
 @runtime_checkable
@@ -179,3 +182,62 @@ def from_spec(spec: str) -> Opponent:
     if cls is None:
         raise ValueError(f"from_spec: unknown opponent {name!r}")
     return cls(**kwargs)  # type: ignore[arg-type]
+
+
+class OpponentControlledEnv(gym.Env):
+    """Reduces a QuidditchTeamEnv to single-agent Gym (for SB3) by driving
+    the non-learner agent from a frozen Opponent each step.
+    """
+
+    metadata = {"render_modes": ["human", "rgb_array"]}
+
+    def __init__(
+        self,
+        team_env: QuidditchTeamEnv,
+        *,
+        learner_id: str,
+        opponent: Opponent,
+    ) -> None:
+        super().__init__()
+        if learner_id not in team_env.possible_agents:
+            raise ValueError(
+                f"OpponentControlledEnv: learner_id={learner_id!r} not in "
+                f"team_env.possible_agents={team_env.possible_agents}"
+            )
+        self.team_env = team_env
+        self.learner_id = learner_id
+        self.opponent_id = next(a for a in team_env.possible_agents if a != learner_id)
+        self.opponent = opponent
+
+        self.observation_space = team_env.observation_space(learner_id)
+        self.action_space      = team_env.action_space(learner_id)
+        self.render_mode = team_env.render_mode
+
+        self._last_opp_obs: np.ndarray = np.zeros(
+            self.observation_space.shape, dtype=np.float32
+        )
+
+    def reset(self, *, seed: int | None = None, options: dict | None = None):
+        obs, infos = self.team_env.reset(seed=seed, options=options)
+        self.opponent.reset()
+        self._last_opp_obs = obs[self.opponent_id]
+        return obs[self.learner_id], infos[self.learner_id]
+
+    def step(self, action):
+        opp_action = self.opponent.act(self._last_opp_obs)
+        actions = {self.learner_id: action, self.opponent_id: opp_action}
+        obs, rew, term, trunc, infos = self.team_env.step(actions)
+        self._last_opp_obs = obs[self.opponent_id]
+        return (
+            obs[self.learner_id],
+            float(rew[self.learner_id]),
+            bool(term[self.learner_id]),
+            bool(trunc[self.learner_id]),
+            infos[self.learner_id],
+        )
+
+    def render(self):
+        return self.team_env.render()
+
+    def close(self):
+        self.team_env.close()
