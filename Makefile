@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check-warm
+.PHONY: help camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team
 
 .DEFAULT_GOAL := help
 
@@ -181,10 +181,6 @@ eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI
 	   $(if $(EPISODES),--episodes $(EPISODES)) \
 	   $(if $(GUI),--gui) \
 	   $(if $(DETERMINISTIC),--deterministic)
-
-team-check-warm: ## ✅ Warm-start preserves single-agent behavior  OLD=models/<run>
-	@test -n "$(OLD)" || { echo "ERROR: OLD=models/<run> required"; exit 1; }; \
-	 $(PYTHON) scripts/check_team_warm.py --old "$(OLD)/best_model"
 
 clean: ## 🧹 Remove __pycache__ and .pyc files
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
