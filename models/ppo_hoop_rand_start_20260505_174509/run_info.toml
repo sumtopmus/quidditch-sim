@@ -1,0 +1,20 @@
+# Run info — written by train_ppo.py.  Read by scripts/lineage.py.
+
+[run]
+name          = "ppo_hoop_rand_start"
+trial         = "20260505_174509"
+started       = "2026-05-05T17:45:09"
+elapsed       = "44m14s"  # 2655 s total
+finished      = "2026-05-05T18:29:23"
+steps_trained = 10002432
+
+[pretrain]
+# parent path is recorded as passed to --pretrain (typically relative to repo root).
+parent       = "models/ppo_hoop_fixed_start_20260504_023051/best_model"
+parent_steps = 5350000
+total_steps  = 30007296
+
+[best]
+mean_reward = 8.1737
+std_reward  = 0.7289
+at_step     = 9250000
