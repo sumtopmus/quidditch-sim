@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help check-sim check-gui camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team team-check team-check-mjcf team-check-tag team-check-crash team-check-warm
+.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team
 
 .DEFAULT_GOAL := help
 
@@ -53,17 +53,21 @@ help: ## 📋 Show available targets
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-check-sim: ## ✅ Validate env headless (fast, no window)
-	@$(PYTHON) scripts/check_env.py
+test: ## ✅ Run all tests (unit + integration)
+	@$(PYTHON) -m pytest
 
-check-gui: ## 🪟 Validate env with MuJoCo viewer (interactive camera)
-	@$(MJPYTHON) scripts/check_env.py --viewer
+test-fast: ## ⚡ Unit tests only (skip slow integration canaries)
+	@$(PYTHON) -m pytest tests/unit
+
+test-warm: ## ✅ Warm-start preserves single-agent behavior  MODEL=<run-name>
+	@test -n "$(MODEL)" || { echo "ERROR: MODEL=<run-name> required (see 'make list-runs')"; exit 1; }; \
+	 MODEL="$(MODEL)" $(PYTHON) -m pytest tests/integration/test_warm_start.py
 
 CAM ?= grid
 camera-test: ## 🎥 Render hover flight as 2x2 grid → mp4 (CAM=grid|fixed|north|east|south|west|top|fpv|tpv|port|starboard)
 	@$(PYTHON) demo/camera_test.py --cam $(CAM)
 
-demo: ## 🎮 Pick a demo to run (hover, waypoint) — opens viewer
+demo: ## 🎮 Pick a demo to run (hover, waypoint, scenarios) — opens viewer
 	@$(MJPYTHON) demo/menu.py
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -133,7 +137,7 @@ repro: ## 🔄 Restore config/training.toml from a promoted model  [MODEL=...]
 install: ## 📦 Create/update the $(CONDA_ENV) conda env + populate config/ from templates
 	@$(CONDA) env create -f environment.yml 2>/dev/null || $(CONDA) env update -f environment.yml --prune
 	@$(MAKE) --no-print-directory configs
-	@echo "Done. Verify with: make check-sim"
+	@echo "Done. Verify with: make test"
 
 configs: ## 🛠  Populate config/ from templates/ (idempotent — never overwrites)
 	@mkdir -p config
@@ -187,22 +191,6 @@ eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI
 	   $(if $(EPISODES),--episodes $(EPISODES)) \
 	   $(if $(GUI),--gui) \
 	   $(if $(DETERMINISTIC),--deterministic)
-
-team-check: ## ✅ Team-env scripted-vs-scripted canary
-	@$(PYTHON) scripts/check_team_env.py
-
-team-check-mjcf: ## ✅ Team-env MJCF assembly check
-	@$(PYTHON) scripts/check_team_mjcf.py
-
-team-check-tag: ## ✅ Tag state machine canary (6 phases)
-	@$(PYTHON) scripts/check_team_tag.py
-
-team-check-crash: ## ✅ Crash detector — wall + slow-drone-drone + fast-drone-drone
-	@$(PYTHON) scripts/check_team_crash.py
-
-team-check-warm: ## ✅ Warm-start preserves single-agent behavior  OLD=models/<run>
-	@test -n "$(OLD)" || { echo "ERROR: OLD=models/<run> required"; exit 1; }; \
-	 $(PYTHON) scripts/check_team_warm.py --old "$(OLD)/best_model"
 
 clean: ## 🧹 Remove __pycache__ and .pyc files
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true

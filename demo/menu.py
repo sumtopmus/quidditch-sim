@@ -18,8 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 # (key, one-line description, module path) — module must expose main()
 DEMOS: list[tuple[str, str, str]] = [
-    ("hover",    "Hover at 1 m in the Quidditch arena (hoop + wall)", "demo.hover_demo"),
-    ("waypoint", "Fly a triangular waypoint loop in empty space",      "demo.waypoint_demo"),
+    ("hover",     "Hover at 1 m in the Quidditch arena (hoop + wall)",  "demo.hover_demo"),
+    ("waypoint",  "Fly a triangular waypoint loop in empty space",       "demo.waypoint_demo"),
+    ("scenarios", "Scripted 1v1: tag-out + score-despite-tag",           "demo.scenarios"),
 ]
 
 
