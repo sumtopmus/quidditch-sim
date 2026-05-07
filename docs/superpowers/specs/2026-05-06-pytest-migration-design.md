@@ -188,14 +188,14 @@ import os
 import pytest
 
 pytestmark = pytest.mark.skipif(
-    "OLD_MODEL" not in os.environ,
-    reason="set OLD_MODEL=models/<run>/best_model to run warm-start regression",
+    "MODEL" not in os.environ,
+    reason="set MODEL=<run-name> to run warm-start regression",
 )
 ```
 
 One test: `test_warm_started_policy_matches_old_on_obs_prefix()`.
 
-Reads `os.environ["OLD_MODEL"]` for the path. Same logic as `check_team_warm.py`:
+Resolves `models/{os.environ["MODEL"]}/best_model.zip` as the checkpoint path. Same logic as `check_team_warm.py`:
 
 - Load old PPO from path.
 - Build `OpponentControlledEnv(QuidditchTeamEnv(...), learner_id="red_0", opponent=BeelineBlue())` wrapped in `DummyVecEnv`.
@@ -217,12 +217,12 @@ test: ## ✅ Run all tests (unit + integration)
 test-fast: ## ⚡ Run unit tests only (skip slow integration canaries)
 	@$(PYTHON) -m pytest tests/unit
 
-test-warm: ## ✅ Warm-start preserves single-agent behavior  OLD=models/<run>
-	@test -n "$(OLD)" || { echo "ERROR: OLD=models/<run> required"; exit 1; }; \
-	 OLD_MODEL="$(OLD)/best_model" $(PYTHON) -m pytest tests/integration/test_warm_start.py
+test-warm: ## ✅ Warm-start preserves single-agent behavior  MODEL=<run-name>
+	@test -n "$(MODEL)" || { echo "ERROR: MODEL=<run-name> required (see 'make list-runs')"; exit 1; }; \
+	 MODEL="$(MODEL)" $(PYTHON) -m pytest tests/integration/test_warm_start.py
 ```
 
-`test` is the daily driver (~30–60s wall-clock total). `test-fast` is sub-second for tight unit-iteration loops. `test-warm` keeps the existing `OLD=...` env-var contract from `team-check-warm` so muscle memory doesn't break; it sets `OLD_MODEL` for pytest to read.
+`test` is the daily driver (~30–60s wall-clock total). `test-fast` is sub-second for tight unit-iteration loops. `test-warm` uses `MODEL=<run-name>` for parity with `make repro`; the test itself resolves the path as `models/<run>/best_model.zip` so direct `pytest` invocation honors the same contract.
 
 `make demo` is unchanged — the new "scenarios" entry slots into the existing menu.
 

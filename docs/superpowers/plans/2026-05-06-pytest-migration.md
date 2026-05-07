@@ -31,7 +31,7 @@
 - `tests/integration/test_simple_env_contract.py` — port of `check_env.py` parts 1+2, two tests.
 - `tests/integration/test_scoring_canary.py` — port of `check_env.py` part 3, exact-value canary.
 - `tests/integration/test_team_env_canary.py` — port of `check_team_env.py`, exact-value canary.
-- `tests/integration/test_warm_start.py` — port of `check_team_warm.py`, skip-if-no-`OLD_MODEL`.
+- `tests/integration/test_warm_start.py` — port of `check_team_warm.py`, skip-if-no-`MODEL`.
 - `demo/scenarios.py` — scripted 1v1 narrative pair, terminal reward log.
 
 **Modified files:**
@@ -1188,9 +1188,9 @@ Wait for confirmation.
 
 ---
 
-## Task 8: Port test_warm_start (skip-if-no-OLD_MODEL)
+## Task 8: Port test_warm_start (skip-if-no-MODEL)
 
-**Goal:** Port `check_team_warm.py` with the skip-if-no-artifact pattern. Test runs only when `OLD_MODEL` env var is set; otherwise pytest reports it as skipped with a clear reason.
+**Goal:** Port `check_team_warm.py` with the skip-if-no-artifact pattern. Test runs only when `MODEL` env var is set; otherwise pytest reports it as skipped with a clear reason.
 
 **Files:**
 - Create: `tests/integration/test_warm_start.py`
@@ -1206,8 +1206,8 @@ Create `tests/integration/test_warm_start.py`:
 zeroed out.
 
 Ported from scripts/check_team_warm.py.  Requires a trained single-agent
-checkpoint at the path given by OLD_MODEL=<path/to/best_model>; skipped
-otherwise.
+checkpoint identified by MODEL=<run-name>; the test resolves it as
+models/<run-name>/best_model.zip.  Skipped if MODEL is unset.
 """
 from __future__ import annotations
 
@@ -1225,14 +1225,14 @@ from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(
-        "OLD_MODEL" not in os.environ,
-        reason="set OLD_MODEL=models/<run>/best_model to run warm-start regression",
+        "MODEL" not in os.environ,
+        reason="set MODEL=<run-name> to run warm-start regression",
     ),
 ]
 
 
 def test_warm_started_policy_matches_old_on_obs_prefix() -> None:
-    old_path = os.environ["OLD_MODEL"]
+    old_path = f"models/{os.environ['MODEL']}/best_model.zip"
     n_samples = 64
     tol = 0.1
 
@@ -1275,20 +1275,20 @@ def test_warm_started_policy_matches_old_on_obs_prefix() -> None:
         new_env.close()
 ```
 
-- [ ] **Step 2: Confirm the test SKIPS without OLD_MODEL**
+- [ ] **Step 2: Confirm the test SKIPS without MODEL**
 
 ```bash
 conda run -n uav python -m pytest tests/integration/test_warm_start.py -v
 ```
 
-Expected: 1 skipped, with reason `set OLD_MODEL=...`. The `-ra` config flag prints the skip reason in the summary.
+Expected: 1 skipped, with reason `set MODEL=<run-name>...`. The `-ra` config flag prints the skip reason in the summary.
 
 - [ ] **Step 3: If a trained checkpoint is available, run the test for real**
 
 This is optional — only do it if `models/ppo_hoop_fixed_start_20260504_023051/best_model.zip` (per `brain/index.md`) exists locally:
 
 ```bash
-OLD_MODEL=models/ppo_hoop_fixed_start_20260504_023051/best_model \
+MODEL=ppo_hoop_fixed_start_20260504_023051 \
   conda run -n uav python -m pytest tests/integration/test_warm_start.py -v
 ```
 
@@ -1302,7 +1302,7 @@ git -C "$PWD" rm scripts/check_team_warm.py
 
 - [ ] **Step 5: Remove `team-check-warm` from the Makefile**
 
-Drop `team-check-warm` from `.PHONY`; delete its multi-line target block (the one with the `OLD=` precondition).
+Drop `team-check-warm` from `.PHONY`; delete its multi-line target block (the one with the `MODEL=` precondition).
 
 - [ ] **Step 6: Run all tests**
 
@@ -1324,7 +1324,7 @@ test: port check_team_warm to pytest with skip-if-no-artifact gate
 
 Port of scripts/check_team_warm.py to
 tests/integration/test_warm_start.py — module-level skipif on missing
-OLD_MODEL env var so default pytest runs ignore it cleanly.  Source
+MODEL env var so default pytest runs ignore it cleanly.  Source
 script and team-check-warm Makefile target removed; replacement
 test-warm Makefile target lands with the rest of the new targets in a
 later task.
@@ -2009,9 +2009,9 @@ test: ## ✅ Run all tests (unit + integration)
 test-fast: ## ⚡ Unit tests only (skip slow integration canaries)
 	@$(PYTHON) -m pytest tests/unit
 
-test-warm: ## ✅ Warm-start preserves single-agent behavior  OLD=models/<run>
-	@test -n "$(OLD)" || { echo "ERROR: OLD=models/<run> required"; exit 1; }; \
-	 OLD_MODEL="$(OLD)/best_model" $(PYTHON) -m pytest tests/integration/test_warm_start.py
+test-warm: ## ✅ Warm-start preserves single-agent behavior  MODEL=<run-name>
+	@test -n "$(MODEL)" || { echo "ERROR: MODEL=<run-name> required (see 'make list-runs')"; exit 1; }; \
+	 MODEL="$(MODEL)" $(PYTHON) -m pytest tests/integration/test_warm_start.py
 ```
 
 - [ ] **Step 2: Add the new targets to `.PHONY`**
@@ -2041,7 +2041,7 @@ make test-fast
 Expected: **6 passed** (1 mjcf + 3 crash + 1 tag + 1 render = 6 unit tests). `test_imports.py` lives at `tests/` root, not `tests/unit/`, so the path filter excludes it.
 
 ```bash
-make test-warm OLD=models/<some-run>  # only if you have a model
+make test-warm MODEL=<run-name>  # only if you have a model
 ```
 
 Expected: 1 passed (if model exists) or fails the `test -n` precondition.
@@ -2049,7 +2049,7 @@ Expected: 1 passed (if model exists) or fails the `test -n` precondition.
 If the canonical model from `brain/index.md` is around:
 
 ```bash
-make test-warm OLD=models/ppo_hoop_fixed_start_20260504_023051
+make test-warm MODEL=ppo_hoop_fixed_start_20260504_023051
 ```
 
 - [ ] **Step 5: User runs commit (manual)**
@@ -2064,8 +2064,8 @@ make: add test, test-fast, test-warm targets
 
 Three new Makefile targets replace the seven check-* targets removed
 across the migration: test (all), test-fast (unit only), test-warm
-(opt-in warm-start regression with OLD=<run> contract preserved from
-the old team-check-warm).
+(opt-in warm-start regression with MODEL=<run-name> contract aligned
+with `make repro`).
 
 Co-Authored-By: Claude Opus 4.7 (1M context) <noreply@anthropic.com>
 EOF
@@ -2098,15 +2098,15 @@ At the top of the changelog (or wherever the most-recent-first ordering puts new
 Replaced seven hand-rolled `scripts/check_*.py` scripts with a `tests/`
 suite under pytest:
 - `tests/unit/`: `test_team_mjcf`, `test_crash_detector`, `test_tag_state_machine`, `test_render_smoke` (new).
-- `tests/integration/`: `test_simple_env_contract`, `test_scoring_canary`, `test_team_env_canary`, `test_warm_start` (skip-if-no-`OLD_MODEL`).
+- `tests/integration/`: `test_simple_env_contract`, `test_scoring_canary`, `test_team_env_canary`, `test_warm_start` (skip-if-no-`MODEL`).
 - All integration tests carry `@pytest.mark.slow`.
 - Shared imperative helpers in `tests/conftest.py` (`build_team_world`, `qpos_addr`, `set_body_state`).
 - Canary fingerprints converted to exact-value asserts: scoring canary at `step=434, reward=7.3837 (abs=1e-4)`; team-env canary at `step 176/684` with totals `+1.931 / -7.618 (abs=1e-3)`.
 
 `make check-sim`, `make check-gui`, and the five `make team-check*`
 targets are gone; replaced by `make test`, `make test-fast`,
-`make test-warm OLD=<run>`. Old `OLD=` contract preserved on the warm
-target for muscle-memory.
+`make test-warm MODEL=<run-name>`. Contract aligned with `make repro`
+so the same MODEL=<run-name> form works across both targets.
 
 `make check-gui` (visual scoring run) replaced by a new
 `demo/scenarios.py` entry under `make demo`: two scripted 1v1
@@ -2137,7 +2137,7 @@ In the **Recent Context** section, prepend a new dated paragraph:
 replaced with a `tests/` pytest suite (unit + integration; `slow`
 marker for canaries). `make check-sim` / `check-gui` / the five
 `team-check*` targets gone; replaced by `make test` / `test-fast` /
-`test-warm OLD=<run>`. New `demo/scenarios.py` (under `make demo`)
+`test-warm MODEL=<run-name>`. New `demo/scenarios.py` (under `make demo`)
 plays two scripted 1v1 narratives back-to-back: Scenario A (tags ×2
 + crash) and Scenario B (one tag + score). `pyproject.toml` carries
 pytest config only. Spec + plan committed at
@@ -2237,7 +2237,7 @@ Expected: shows the four files were touched recently.
 conda run -n uav python -m pytest -v
 ```
 
-Expected: 12 passed, 1 skipped (warm-start, no OLD_MODEL).
+Expected: 12 passed, 1 skipped (warm-start, no MODEL).
 
 - [ ] **Step 2: Run unit tests only**
 

@@ -2,8 +2,8 @@
 zeroed out.
 
 Ported from scripts/check_team_warm.py.  Requires a trained single-agent
-checkpoint at the path given by OLD_MODEL=<path/to/best_model>; skipped
-otherwise.
+checkpoint identified by MODEL=<run-name>; the test resolves it as
+models/<run-name>/best_model.zip.  Skipped if MODEL is unset.
 """
 from __future__ import annotations
 
@@ -21,14 +21,14 @@ from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 pytestmark = [
     pytest.mark.slow,
     pytest.mark.skipif(
-        "OLD_MODEL" not in os.environ,
-        reason="set OLD_MODEL=models/<run>/best_model to run warm-start regression",
+        "MODEL" not in os.environ,
+        reason="set MODEL=<run-name> to run warm-start regression",
     ),
 ]
 
 
 def test_warm_started_policy_matches_old_on_obs_prefix() -> None:
-    old_path = os.environ["OLD_MODEL"]
+    old_path = f"models/{os.environ['MODEL']}/best_model.zip"
     n_samples = 64
     tol = 0.1
 
