@@ -183,7 +183,7 @@ train-team-blue: ## 🔵 Phase 2b: train Blue against frozen Red  RED=models/<ru
 
 eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI=1] [DETERMINISTIC=1]
 	@test -n "$(RED)" -a -n "$(BLUE)" || { echo "ERROR: RED=<spec> BLUE=<spec> required"; exit 1; }; \
-	 $(PYTHON) scripts/eval_team.py --red "$(RED)" --blue "$(BLUE)" \
+	 $(if $(GUI),$(MJPYTHON),$(PYTHON)) scripts/eval_team.py --red "$(RED)" --blue "$(BLUE)" \
 	   $(if $(EPISODES),--episodes $(EPISODES)) \
 	   $(if $(GUI),--gui) \
 	   $(if $(DETERMINISTIC),--deterministic)
