@@ -1,19 +1,13 @@
-"""Scripted 1v1 narratives for visual review of tag/crash/score behavior.
+"""Shared helpers for the scripted 1v1 team-env demos.
 
-Two scenarios run back-to-back in a single MuJoCo viewer:
-  A) Tagged out — Blue tags Red twice, then rams it down.
-  B) Through despite the tag — Red gets tagged once but still scores.
-
-Run via:  make demo  -> pick "scenarios"
+Used by `demo/takedown_demo.py` and `demo/score_through_tag_demo.py`. Holds the
+event-log plumbing, the canonical "fly through the hoop" Red policy, and the
+single-scenario runner that builds a `QuidditchTeamEnv` with the live MuJoCo
+viewer attached and holds the window open after the run ends.
 """
 from __future__ import annotations
 
-import sys
-from pathlib import Path
 from typing import Callable
-
-# Allow imports from project root regardless of CWD.
-sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
 
@@ -27,8 +21,6 @@ SHOW_EVENT_MARKERS = False
 # Type alias for a single-side policy: takes that side's obs, returns its action.
 Policy = Callable[[np.ndarray], np.ndarray]
 
-
-# === Shared helpers ====================================================
 
 _HOOP_CENTER    = np.asarray(HOOP_CENTER, dtype=np.float64)
 _HOOP_NORMAL    = np.asarray(HOOP_OUTWARD_NORMAL, dtype=np.float64)
@@ -54,10 +46,7 @@ def _delta_action(vec: np.ndarray) -> np.ndarray:
     ], dtype=np.float32)
 
 
-# === Scenario A: Tagged out ============================================
-
-
-def _scoring_red_factory():
+def scoring_red_factory() -> Policy:
     """Two-phase Red: climb to hoop altitude at origin, then push past hoop
     along its outward normal. Same pattern as test_scoring_canary so Red can
     actually score when not interfered with."""
@@ -69,92 +58,6 @@ def _scoring_red_factory():
             state["phase2"] = True
         target = _THROUGH_POINT if state["phase2"] else _APPROACH_POINT
         return _delta_action(target - pos)
-
-    return policy
-
-
-def _scenario_a_blue_factory():
-    """Stateful Blue for Scenario A:
-      intercept_1 -> in_sphere_1 -> pullback -> intercept_2 -> ram
-
-    Distances tuned against the env's tag-sphere radius (~0.2 m) and
-    cooldown geometry. INSIDE = 0.18 m; OUTSIDE = 0.55 m so cooldown fully
-    elapses between tags. RAM_GAIN scales the to-Red vector before
-    `_delta_action` clipping, ensuring saturation throughout the ram so
-    the contact velocity exceeds CRASH_VEL_THR.
-    """
-    INSIDE_THR  = 0.18
-    OUTSIDE_THR = 0.55
-    RAM_GAIN    = 5.0
-
-    state = {"phase": "intercept_1"}
-
-    def policy(obs: np.ndarray) -> np.ndarray:
-        to_red = obs[16:19].astype(np.float64)
-        dist   = float(np.linalg.norm(to_red))
-
-        if state["phase"] == "intercept_1":
-            if dist < INSIDE_THR:
-                state["phase"] = "in_sphere_1"
-            return _delta_action(to_red)
-
-        if state["phase"] == "in_sphere_1":
-            if dist > INSIDE_THR + 0.05:
-                state["phase"] = "pullback"
-            return _delta_action(to_red)
-
-        if state["phase"] == "pullback":
-            if dist > OUTSIDE_THR:
-                state["phase"] = "intercept_2"
-            return _delta_action(-to_red)
-
-        if state["phase"] == "intercept_2":
-            if dist < INSIDE_THR:
-                state["phase"] = "ram"
-            return _delta_action(to_red)
-
-        if state["phase"] == "ram":
-            return _delta_action(to_red * RAM_GAIN)
-
-        return np.zeros(4, dtype=np.float32)
-
-    return policy
-
-
-# === Scenario B: Through despite the tag ===============================
-
-
-def _scenario_b_blue_factory():
-    """One-tag-then-peel-off:
-      intercept -> in_sphere -> peel_off
-
-    Blue closes once, lets the tag pulse fire, then retreats along
-    `PEEL_OFF_DIR` so Red is free to continue toward the hoop.
-    """
-    INSIDE_THR  = 0.18
-    PEEL_OFF_DIR = np.array([0.0, 1.5, 0.5], dtype=np.float64)  # +y mostly, slight up
-
-    state = {"phase": "intercept"}
-
-    def policy(obs: np.ndarray) -> np.ndarray:
-        to_red = obs[16:19].astype(np.float64)
-        dist   = float(np.linalg.norm(to_red))
-
-        if state["phase"] == "intercept":
-            if dist < INSIDE_THR:
-                state["phase"] = "in_sphere"
-            return _delta_action(to_red)
-
-        if state["phase"] == "in_sphere":
-            # Hold for one step inside the sphere — tag_entry fires —
-            # then retreat.
-            state["phase"] = "peel_off"
-            return _delta_action(to_red)
-
-        if state["phase"] == "peel_off":
-            return _delta_action(PEEL_OFF_DIR)
-
-        return np.zeros(4, dtype=np.float32)
 
     return policy
 
@@ -237,8 +140,8 @@ def _run_scenario(name: str, env: QuidditchTeamEnv,
 
 
 def _idle_pause(env: QuidditchTeamEnv, seconds: float) -> None:
-    """Step the env with zero actions for `seconds`; lets the viewer breathe
-    between scenarios so the user can see the final state."""
+    """Step the env with zero actions for `seconds`; lets the viewer render
+    a held final state after the scenario ends."""
     dt_step = 1.0 / 240.0
     for _ in range(int(seconds / dt_step)):
         env.step({
@@ -247,37 +150,26 @@ def _idle_pause(env: QuidditchTeamEnv, seconds: float) -> None:
         })
 
 
-def main() -> None:
-    env = QuidditchTeamEnv(cfg=TeamConfig(
-        randomise_red_start=False, episode_seconds=30.0,
-    ))
+def run_single_scenario_demo(*, name: str, blue_factory: Callable[[], Policy],
+                              max_seconds: float,
+                              episode_seconds: float = 30.0) -> None:
+    """Build a `QuidditchTeamEnv` with the MuJoCo viewer attached, run one
+    scripted scenario against `scoring_red_factory()`, then keep the viewer
+    open until Ctrl-C."""
+    env = QuidditchTeamEnv(
+        cfg=TeamConfig(randomise_red_start=False, episode_seconds=episode_seconds),
+        render_mode="human",
+    )
     try:
-        # Scenario A — Tagged out.
         _run_scenario(
-            "A: Tagged out",
+            name,
             env,
-            red_policy=_scoring_red_factory(),
-            blue_policy=_scenario_a_blue_factory(),
-            max_seconds=25.0,
+            red_policy=scoring_red_factory(),
+            blue_policy=blue_factory(),
+            max_seconds=max_seconds,
         )
-        _idle_pause(env, seconds=1.5)
-
-        # Scenario B — Through despite the tag.
-        _run_scenario(
-            "B: Through despite the tag",
-            env,
-            red_policy=_scoring_red_factory(),
-            blue_policy=_scenario_b_blue_factory(),
-            max_seconds=15.0,
-        )
-
-        # Hold the viewer open for inspection.
         print("\nDemo complete — viewer remains open. Ctrl-C to quit.")
         while True:
             _idle_pause(env, seconds=1.0)
     finally:
         env.close()
-
-
-if __name__ == "__main__":
-    main()
