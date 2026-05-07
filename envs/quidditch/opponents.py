@@ -138,7 +138,7 @@ _REGISTRY: dict[str, type[Opponent]] = {
 }
 
 
-def from_spec(spec: str) -> Opponent:
+def from_spec(spec: str, *, deterministic: bool = False) -> Opponent:
     """Parse a CLI-friendly opponent spec string.
 
     Forms:
@@ -147,6 +147,11 @@ def from_spec(spec: str) -> Opponent:
         "zero"
         "frozen:path/to/best_model.zip"
         "mixture:0.5*beeline_blue,0.5*frozen:path/to/blue_v1.zip"
+
+    Args:
+        deterministic: forwarded to every FrozenPolicyOpponent constructed
+            (including frozen leaves nested inside a mixture). Scripted
+            opponents ignore the flag — they're already deterministic.
     """
     spec = spec.strip()
     if not spec:
@@ -160,11 +165,14 @@ def from_spec(spec: str) -> Opponent:
             if "*" not in p:
                 raise ValueError(f"from_spec: mixture component missing '*': {p!r}")
             w_str, sub_spec = p.split("*", 1)
-            components.append((float(w_str), from_spec(sub_spec)))
+            components.append((float(w_str), from_spec(sub_spec, deterministic=deterministic)))
         return MixtureOpponent(components)
 
     if spec.startswith("frozen:"):
-        return FrozenPolicyOpponent(model_path=spec[len("frozen:"):])
+        return FrozenPolicyOpponent(
+            model_path=spec[len("frozen:"):],
+            deterministic=deterministic,
+        )
 
     if ":" in spec:
         name, kv_str = spec.split(":", 1)

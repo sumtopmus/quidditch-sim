@@ -32,16 +32,28 @@ def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--red",  required=True)
     p.add_argument("--blue", required=True)
-    p.add_argument("--episodes", type=int, default=100)
+    p.add_argument("--episodes", type=int, default=None,
+                   help="default: 100 headless / 5 with --gui")
     p.add_argument("--episode-seconds", type=float, default=30.0)
     p.add_argument("--seed", type=int, default=0)
+    p.add_argument("--gui", action="store_true",
+                   help="open MuJoCo passive viewer; idle after last episode")
+    p.add_argument("--deterministic", action="store_const", const=True, default=None,
+                   help="pass deterministic=True to all frozen: opponents "
+                        "(default: True with --gui, False otherwise)")
     args = p.parse_args()
 
-    red_opp  = from_spec(args.red)
-    blue_opp = from_spec(args.blue)
+    if args.episodes is None:
+        args.episodes = 5 if args.gui else 100
+    if args.deterministic is None:
+        args.deterministic = bool(args.gui)
+
+    red_opp  = from_spec(args.red,  deterministic=args.deterministic)
+    blue_opp = from_spec(args.blue, deterministic=args.deterministic)
 
     cfg = TeamConfig(randomise_red_start=True, episode_seconds=args.episode_seconds)
-    env = QuidditchTeamEnv(cfg=cfg)
+    render_mode = "human" if args.gui else None
+    env = QuidditchTeamEnv(cfg=cfg, render_mode=render_mode)
 
     rng = np.random.default_rng(args.seed)
     summary: Counter = Counter()
@@ -109,6 +121,8 @@ def main() -> None:
     print(f"red reward mean ± std:  {np.mean(red_totals):+.3f} ± {np.std(red_totals):.3f}")
     print(f"blue reward mean ± std: {np.mean(blue_totals):+.3f} ± {np.std(blue_totals):.3f}")
 
+    if args.gui:
+        env._world.idle()
     env.close()
 
 

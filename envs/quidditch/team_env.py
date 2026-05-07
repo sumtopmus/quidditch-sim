@@ -160,9 +160,11 @@ class QuidditchTeamEnv(ParallelEnv):
         fragments = [
             cf2x_assets(with_collision_meshes=True),
             cf2x_fragment(prefix=self._red_id,  with_collisions=True,
-                          with_tag_sphere=True, tag_sphere_rgba=(1.0, 0.0, 0.0, 0.15)),
+                          with_tag_sphere=True, tag_sphere_rgba=(1.0, 0.0, 0.0, 0.15),
+                          body_frame_rgba=(0.75, 0.10, 0.10, 1.0)),
             cf2x_fragment(prefix=self._blue_id, with_collisions=True,
-                          with_tag_sphere=True, tag_sphere_rgba=(0.0, 0.0, 1.0, 0.15)),
+                          with_tag_sphere=True, tag_sphere_rgba=(0.0, 0.0, 1.0, 0.15),
+                          body_frame_rgba=(0.10, 0.20, 0.75, 1.0)),
             arena_wall_fragment(ARENA_RADIUS, ARENA_WALL_HEIGHT,
                                  with_collisions=self.cfg.walls_collide),
             hoop_fragment(self.cfg.hoop_prefix, HOOP_CENTER, HOOP_OUTWARD_NORMAL, HOOP_RADIUS),

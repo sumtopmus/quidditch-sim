@@ -155,6 +155,7 @@ def cf2x_fragment(
     with_collisions: bool = False,
     with_tag_sphere: bool = False,
     tag_sphere_rgba: tuple[float, float, float, float] = (1.0, 0.0, 0.0, 0.15),
+    body_frame_rgba: tuple[float, float, float, float] | None = None,
 ) -> SceneFragment:
     """A single cf2x drone (body + sensors) as a composable MJCF fragment.
 
@@ -175,6 +176,15 @@ def cf2x_fragment(
             drone-drone + drone-floor collisions for free.  Override per-
             fragment if you want fancier team-bitmask schemes (e.g.
             bit 2 = "blue team", bit 3 = "obstacle").
+        body_frame_rgba: Optional team-color override for the X-frame mesh
+            (cf2_5).  When None (default), the geom references the global
+            ``body_frame_plastic`` material declared by ``cf2x_assets()``
+            — byte-identical to the historical single-drone path.  When
+            set, the fragment declares a per-prefix
+            ``{prefix}_body_frame_plastic`` material with the given rgba
+            and the cf2_5 geom references that instead.  Used in
+            multi-drone scenes (e.g. team play) to make drones visually
+            distinguishable in the viewer.
 
     Returns:
         SceneFragment with one <body> in worldbody and four sensors
@@ -227,6 +237,18 @@ def cf2x_fragment(
     else:
         tag_sphere_block = ""
 
+    # Optional per-drone body-frame material (team-color tint of cf2_5).
+    if body_frame_rgba is not None:
+        r, g, b, a = body_frame_rgba
+        body_frame_material = f"{prefix}_body_frame_plastic"
+        body_frame_assets: tuple[str, ...] = (
+            f'<material name="{body_frame_material}" '
+            f'rgba="{r:.4f} {g:.4f} {b:.4f} {a:.4f}"/>',
+        )
+    else:
+        body_frame_material = "body_frame_plastic"
+        body_frame_assets = ()
+
     body_xml = (
         f'<body name="{prefix}" pos="0 0 0.03">\n'
         f'      <freejoint name="{prefix}_root"/>\n'
@@ -238,7 +260,7 @@ def cf2x_fragment(
         f'      <geom type="mesh" mesh="cf2_2" material="polished_gold"        contype="0" conaffinity="0"/>\n'
         f'      <geom type="mesh" mesh="cf2_3" material="polished_plastic"     contype="0" conaffinity="0"/>\n'
         f'      <geom type="mesh" mesh="cf2_4" material="burnished_chrome"     contype="0" conaffinity="0"/>\n'
-        f'      <geom type="mesh" mesh="cf2_5" material="body_frame_plastic"   contype="0" conaffinity="0"/>\n'
+        f'      <geom type="mesh" mesh="cf2_5" material="{body_frame_material}" contype="0" conaffinity="0"/>\n'
         f'      <geom type="mesh" mesh="cf2_6" material="white"                contype="0" conaffinity="0"/>\n'
         f'{collision_block}'
         f'      <!-- IMU site for sensors -->\n'
@@ -282,5 +304,7 @@ def cf2x_fragment(
     )
 
     return SceneFragment(
-        worldbody=(body_xml, *chase_mocap_xmls), sensors=sensors
+        assets=body_frame_assets,
+        worldbody=(body_xml, *chase_mocap_xmls),
+        sensors=sensors,
     )
