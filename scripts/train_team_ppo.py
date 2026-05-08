@@ -1,12 +1,23 @@
 """Training entry for QuidditchTeamEnv.  Wraps the team env in an
 OpponentControlledEnv so SB3 PPO sees a single-agent Gym env.
 
-Run:
-    conda activate uav
+Run modes:
+    # Cold start
     python scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue
-    python scripts/train_team_ppo.py --learner blue_0 --opponent frozen:models/.../best_model.zip
-    python scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \
+
+    # Cold start, frozen-policy opponent
+    python scripts/train_team_ppo.py --learner blue_0 \\
+        --opponent frozen:models/.../best_model.zip
+
+    # Warm-start from a single-agent checkpoint (16->22 input-layer surgery)
+    python scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \\
         --warm-start models/ppo_hoop_rand_start_20260505_174509/best_model.zip
+
+    # Resume an existing team-play trial from its latest checkpoint.  --learner
+    # and --opponent are read from the parent trial's info.toml [extra] block
+    # if not given on the CLI.  Config's lr overrides the checkpoint's lr.
+    python scripts/train_team_ppo.py \\
+        --resume runs/ppo_hoop_blue_1/20260507_194423/checkpoints/ppo_10000000_steps.zip
 """
 from __future__ import annotations
 
