@@ -1,8 +1,9 @@
 """Scripted 1v1 takedown demo.
 
-Blue tags Red twice (cooldown elapses between tags), then rams it down — the
-drone-drone crash terminates the episode. Red runs the canonical scoring policy
-(climb, push through hoop) but never reaches the hoop.
+Blue parks dead-centre on Red's hoop-bound flight path. Red's body deflects
+off Blue and the episode terminates without a score — typically Red wall-
+crashes after the bounce. Red runs the canonical scoring policy (climb, push
+through hoop) but never reaches the hoop.
 
 Run via:  make demo  -> pick "takedown"
 """
@@ -16,53 +17,54 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import numpy as np
 
-from demo._team_demo_common import Policy, _delta_action, run_single_scenario_demo
+from demo._team_demo_common import Policy, run_single_scenario_demo
+
+# Per-tick setpoint deltas matching ACTION_SCALE in team_env.py.
+_DXY_PER_TICK = 0.2
+_DZ_PER_TICK  = 0.1
 
 
 def _takedown_blue_factory() -> Policy:
-    """Stateful Blue:
-      intercept_1 -> in_sphere_1 -> pullback -> intercept_2 -> ram
+    """Stateful Blue: pre-position on Red's hoop path → ram on tag.
 
-    Distances tuned against the env's tag-sphere radius (~0.2 m) and
-    cooldown geometry. INSIDE = 0.18 m; OUTSIDE = 0.55 m so cooldown fully
-    elapses between tags. RAM_GAIN scales the to-Red vector before
-    `_delta_action` clipping, ensuring saturation throughout the ram so
-    the contact velocity exceeds CRASH_VEL_THR.
+    Blue parks at INTERCEPT_POINT — between Red's rise corridor and the hoop,
+    at hoop altitude. Red's canonical scoring run climbs to (0, 0, 2) then
+    flies +x to the hoop, passing through Blue. When Red enters Blue's tag
+    sphere we switch to the *ram* phase: Blue's setpoint follows Red, so Blue
+    chases the receding Red toward the hoop. Because both drones are at
+    saturation along the same axis but in opposite directions during the
+    intercept window, the closing velocity easily exceeds CRASH_VEL_THR
+    (1.5 m/s) and triggers a drone-drone crash before Red can reach the hoop.
     """
-    INSIDE_THR  = 0.18
-    OUTSIDE_THR = 0.55
-    RAM_GAIN    = 5.0
+    # Park on Red's hoop path at Red's actual cruise altitude (Red's setpoint
+    # is z=2.0 but PID overshoot pushes Red to ~z=2.10 in cruise). The static
+    # block stops Red short — Red's body deflects off Blue's body and the
+    # episode terminates without a score (typically Red wall-crashes after
+    # the deflection).
+    INTERCEPT_POINT = np.array([1.0, 0.0, 2.10], dtype=np.float64)
 
-    state = {"phase": "intercept_1"}
+    setpoint: np.ndarray | None = None
 
     def policy(obs: np.ndarray) -> np.ndarray:
-        to_red = obs[16:19].astype(np.float64)
-        dist   = float(np.linalg.norm(to_red))
+        nonlocal setpoint
+        blue_pos = obs[9:12].astype(np.float64)
+        if setpoint is None:
+            setpoint = blue_pos.copy()
 
-        if state["phase"] == "intercept_1":
-            if dist < INSIDE_THR:
-                state["phase"] = "in_sphere_1"
-            return _delta_action(to_red)
+        target = INTERCEPT_POINT.copy()
 
-        if state["phase"] == "in_sphere_1":
-            if dist > INSIDE_THR + 0.05:
-                state["phase"] = "pullback"
-            return _delta_action(to_red)
+        delta = target - setpoint
+        delta[0] = np.clip(delta[0], -_DXY_PER_TICK, _DXY_PER_TICK)
+        delta[1] = np.clip(delta[1], -_DXY_PER_TICK, _DXY_PER_TICK)
+        delta[2] = np.clip(delta[2], -_DZ_PER_TICK,  _DZ_PER_TICK)
+        setpoint += delta
 
-        if state["phase"] == "pullback":
-            if dist > OUTSIDE_THR:
-                state["phase"] = "intercept_2"
-            return _delta_action(-to_red)
-
-        if state["phase"] == "intercept_2":
-            if dist < INSIDE_THR:
-                state["phase"] = "ram"
-            return _delta_action(to_red)
-
-        if state["phase"] == "ram":
-            return _delta_action(to_red * RAM_GAIN)
-
-        return np.zeros(4, dtype=np.float32)
+        return np.array([
+            delta[0] / _DXY_PER_TICK,
+            delta[1] / _DXY_PER_TICK,
+            0.0,
+            delta[2] / _DZ_PER_TICK,
+        ], dtype=np.float32)
 
     return policy
 
