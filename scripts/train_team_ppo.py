@@ -1,12 +1,23 @@
 """Training entry for QuidditchTeamEnv.  Wraps the team env in an
 OpponentControlledEnv so SB3 PPO sees a single-agent Gym env.
 
-Run:
-    conda activate uav
+Run modes:
+    # Cold start
     python scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue
-    python scripts/train_team_ppo.py --learner blue_0 --opponent frozen:models/.../best_model.zip
-    python scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \
+
+    # Cold start, frozen-policy opponent
+    python scripts/train_team_ppo.py --learner blue_0 \\
+        --opponent frozen:models/.../best_model.zip
+
+    # Warm-start from a single-agent checkpoint (16->22 input-layer surgery)
+    python scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \\
         --warm-start models/ppo_hoop_rand_start_20260505_174509/best_model.zip
+
+    # Resume an existing team-play trial from its latest checkpoint.  --learner
+    # and --opponent are read from the parent trial's info.toml [extra] block
+    # if not given on the CLI.  Config's lr overrides the checkpoint's lr.
+    python scripts/train_team_ppo.py \\
+        --resume runs/ppo_hoop_blue_1/20260507_194423/checkpoints/ppo_10000000_steps.zip
 """
 from __future__ import annotations
 
@@ -29,19 +40,50 @@ from envs.quidditch.opponents import OpponentControlledEnv, from_spec
 from scripts._train_common import (
     make_run_dir, build_callbacks, load_config, write_run_info,
 )
+from scripts.callbacks import ResumeProgressCallback
+
+import tomllib
+
+
+def _read_parent_extra(checkpoint_path: str) -> tuple[str | None, str | None]:
+    """Walk from a checkpoint path up to its trial dir and read learner/opponent
+    from info.toml [extra]. Returns (None, None) if anything is missing."""
+    trial_dir = Path(checkpoint_path).resolve().parent.parent
+    info = trial_dir / "info.toml"
+    if not info.exists():
+        return None, None
+    try:
+        data = tomllib.loads(info.read_text())
+    except Exception:
+        return None, None
+    extra = data.get("extra", {})
+    return extra.get("learner"), extra.get("opponent_spec")
 
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train QuidditchTeamEnv via SB3 PPO")
-    p.add_argument("--learner", choices=["red_0", "blue_0"], required=True)
-    p.add_argument("--opponent", required=True, help="opponent spec, e.g. 'beeline_blue'")
-    p.add_argument("--warm-start", default="", help="path to old single-agent best_model.zip")
+    p.add_argument("--learner", choices=["red_0", "blue_0"], required=False, default=None)
+    p.add_argument("--opponent", required=False, default=None,
+                   help="opponent spec, e.g. 'beeline_blue'")
     p.add_argument("--config", default="config/training.toml")
     p.add_argument("--run-name", default=None)
     p.add_argument("--timesteps", type=int, default=None)
     p.add_argument("--n-envs",    type=int, default=None)
     p.add_argument("--lr",        type=float, default=None)
     p.add_argument("--seed",      type=int, default=None)
+
+    # --warm-start and --resume are mutually exclusive: warm-start does the
+    # 16->22 input-layer surgery from a single-agent checkpoint; resume picks
+    # up an existing team-play trial mid-flight (same I/O dimensions, keeps
+    # optimizer state, keeps step counter).
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--warm-start", default="",
+                   help="path to old single-agent best_model.zip (input-layer surgery)")
+    g.add_argument("--resume", default=None, metavar="PATH",
+                   help="path to a checkpoint .zip to resume from. Keeps the step "
+                        "counter; trains for the remaining steps to total_timesteps. "
+                        "Loads --learner / --opponent from the parent trial's info.toml "
+                        "if not given on the CLI.")
     return p.parse_args()
 
 
@@ -55,6 +97,26 @@ def make_env_fn(*, cfg: TeamConfig, learner_id: str, opponent_spec: str):
 
 def main() -> None:
     args = parse_args()
+
+    if args.resume is None:
+        if args.learner is None or args.opponent is None:
+            print("ERROR: --learner and --opponent are required unless --resume is given",
+                  file=sys.stderr)
+            sys.exit(2)
+
+    if args.resume is not None:
+        if args.learner is None or args.opponent is None:
+            parent_learner, parent_opponent = _read_parent_extra(args.resume)
+            args.learner = args.learner or parent_learner
+            args.opponent = args.opponent or parent_opponent
+        if args.learner is None or args.opponent is None:
+            print(
+                f"ERROR: could not resolve --learner/--opponent from parent of {args.resume}. "
+                "Pass them on the CLI.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
     config = load_config(args.config)
 
     if not args.warm_start:
@@ -97,7 +159,29 @@ def main() -> None:
         ppo_kwargs["learning_rate"] = ppo_kwargs.pop("lr")
     ppo_kwargs.setdefault("learning_rate", 3e-4)
 
-    if args.warm_start:
+    total_timesteps = args.timesteps or config["training"].get("total_timesteps", 5_000_000)
+
+    resumed_at: int | None = None
+    if args.resume is not None:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ▶️  Resuming from {args.resume}")
+        # Override learning_rate from config so e.g. lr=1e-4 takes effect on
+        # resume.  Other PPO hyperparameters keep their checkpoint values —
+        # changing gamma/n_steps/etc. mid-training breaks invariants the value
+        # function and rollout buffer rely on.
+        model = PPO.load(
+            args.resume,
+            env=vec_env,
+            tensorboard_log=str(run_dir),
+            verbose=1,
+            learning_rate=ppo_kwargs["learning_rate"],
+        )
+        resumed_at = int(model.num_timesteps)
+        remaining = max(total_timesteps - resumed_at, 0)
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] ⏱  Checkpoint at "
+            f"{resumed_at:,} steps; {remaining:,} remaining to {total_timesteps:,}"
+        )
+    elif args.warm_start:
         from core.policies.warm_start import warm_start_ppo
         ws_cfg = config.get("training", {}).get("team", {}).get("warm_start", {})
         model = warm_start_ppo(
@@ -127,19 +211,31 @@ def main() -> None:
         n_envs=n_envs,
     )
 
-    total_timesteps = args.timesteps or config["training"].get("total_timesteps", 5_000_000)
+    resume_info = (
+        {"checkpoint": args.resume, "resumed_at": resumed_at}
+        if args.resume is not None else None
+    )
 
     started = datetime.now()
     write_run_info(
         run_dir, config=config, args=args,
         extra={"learner": args.learner, "opponent_spec": args.opponent,
                "warm_start_from": args.warm_start},
+        resume=resume_info,
         started=started,
     )
 
+    extra_callbacks = (
+        [ResumeProgressCallback(total_timesteps)]
+        if args.resume is not None else []
+    )
     try:
-        model.learn(total_timesteps=total_timesteps, callback=callbacks,
-                    progress_bar=True)
+        model.learn(
+            total_timesteps=total_timesteps,
+            callback=[*callbacks, *extra_callbacks],
+            reset_num_timesteps=args.resume is None,
+            progress_bar=args.resume is None,
+        )
     finally:
         model.save(str(run_dir / "final_model"))
         elapsed_s = (datetime.now() - started).total_seconds()
@@ -147,6 +243,7 @@ def main() -> None:
             run_dir, config=config, args=args,
             extra={"learner": args.learner, "opponent_spec": args.opponent,
                    "warm_start_from": args.warm_start},
+            resume=resume_info,
             started=started, elapsed_s=elapsed_s,
             steps_trained=int(model.num_timesteps),
         )
