@@ -41,7 +41,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team
+.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team resume-team
 
 .DEFAULT_GOAL := help
 
@@ -184,6 +184,13 @@ train-team-blue: ## 🔵 Phase 2b: train Blue against frozen Red  RED=models/<ru
 	@test -n "$(RED)" || { echo "ERROR: RED=models/<run> required"; exit 1; }; \
 	 $(PYTHON) scripts/train_team_ppo.py --learner blue_0 --opponent "frozen:$(RED)/best_model" \
 	   $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
+
+resume-team: ## ▶️  Resume team-play training  RUN_NAME=... [TRIAL=...] [CHECKPOINT=...] [LEARNER=...] [OPPONENT=...]
+	@ckpt="$(or $(CHECKPOINT),$(_LATEST_CKPT))"; \
+	 test -n "$$ckpt" || { echo "ERROR: no checkpoint found in $(_TRIAL_DIR)/checkpoints/ — set RUN_NAME= and TRIAL="; exit 1; }; \
+	 $(PYTHON) scripts/train_team_ppo.py --resume "$$ckpt" --run-name "$(_RESUME_RUN)" \
+	   $(if $(LEARNER),--learner $(LEARNER)) \
+	   $(if $(OPPONENT),--opponent "$(OPPONENT)")
 
 eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI=1] [DETERMINISTIC=1]
 	@test -n "$(RED)" -a -n "$(BLUE)" || { echo "ERROR: RED=<spec> BLUE=<spec> required"; exit 1; }; \
