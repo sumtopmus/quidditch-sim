@@ -150,9 +150,14 @@ class QuidditchSimpleEnv(gym.Env):
         )
 
         if self._world is None:
+            # Prefix "red_0" matches the team env's attacker prefix so the same
+            # per-drone cam names (e.g. "red_0_tpv") resolve in both training
+            # modes.  Renaming this also renames every body/sensor/cam emitted
+            # by cf2x_fragment — see tests/integration/test_scoring_canary.py
+            # for the physics-equivalence canary.
             fragments = [
                 cf2x_assets(),
-                cf2x_fragment(prefix="drone"),
+                cf2x_fragment(prefix="red_0"),
                 arena_wall_fragment(ARENA_RADIUS, ARENA_WALL_HEIGHT),
                 hoop_fragment(
                     "hoop", HOOP_CENTER, HOOP_OUTWARD_NORMAL, HOOP_RADIUS,
@@ -163,8 +168,8 @@ class QuidditchSimpleEnv(gym.Env):
                 render=(self.render_mode == "human"),
                 seed=seed,
             )
-            self._quad = Quadrotor(self._world, prefix="drone")
-            self._scorer = GeomDistanceScorer(self._world, ["drone"], ["hoop"])
+            self._quad = Quadrotor(self._world, prefix="red_0")
+            self._scorer = GeomDistanceScorer(self._world, ["red_0"], ["hoop"])
 
         self._quad.set_start(start_pos[np.newaxis], start_orn[np.newaxis])
         self._world.reset()
