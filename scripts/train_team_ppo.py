@@ -29,6 +29,7 @@ from envs.quidditch.opponents import OpponentControlledEnv, from_spec
 from scripts._train_common import (
     make_run_dir, build_callbacks, load_config, write_run_info,
 )
+from scripts.callbacks import ResumeProgressCallback
 
 import tomllib
 
@@ -92,6 +93,19 @@ def main() -> None:
                   file=sys.stderr)
             sys.exit(2)
 
+    if args.resume is not None:
+        if args.learner is None or args.opponent is None:
+            parent_learner, parent_opponent = _read_parent_extra(args.resume)
+            args.learner = args.learner or parent_learner
+            args.opponent = args.opponent or parent_opponent
+        if args.learner is None or args.opponent is None:
+            print(
+                f"ERROR: could not resolve --learner/--opponent from parent of {args.resume}. "
+                "Pass them on the CLI.",
+                file=sys.stderr,
+            )
+            sys.exit(2)
+
     config = load_config(args.config)
 
     if not args.warm_start:
@@ -134,7 +148,29 @@ def main() -> None:
         ppo_kwargs["learning_rate"] = ppo_kwargs.pop("lr")
     ppo_kwargs.setdefault("learning_rate", 3e-4)
 
-    if args.warm_start:
+    total_timesteps = args.timesteps or config["training"].get("total_timesteps", 5_000_000)
+
+    resumed_at: int | None = None
+    if args.resume is not None:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] ▶️  Resuming from {args.resume}")
+        # Override learning_rate from config so e.g. lr=1e-4 takes effect on
+        # resume.  Other PPO hyperparameters keep their checkpoint values —
+        # changing gamma/n_steps/etc. mid-training breaks invariants the value
+        # function and rollout buffer rely on.
+        model = PPO.load(
+            args.resume,
+            env=vec_env,
+            tensorboard_log=str(run_dir),
+            verbose=1,
+            learning_rate=ppo_kwargs["learning_rate"],
+        )
+        resumed_at = int(model.num_timesteps)
+        remaining = max(total_timesteps - resumed_at, 0)
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] ⏱  Checkpoint at "
+            f"{resumed_at:,} steps; {remaining:,} remaining to {total_timesteps:,}"
+        )
+    elif args.warm_start:
         from core.policies.warm_start import warm_start_ppo
         ws_cfg = config.get("training", {}).get("team", {}).get("warm_start", {})
         model = warm_start_ppo(
@@ -164,19 +200,31 @@ def main() -> None:
         n_envs=n_envs,
     )
 
-    total_timesteps = args.timesteps or config["training"].get("total_timesteps", 5_000_000)
+    resume_info = (
+        {"checkpoint": args.resume, "resumed_at": resumed_at}
+        if args.resume is not None else None
+    )
 
     started = datetime.now()
     write_run_info(
         run_dir, config=config, args=args,
         extra={"learner": args.learner, "opponent_spec": args.opponent,
                "warm_start_from": args.warm_start},
+        resume=resume_info,
         started=started,
     )
 
+    extra_callbacks = (
+        [ResumeProgressCallback(total_timesteps)]
+        if args.resume is not None else []
+    )
     try:
-        model.learn(total_timesteps=total_timesteps, callback=callbacks,
-                    progress_bar=True)
+        model.learn(
+            total_timesteps=total_timesteps,
+            callback=[*callbacks, *extra_callbacks],
+            reset_num_timesteps=args.resume is None,
+            progress_bar=args.resume is None,
+        )
     finally:
         model.save(str(run_dir / "final_model"))
         elapsed_s = (datetime.now() - started).total_seconds()
@@ -184,6 +232,7 @@ def main() -> None:
             run_dir, config=config, args=args,
             extra={"learner": args.learner, "opponent_spec": args.opponent,
                    "warm_start_from": args.warm_start},
+            resume=resume_info,
             started=started, elapsed_s=elapsed_s,
             steps_trained=int(model.num_timesteps),
         )
