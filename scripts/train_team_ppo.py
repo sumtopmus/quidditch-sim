@@ -30,6 +30,23 @@ from scripts._train_common import (
     make_run_dir, build_callbacks, load_config, write_run_info,
 )
 
+import tomllib
+
+
+def _read_parent_extra(checkpoint_path: str) -> tuple[str | None, str | None]:
+    """Walk from a checkpoint path up to its trial dir and read learner/opponent
+    from info.toml [extra]. Returns (None, None) if anything is missing."""
+    trial_dir = Path(checkpoint_path).resolve().parent.parent
+    info = trial_dir / "info.toml"
+    if not info.exists():
+        return None, None
+    try:
+        data = tomllib.loads(info.read_text())
+    except Exception:
+        return None, None
+    extra = data.get("extra", {})
+    return extra.get("learner"), extra.get("opponent_spec")
+
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train QuidditchTeamEnv via SB3 PPO")
