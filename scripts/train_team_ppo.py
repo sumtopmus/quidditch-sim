@@ -33,15 +33,28 @@ from scripts._train_common import (
 
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description="Train QuidditchTeamEnv via SB3 PPO")
-    p.add_argument("--learner", choices=["red_0", "blue_0"], required=True)
-    p.add_argument("--opponent", required=True, help="opponent spec, e.g. 'beeline_blue'")
-    p.add_argument("--warm-start", default="", help="path to old single-agent best_model.zip")
+    p.add_argument("--learner", choices=["red_0", "blue_0"], required=False, default=None)
+    p.add_argument("--opponent", required=False, default=None,
+                   help="opponent spec, e.g. 'beeline_blue'")
     p.add_argument("--config", default="config/training.toml")
     p.add_argument("--run-name", default=None)
     p.add_argument("--timesteps", type=int, default=None)
     p.add_argument("--n-envs",    type=int, default=None)
     p.add_argument("--lr",        type=float, default=None)
     p.add_argument("--seed",      type=int, default=None)
+
+    # --warm-start and --resume are mutually exclusive: warm-start does the
+    # 16->22 input-layer surgery from a single-agent checkpoint; resume picks
+    # up an existing team-play trial mid-flight (same I/O dimensions, keeps
+    # optimizer state, keeps step counter).
+    g = p.add_mutually_exclusive_group()
+    g.add_argument("--warm-start", default="",
+                   help="path to old single-agent best_model.zip (input-layer surgery)")
+    g.add_argument("--resume", default=None, metavar="PATH",
+                   help="path to a checkpoint .zip to resume from. Keeps the step "
+                        "counter; trains for the remaining steps to total_timesteps. "
+                        "Loads --learner / --opponent from the parent trial's info.toml "
+                        "if not given on the CLI.")
     return p.parse_args()
 
 
