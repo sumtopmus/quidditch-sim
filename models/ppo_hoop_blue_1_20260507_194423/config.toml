@@ -1,0 +1,70 @@
+# PPO training + env configuration for QuidditchSimpleEnv.
+# Loaded by train_ppo.py at startup; CLI flags (--timesteps, --n-envs, --lr, --seed)
+# override individual values at runtime.
+
+[training]
+run_name        = "ppo_hoop_blue_1"
+total_timesteps = 10_000_000
+n_envs          = 8
+seed            = 42    # integer ≥ 0 for reproducible runs; -1 to disable
+
+[training.ppo]
+n_steps    = 1024
+batch_size = 256
+n_epochs   = 10
+lr         = 3e-4
+gamma      = 0.99
+gae_lambda = 0.95
+clip_range = 0.2
+ent_coef   = 0.01
+
+[training.eval]
+eval_freq_steps  = 50_000
+n_eval_episodes  = 10
+
+[training.callbacks]
+checkpoint_freq_steps = 50_000
+video_every_n_evals   = 4          # video runs every Nth eval (eval=50k, N=2 → 100k)
+video_fps             = 20
+
+[training.callbacks.video]
+grid        = true
+cells       = ["south", "east", "top", "tpv"]
+cell_width  = 960
+cell_height = 540
+
+# Environment / task parameters. These shape the task itself, not the PPO
+# hyperparameters above.
+#
+# randomise_start: if true, sample a uniform start position inside the arena
+#                  on each reset; if false, always spawn at (0, 0, 0).
+# episode_seconds: per-episode timeout. The episode also ends on score, crash,
+#                  or out-of-bounds — this is the upper bound only.
+[env]
+randomise_start = true
+episode_seconds = 30.0
+# mode is informational only — the entry script you invoke determines which
+# env class is built.  "single" → train_ppo.py; "team" → train_team_ppo.py.
+mode            = "team"
+
+# Team-play (Phase 2) — used by train_team_ppo.py.
+[env.team]
+red_prefix       = "red_0"
+blue_prefix      = "blue_0"
+hoop_prefix      = "hoop_0"
+midpoint_alpha   = 0.5    # midpoint = α·red_pos + (1-α)·hoop_center
+tag_radius       = 0.3    # m
+tag_cooldown_s   = 1.0    # s, post-exit gate on tag-entry pulse
+crash_vel_thr    = 1.5    # m/s, |v_rel·normal| above this terminates with -20
+walls_collide    = true   # arena_wall_fragment(with_collisions=true)
+
+# Team-play training defaults.  Selected when train_team_ppo.py is invoked;
+# the [training] / [training.ppo] blocks above still drive the optimizer.
+[training.team]
+learner          = "red_0"
+opponent_spec    = "beeline_blue"
+warm_start_from  = ""     # empty = no warm-start; else model dir (script appends /best_model). CLI --warm-start / WARM_START env override this.
+
+[training.team.warm_start]
+new_dim_init_scale = 0.01  # std of N(0, σ²) for the augmented input columns
+
