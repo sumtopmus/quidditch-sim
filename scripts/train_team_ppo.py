@@ -119,12 +119,23 @@ def main() -> None:
             **ppo_kwargs,
         )
 
+    # Video env factory: mirrors the eval env but in rgb_array mode so
+    # the offscreen renderer produces frames.  build_callbacks only
+    # appends the video callback when video_env_fn is provided.
+    def _make_video_env() -> OpponentControlledEnv:
+        team = QuidditchTeamEnv(cfg=cfg, render_mode="rgb_array")
+        opp  = from_spec(args.opponent, deterministic=True)
+        return OpponentControlledEnv(
+            team, learner_id=args.learner, opponent=opp,
+        )
+
     callbacks = build_callbacks(
         run_dir=run_dir,
         eval_env_fn=make_env_fn(cfg=cfg, learner_id=args.learner,
                                  opponent_spec=args.opponent),
         config=config,
         n_envs=n_envs,
+        video_env_fn=_make_video_env,
     )
 
     total_timesteps = args.timesteps or config["training"].get("total_timesteps", 5_000_000)
