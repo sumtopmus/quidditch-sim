@@ -43,3 +43,12 @@ def test_resume_default_is_none() -> None:
     with _argv("--learner", "red_0", "--opponent", "beeline_blue"):
         args = _parse()
     assert args.resume is None
+
+
+def test_missing_learner_without_resume_errors_in_main(monkeypatch, capsys) -> None:
+    """Without --resume, --learner is still required."""
+    from scripts import train_team_ppo
+
+    with _argv("--opponent", "beeline_blue"):  # no --learner, no --resume
+        with pytest.raises(SystemExit):
+            train_team_ppo.main()

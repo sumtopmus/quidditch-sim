@@ -68,6 +68,13 @@ def make_env_fn(*, cfg: TeamConfig, learner_id: str, opponent_spec: str):
 
 def main() -> None:
     args = parse_args()
+
+    if args.resume is None:
+        if args.learner is None or args.opponent is None:
+            print("ERROR: --learner and --opponent are required unless --resume is given",
+                  file=sys.stderr)
+            sys.exit(2)
+
     config = load_config(args.config)
 
     if not args.warm_start:
