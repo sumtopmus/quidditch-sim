@@ -59,6 +59,7 @@ def write_run_info(
     config: dict[str, Any],
     args: argparse.Namespace,
     extra: dict[str, Any] | None = None,
+    resume: dict[str, Any] | None = None,
     started: datetime | None = None,
     elapsed_s: float | None = None,
     steps_trained: int | None = None,
@@ -89,6 +90,14 @@ def write_run_info(
             else:
                 extra_block += f"{k} = {v}\n"
 
+    resume_block = ""
+    if resume:
+        resume_block = (
+            "\n[resume]\n"
+            f'checkpoint  = "{resume["checkpoint"]}"\n'
+            f'resumed_at  = {resume["resumed_at"]}\n'
+        )
+
     content = (
         "# Run info — written by train_team_ppo.py.\n"
         "\n"
@@ -99,6 +108,7 @@ def write_run_info(
         f"{elapsed_line}\n"
         f"{finished_line}\n"
         f"{steps_line}\n"
+        f"{resume_block}"
         f"{extra_block}"
     )
     (run_dir / "info.toml").write_text(content)
