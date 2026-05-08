@@ -60,7 +60,7 @@ grid        = true
 # west frames the approach from the drone-start side, east frames the
 # goal head-on from behind the hoop.  north would mirror the hoop to
 # the LEFT and is usually avoided.
-cells       = ["south", "east", "top", "tpv"]
+cells       = ["south", "east", "top", "fixed"]
 cell_width  = 960
 cell_height = 540
 
