@@ -71,6 +71,11 @@ def parse_args() -> argparse.Namespace:
     p.add_argument("--n-envs",    type=int, default=None)
     p.add_argument("--lr",        type=float, default=None)
     p.add_argument("--seed",      type=int, default=None)
+    p.add_argument(
+        "--verbose",
+        action="store_true",
+        help="Print SB3 training logs instead of showing a rich progress bar.",
+    )
 
     # --warm-start and --resume are mutually exclusive: warm-start does the
     # 16->22 input-layer surgery from a single-agent checkpoint; resume picks
@@ -161,6 +166,8 @@ def main() -> None:
 
     total_timesteps = args.timesteps or config["training"].get("total_timesteps", 5_000_000)
 
+    verbose = 1 if args.verbose else 0
+
     resumed_at: int | None = None
     if args.resume is not None:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ▶️  Resuming from {args.resume}")
@@ -172,7 +179,7 @@ def main() -> None:
             args.resume,
             env=vec_env,
             tensorboard_log=str(run_dir),
-            verbose=1,
+            verbose=verbose,
             learning_rate=ppo_kwargs["learning_rate"],
         )
         resumed_at = int(model.num_timesteps)
@@ -191,7 +198,7 @@ def main() -> None:
             new_dim_init_scale=ws_cfg.get("new_dim_init_scale", 0.01),
             tensorboard_log=str(run_dir),
             seed=seed,
-            verbose=1,
+            verbose=verbose,
             **ppo_kwargs,
         )
     else:
@@ -199,7 +206,7 @@ def main() -> None:
             "MlpPolicy", vec_env,
             tensorboard_log=str(run_dir),
             seed=seed,
-            verbose=1,
+            verbose=verbose,
             **ppo_kwargs,
         )
 
@@ -227,14 +234,14 @@ def main() -> None:
 
     extra_callbacks = (
         [ResumeProgressCallback(total_timesteps)]
-        if args.resume is not None else []
+        if args.resume is not None and not args.verbose else []
     )
     try:
         model.learn(
             total_timesteps=total_timesteps,
             callback=[*callbacks, *extra_callbacks],
             reset_num_timesteps=args.resume is None,
-            progress_bar=args.resume is None,
+            progress_bar=not args.verbose and args.resume is None,
         )
     finally:
         model.save(str(run_dir / "final_model"))
