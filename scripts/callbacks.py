@@ -52,12 +52,12 @@ class VideoRecorderCallback(BaseCallback):
     record_freq should be in per-env steps (divide target total steps by n_envs),
     matching the convention used for CheckpointCallback / EvalCallback.
 
-    By default writes a 2x2 grid stitching four named cameras together
-    (south / east / top / chase-cam) at 1920x1080.  Pass ``grid=False`` to
-    fall back to the env's single-cam ``render()`` output (the cinematic
-    "fixed" cam at 640x480).  Grid mode bypasses ``env.render()`` and reaches
-    into ``env._quad.render_grid(...)`` directly — same precedent as
-    eval_ppo.py reaching into ``env._quad`` for the live viewer.
+    By default writes a 2x2 grid stitching four named cameras together at
+    1920x1080.  Pass ``grid=False`` to fall back to the env's single-cam
+    ``render()`` output (the cinematic "fixed" cam at 640x480).  Grid mode
+    bypasses ``env.render()`` and reaches into ``env._world.render_cells(...)``
+    directly — works for any env (single-agent QuidditchSimpleEnv or team
+    QuidditchTeamEnv wrapped in OpponentControlledEnv) that exposes ``_world``.
 
     Cam choices: hoop sits at +X — south works well as the wide side view
     (broadcast convention puts the goal on the right of frame).  Either
@@ -143,7 +143,7 @@ class VideoRecorderCallback(BaseCallback):
         on-disk mp4 stitches them at write-time.
         """
         if self.grid:
-            return env._quad.render_cells(
+            return env._world.render_cells(
                 self.grid_cams, self.cell_width, self.cell_height
             )
         frame = env.render()
