@@ -198,6 +198,32 @@ class World:
             while self._viewer.is_running():
                 time.sleep(0.05)
 
+    # ── camera resolution ─────────────────────────────────────────────────────
+
+    def resolve_cam_name(self, name: str) -> str | None:
+        """Resolve a (possibly bare) camera name against the model.
+
+        Global scene cams (fixed, north, east, south, west, top) are
+        registered under their bare names and return as-is.  Per-drone
+        cams (fpv, tpv, port, starboard) are emitted by ``cf2x_fragment``
+        as ``f"{prefix}_{name}"`` — for those, fall back to the first
+        registered drone whose ``f"{drone.prefix}_{name}"`` exists.  In
+        team scenes ``self.drones[0]`` is Red, so bare ``tpv`` resolves
+        to ``red_0_tpv``; pass an explicit ``blue_0_tpv`` to override.
+
+        Returns the resolved model-cam name, or ``None`` if no match.
+        """
+        if mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, name) >= 0:
+            return name
+        for drone in self.drones:
+            prefixed = f"{drone.prefix}_{name}"
+            cid = mujoco.mj_name2id(
+                self.model, mujoco.mjtObj.mjOBJ_CAMERA, prefixed
+            )
+            if cid >= 0:
+                return prefixed
+        return None
+
     # ── viewer key bindings ──────────────────────────────────────────────────
 
     def _make_key_callback(self):
@@ -212,9 +238,12 @@ class World:
             5 → tpv    6 → port       7 → starboard
             8 → fpv    9 → top        0 → fixed
 
-        Cameras that don't exist in the model (e.g. fpv on a custom
-        scene without cf2x_fragment) are silently skipped at callback build
-        time — pressing their digit is a no-op.
+        Per-drone names (tpv, port, starboard, fpv) go through
+        ``resolve_cam_name`` so they auto-prefix to the first registered
+        drone (e.g. ``red_0_tpv`` in single-agent, the Red side in team
+        scenes).  Cameras that don't exist in the model — bare or
+        prefixed — are silently skipped at build time, so their digit is
+        a no-op.
         """
         digit_to_cam = {
             "1": "north",
@@ -230,7 +259,12 @@ class World:
         }
         cam_ids: dict[str, int] = {}
         for digit, name in digit_to_cam.items():
-            cid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, name)
+            resolved = self.resolve_cam_name(name)
+            if resolved is None:
+                continue
+            cid = mujoco.mj_name2id(
+                self.model, mujoco.mjtObj.mjOBJ_CAMERA, resolved
+            )
             if cid >= 0:
                 cam_ids[digit] = cid
 
@@ -268,6 +302,12 @@ class World:
     ) -> list[np.ndarray]:
         """Render N cameras into separate (cell_height × cell_width × 3) RGB arrays.
 
+        Each name is run through ``resolve_cam_name``, so bare per-drone
+        names (``tpv``, ``port``, ``starboard``, ``fpv``) auto-prefix to
+        the first registered drone — see that method for details.
+        Unknown names raise ``ValueError`` rather than silently rendering
+        the free cam.
+
         Re-uses the World's single renderer instance — sized via cell_width
         and cell_height on first call (see ``get_renderer``).  Mixing different
         sizes in the same World will use whichever size was requested first;
@@ -277,7 +317,13 @@ class World:
         renderer = self.get_renderer(cell_width, cell_height)
         cells: list[np.ndarray] = []
         for name in cam_names:
-            renderer.update_scene(self.data, camera=name)
+            resolved = self.resolve_cam_name(name)
+            if resolved is None:
+                raise ValueError(
+                    f"render_cells: no camera named {name!r} (and no "
+                    f"prefix-scoped variant matches any registered drone)"
+                )
+            renderer.update_scene(self.data, camera=resolved)
             cells.append(renderer.render()[:, :, :3].copy())
         return cells
 
