@@ -49,11 +49,25 @@ def _prompt() -> int | None:
         print(f"  invalid choice: {raw!r} — try again.")
 
 
-def main() -> None:
-    idx = _prompt()
-    if idx is None:
-        print("No demo selected.")
-        return
+def main(argv: list[str] | None = None) -> None:
+    import sys as _sys
+    keys = [k for k, _, _ in DEMOS]
+
+    raw_arg = (argv if argv is not None else _sys.argv[1:])
+    if raw_arg:
+        chosen = raw_arg[0].strip().lower()
+        try:
+            idx = keys.index(chosen)
+        except ValueError:
+            print(f"unknown demo {chosen!r}; choices: {', '.join(keys)}", file=_sys.stderr)
+            _sys.exit(2)
+    else:
+        i = _prompt()
+        if i is None:
+            print("No demo selected.")
+            return
+        idx = i
+
     key, _, module_path = DEMOS[idx]
     print(f"\n>>> running '{key}' ({module_path})\n")
     module = importlib.import_module(module_path)

@@ -119,6 +119,8 @@ make check-gui      # opens MuJoCo viewer for visual inspection
 
 ## Workflow
 
+**Interactive launcher:** `make ui` opens a TUI dashboard for training, eval, demos, and run management. Pickers fill in model paths and trial timestamps from disk — no more typing long arguments.
+
 All day-to-day tasks go through `make`. Run `make help` for the full list.
 
 ### Train
