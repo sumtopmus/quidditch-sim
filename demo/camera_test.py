@@ -13,11 +13,17 @@ Outputs (per --cam choice):
     runs/camera_test/hover_<cam>.mp4   ← full hover video
     runs/camera_test/hover_<cam>.png   ← still preview (last frame)
 
-Available cams:  grid | fixed | north | east | south | west | top | fpv | tpv | port | starboard
+Available cams:  grid | fixed | north | east | south | west | top
+                 | fpv | tpv | port | starboard
+
+The per-drone chase cams (fpv, tpv, port, starboard) are prefix-scoped
+in the model (this demo uses the ``drone`` prefix → ``drone_tpv`` etc.);
+``World.resolve_cam_name`` auto-prefixes the bare names to whichever
+drone is registered, so they Just Work here.
 
 Run:  make camera-test                  # → hover_grid.mp4 (default; 1080p 2x2)
       make camera-test CAM=fixed        # → hover_fixed.mp4
-      make camera-test CAM=tpv          # → hover_tpv.mp4
+      make camera-test CAM=tpv          # → hover_tpv.mp4 (drone_tpv)
 """
 
 from __future__ import annotations
@@ -102,10 +108,17 @@ def main() -> None:
     else:
         # Single-cam path: drive the renderer directly so we can pick the
         # camera by name (World.render_frame is hardcoded to "fixed").
+        # Resolve through the World so bare per-drone names (tpv, fpv,
+        # port, starboard) auto-prefix to the registered drone.
         renderer = quad._world.get_renderer(SINGLE_W, SINGLE_H)
+        cam_name = quad._world.resolve_cam_name(args.cam)
+        if cam_name is None:
+            raise SystemExit(
+                f"camera-test: no camera named {args.cam!r} in the model"
+            )
 
         def capture() -> np.ndarray:
-            renderer.update_scene(quad._world.data, camera=args.cam)
+            renderer.update_scene(quad._world.data, camera=cam_name)
             return renderer.render()[:, :, :3]
 
     frames: list[np.ndarray] = []

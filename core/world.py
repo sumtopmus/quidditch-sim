@@ -198,41 +198,81 @@ class World:
             while self._viewer.is_running():
                 time.sleep(0.05)
 
+    # ── camera resolution ─────────────────────────────────────────────────────
+
+    def resolve_cam_name(self, name: str) -> str | None:
+        """Resolve a (possibly bare) camera name against the model.
+
+        Global scene cams (fixed, north, east, south, west, top) are
+        registered under their bare names and return as-is.  Per-drone
+        cams (fpv, tpv, port, starboard) are emitted by ``cf2x_fragment``
+        as ``f"{prefix}_{name}"`` — for those, fall back to the first
+        registered drone whose ``f"{drone.prefix}_{name}"`` exists.  In
+        team scenes ``self.drones[0]`` is Red, so bare ``tpv`` resolves
+        to ``red_0_tpv``; pass an explicit ``blue_0_tpv`` to override.
+
+        Returns the resolved model-cam name, or ``None`` if no match.
+        """
+        if mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, name) >= 0:
+            return name
+        for drone in self.drones:
+            prefixed = f"{drone.prefix}_{name}"
+            cid = mujoco.mj_name2id(
+                self.model, mujoco.mjtObj.mjOBJ_CAMERA, prefixed
+            )
+            if cid >= 0:
+                return prefixed
+        return None
+
     # ── viewer key bindings ──────────────────────────────────────────────────
 
     def _make_key_callback(self):
         """Build a key_callback for `mujoco.viewer.launch_passive`.
 
-        Direct-select named cameras with digit keys; ` (grave accent) returns
-        to free cam.  Tab still cycles through fixed cameras (built into the
-        viewer) — these digit shortcuts are additive, not a replacement.
+        Direct-select named cameras with letter keys; ` (grave accent)
+        returns to free cam.  MuJoCo's built-in ``[`` / ``]`` still cycle
+        through every fixed cam in declaration order — these shortcuts
+        are additive, not a replacement.
 
             ` (grave) → free cam
-            1 → north  2 → east       3 → south  4 → west
-            5 → tpv    6 → port       7 → starboard
-            8 → fpv    9 → top        0 → fixed
+            N → north  E → east  S → south  W → west
+            R → red_0_tpv   (chase cam behind Red)
+            B → blue_0_tpv  (chase cam behind Blue)
+            T → top         (map-style cam, 5 m up)
+            F → fixed       (cinematic broadcast cam)
 
-        Cameras that don't exist in the model (e.g. fpv on a custom
-        scene without cf2x_fragment) are silently skipped at callback build
-        time — pressing their digit is a no-op.
+        Letter dispatch is case-insensitive (GLFW reports the uppercase
+        code regardless of Shift).  Letters were chosen over digits
+        because MuJoCo's own bindings hijack the number row: pressing
+        ``3`` toggles geom-group 3 (collision hulls + tag spheres) at
+        the same time the cam switches, which is confusing.  Use
+        ``[`` / ``]`` to reach the per-drone fpv / port / starboard
+        cams (not letter-bound) on demand.
+
+        Cameras that don't exist in the model (e.g. blue_0_tpv in
+        single-agent scenes) are silently skipped at build time, so
+        their key is a no-op.
         """
-        digit_to_cam = {
-            "1": "north",
-            "2": "east",
-            "3": "south",
-            "4": "west",
-            "5": "tpv",
-            "6": "port",
-            "7": "starboard",
-            "8": "fpv",
-            "9": "top",
-            "0": "fixed",
+        key_to_cam = {
+            "N": "north",
+            "E": "east",
+            "S": "south",
+            "W": "west",
+            "R": "red_0_tpv",
+            "B": "blue_0_tpv",
+            "T": "top",
+            "F": "fixed",
         }
         cam_ids: dict[str, int] = {}
-        for digit, name in digit_to_cam.items():
-            cid = mujoco.mj_name2id(self.model, mujoco.mjtObj.mjOBJ_CAMERA, name)
+        for key, name in key_to_cam.items():
+            resolved = self.resolve_cam_name(name)
+            if resolved is None:
+                continue
+            cid = mujoco.mj_name2id(
+                self.model, mujoco.mjtObj.mjOBJ_CAMERA, resolved
+            )
             if cid >= 0:
-                cam_ids[digit] = cid
+                cam_ids[key] = cid
 
         def cb(keycode: int) -> None:
             if self._viewer is None:
@@ -240,7 +280,9 @@ class World:
             ch = chr(keycode) if 0 < keycode < 128 else ""
             if ch == "`":
                 self._viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-            elif ch in cam_ids:
+                return
+            ch = ch.upper()
+            if ch in cam_ids:
                 self._viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
                 self._viewer.cam.fixedcamid = cam_ids[ch]
 
@@ -268,6 +310,12 @@ class World:
     ) -> list[np.ndarray]:
         """Render N cameras into separate (cell_height × cell_width × 3) RGB arrays.
 
+        Each name is run through ``resolve_cam_name``, so bare per-drone
+        names (``tpv``, ``port``, ``starboard``, ``fpv``) auto-prefix to
+        the first registered drone — see that method for details.
+        Unknown names raise ``ValueError`` rather than silently rendering
+        the free cam.
+
         Re-uses the World's single renderer instance — sized via cell_width
         and cell_height on first call (see ``get_renderer``).  Mixing different
         sizes in the same World will use whichever size was requested first;
@@ -277,7 +325,13 @@ class World:
         renderer = self.get_renderer(cell_width, cell_height)
         cells: list[np.ndarray] = []
         for name in cam_names:
-            renderer.update_scene(self.data, camera=name)
+            resolved = self.resolve_cam_name(name)
+            if resolved is None:
+                raise ValueError(
+                    f"render_cells: no camera named {name!r} (and no "
+                    f"prefix-scoped variant matches any registered drone)"
+                )
+            renderer.update_scene(self.data, camera=resolved)
             cells.append(renderer.render()[:, :, :3].copy())
         return cells
 

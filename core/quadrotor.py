@@ -145,6 +145,11 @@ class Quadrotor:
 
     # ── public API ────────────────────────────────────────────────────────────
 
+    @property
+    def prefix(self) -> str:
+        """Name prefix for this drone's body, sensors, and per-drone cams."""
+        return self._prefix
+
     def set_mode(self, mode: int) -> None:
         if mode != 7:
             raise ValueError(

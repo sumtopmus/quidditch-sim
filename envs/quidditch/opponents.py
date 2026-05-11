@@ -249,3 +249,10 @@ class OpponentControlledEnv(gym.Env):
 
     def close(self):
         self.team_env.close()
+
+    @property
+    def _world(self):
+        """Passthrough to the wrapped team env's World so the video callback
+        (and any other reach-through consumer) can call ``render_cells`` /
+        ``render_frame`` without knowing about the wrapper."""
+        return self.team_env._world

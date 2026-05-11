@@ -123,11 +123,15 @@ def build_callbacks(
     eval_env_fn: Callable[[], Any],
     config: dict[str, Any],
     n_envs: int,
+    video_env_fn: Callable[[], Any] | None = None,
 ) -> list:
-    """Build the standard SB3 callback set: checkpoint + eval.
+    """Build the standard SB3 callback set: checkpoint + eval + (optional) video.
 
-    Video callback is intentionally omitted: it's coupled to the simple-env
-    render plumbing.  Wire it up in the entry script if needed for the team env.
+    When ``video_env_fn`` is provided, a ``VideoRecorderCallback`` is appended
+    using the ``[training.callbacks.video]`` sub-block.  ``video_env_fn`` should
+    return an env in ``rgb_array`` mode (single-agent ``QuidditchSimpleEnv`` or
+    team-agent ``OpponentControlledEnv``); the callback resets and rolls out one
+    deterministic episode at every ``video_every_n_evals``-th eval trigger.
     """
     eval_freq = max(config["training"]["eval"]["eval_freq_steps"] // n_envs, 1)
     ckpt_freq = max(
@@ -137,7 +141,7 @@ def build_callbacks(
     from stable_baselines3.common.vec_env import DummyVecEnv
     eval_env = DummyVecEnv([eval_env_fn])
 
-    return [
+    cbs: list = [
         CheckpointCallback(
             save_freq=ckpt_freq,
             save_path=str(run_dir / "checkpoints"),
@@ -152,3 +156,26 @@ def build_callbacks(
             deterministic=True,
         ),
     ]
+
+    if video_env_fn is not None:
+        # Local import to avoid a hard dep on imageio/moviepy when video is off.
+        from scripts.callbacks import VideoRecorderCallback
+        from core.world import CONTROL_HZ
+
+        video_cfg = config["training"]["callbacks"].get("video", {})
+        video_freq = eval_freq * config["training"]["callbacks"]["video_every_n_evals"]
+        cbs.append(
+            VideoRecorderCallback(
+                env_fn=video_env_fn,
+                video_dir=str(run_dir / "videos"),
+                record_freq=video_freq,
+                fps=config["training"]["callbacks"]["video_fps"],
+                sim_hz=CONTROL_HZ,
+                grid=video_cfg.get("grid", True),
+                grid_cams=tuple(video_cfg["cells"]) if "cells" in video_cfg else None,
+                cell_width=video_cfg.get("cell_width", 960),
+                cell_height=video_cfg.get("cell_height", 540),
+            )
+        )
+
+    return cbs

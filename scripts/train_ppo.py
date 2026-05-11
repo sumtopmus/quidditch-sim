@@ -350,7 +350,7 @@ def main() -> None:
     )
     # Video sub-section is optional in older configs; defaults match the
     # template ([training.callbacks.video] grid=true with 960x540 cells →
-    # 1080p stitched, cams = south/east/top/tpv).
+    # 1080p stitched, cams = south/east/top/fixed).
     video_cfg = cfg["training"]["callbacks"].get("video", {})
     video_cb = VideoRecorderCallback(
         env_fn=lambda: QuidditchSimpleEnv(render_mode="rgb_array", **base_env_kwargs),

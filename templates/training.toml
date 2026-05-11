@@ -50,6 +50,11 @@ video_fps             = 20
 # `cells` is row-major: [top-left, top-right, bottom-left, bottom-right].
 # Available cams in the scene:
 #   fixed | north | east | south | west | top | fpv | tpv | port | starboard
+# The per-drone chase cams (fpv, tpv, port, starboard) are emitted by
+# cf2x_fragment as prefix-scoped (e.g. red_0_tpv); cell names are run
+# through World.resolve_cam_name so the bare names auto-prefix to the
+# first registered drone (Red in team mode).  Pass the prefixed form
+# explicitly if you want a different drone (e.g. "blue_0_tpv").
 # Per-cell size 960x540 → final 1920x1080 (1080p).  Each render does 4
 # offscreen passes per frame, so checkpoint video time scales with
 # cell_width * cell_height * 4.  Set grid = false to record only the
@@ -60,7 +65,7 @@ grid        = true
 # west frames the approach from the drone-start side, east frames the
 # goal head-on from behind the hoop.  north would mirror the hoop to
 # the LEFT and is usually avoided.
-cells       = ["south", "east", "top", "tpv"]
+cells       = ["south", "east", "top", "fixed"]
 cell_width  = 960
 cell_height = 540
 
