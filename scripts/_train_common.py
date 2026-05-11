@@ -161,24 +161,26 @@ def build_callbacks(
     ]
     # SB3 emits an unconditional UserWarning when train (SubprocVecEnv) and eval
     # (DummyVecEnv) types differ.  Intentional here — single-process eval is
-    # cheaper and behaves the same.  Suppress just that warning at construction.
-    with warnings.catch_warnings():
-        warnings.filterwarnings(
-            "ignore",
-            message="Training and eval env are not of the same type",
-            category=UserWarning,
+    # cheaper and behaves the same.  The warning fires from EvalCallback's
+    # _init_callback() (invoked by model.learn(), not by __init__), so a
+    # scoped `with warnings.catch_warnings()` around construction is too short-
+    # lived — install a persistent filter for the rest of this training run.
+    warnings.filterwarnings(
+        "ignore",
+        message="Training and eval env are not of the same type",
+        category=UserWarning,
+    )
+    cbs.append(
+        EvalCallback(
+            eval_env,
+            best_model_save_path=str(run_dir),
+            log_path=str(run_dir),
+            eval_freq=eval_freq,
+            n_eval_episodes=config["training"]["eval"]["n_eval_episodes"],
+            deterministic=True,
+            verbose=verbose,
         )
-        cbs.append(
-            EvalCallback(
-                eval_env,
-                best_model_save_path=str(run_dir),
-                log_path=str(run_dir),
-                eval_freq=eval_freq,
-                n_eval_episodes=config["training"]["eval"]["n_eval_episodes"],
-                deterministic=True,
-                verbose=verbose,
-            )
-        )
+    )
 
     if video_env_fn is not None:
         # Local import to avoid a hard dep on imageio/moviepy when video is off.
