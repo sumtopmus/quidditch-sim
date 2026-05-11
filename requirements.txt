@@ -10,6 +10,9 @@ stable-baselines3
 tqdm
 rich
 
+# Terminal UI framework for `make ui` launcher (pulls in rich, already pinned).
+textual>=0.79
+
 # Monitoring / logging
 tensorboard
 
