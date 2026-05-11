@@ -15,6 +15,7 @@ from __future__ import annotations
 import argparse
 import shutil
 import tomllib
+import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
@@ -124,6 +125,7 @@ def build_callbacks(
     config: dict[str, Any],
     n_envs: int,
     video_env_fn: Callable[[], Any] | None = None,
+    verbose: int = 0,
 ) -> list:
     """Build the standard SB3 callback set: checkpoint + eval + (optional) video.
 
@@ -132,6 +134,10 @@ def build_callbacks(
     return an env in ``rgb_array`` mode (single-agent ``QuidditchSimpleEnv`` or
     team-agent ``OpponentControlledEnv``); the callback resets and rolls out one
     deterministic episode at every ``video_every_n_evals``-th eval trigger.
+
+    ``verbose`` is propagated to every callback so a progress-bar run (verbose=0)
+    stays silent while ``--verbose`` keeps SB3's per-eval / per-checkpoint /
+    per-video chatter.
     """
     eval_freq = max(config["training"]["eval"]["eval_freq_steps"] // n_envs, 1)
     ckpt_freq = max(
@@ -139,23 +145,40 @@ def build_callbacks(
     )
 
     from stable_baselines3.common.vec_env import DummyVecEnv
-    eval_env = DummyVecEnv([eval_env_fn])
+    from stable_baselines3.common.monitor import Monitor
+    # Monitor-wrap eval env so SB3's evaluate_policy stops warning about it —
+    # eval reward/length numbers stay correct either way (no other wrapper
+    # mutates them) but the wrapper is the canonical fix.
+    eval_env = DummyVecEnv([lambda: Monitor(eval_env_fn())])
 
     cbs: list = [
         CheckpointCallback(
             save_freq=ckpt_freq,
             save_path=str(run_dir / "checkpoints"),
             name_prefix="ppo",
-        ),
-        EvalCallback(
-            eval_env,
-            best_model_save_path=str(run_dir),
-            log_path=str(run_dir),
-            eval_freq=eval_freq,
-            n_eval_episodes=config["training"]["eval"]["n_eval_episodes"],
-            deterministic=True,
+            verbose=verbose,
         ),
     ]
+    # SB3 emits an unconditional UserWarning when train (SubprocVecEnv) and eval
+    # (DummyVecEnv) types differ.  Intentional here — single-process eval is
+    # cheaper and behaves the same.  Suppress just that warning at construction.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message="Training and eval env are not of the same type",
+            category=UserWarning,
+        )
+        cbs.append(
+            EvalCallback(
+                eval_env,
+                best_model_save_path=str(run_dir),
+                log_path=str(run_dir),
+                eval_freq=eval_freq,
+                n_eval_episodes=config["training"]["eval"]["n_eval_episodes"],
+                deterministic=True,
+                verbose=verbose,
+            )
+        )
 
     if video_env_fn is not None:
         # Local import to avoid a hard dep on imageio/moviepy when video is off.
@@ -175,6 +198,7 @@ def build_callbacks(
                 grid_cams=tuple(video_cfg["cells"]) if "cells" in video_cfg else None,
                 cell_width=video_cfg.get("cell_width", 960),
                 cell_height=video_cfg.get("cell_height", 540),
+                verbose=verbose,
             )
         )
 

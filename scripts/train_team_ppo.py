@@ -227,6 +227,7 @@ def main() -> None:
         config=config,
         n_envs=n_envs,
         video_env_fn=_make_video_env,
+        verbose=verbose,
     )
 
     resume_info = (
