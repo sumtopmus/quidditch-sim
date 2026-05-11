@@ -20,8 +20,17 @@ DIST_REWARD_SCALE:      float = 0.01  # multiplier on −dist/ARENA_RADIUS shapi
 
 # ── Team-only (team_env) ────────────────────────────────────────────────────
 # Soft-tag (proximity-based): zero-sum between blue (defender) and red (attacker).
-TAG_ENTRY_REWARD:       float = 5.0  # one-shot pulse on first entry into zone
-TAG_DURATION_REWARD:    float = 0.02  # per simulation step while in zone
+TAG_ENTRY_REWARD:           float = 5.0   # one-shot pulse on first entry into zone
+# Per-step bonus inside the tag zone, graded by proximity to red center:
+#   bonus = TAG_DURATION_REWARD_MAX * max(0, 1 - dist/tag_radius)
+# Peaks at contact, decays to 0 at the zone boundary, so PPO has a gradient
+# that points *toward* contact instead of a flat plateau inside the sphere.
+TAG_DURATION_REWARD_MAX:    float = 0.05
+# Per-step bonus inside the tag zone for closing on red, in (m/s)⁻¹:
+#   bonus = CLOSING_VEL_REWARD_SCALE * max(0, -d(dist)/dt)
+# Rewards driving in faster than red can flee — the prerequisite for crossing
+# CRASH_VEL_THR (1.5 m/s) and triggering a take-down (+TAKE_DOWN_REWARD).
+CLOSING_VEL_REWARD_SCALE:   float = 0.05
 
 # Take-down: drone-drone collision with |v_rel| > CRASH_VEL_THR.
 # Currently zero-sum (same magnitude, opposite signs); split into two named

@@ -55,7 +55,8 @@ from envs.quidditch.rewards import (
     CRASH_PENALTY,
     DIST_REWARD_SCALE,
     TAG_ENTRY_REWARD,
-    TAG_DURATION_REWARD,
+    TAG_DURATION_REWARD_MAX,
+    CLOSING_VEL_REWARD_SCALE,
     TAKE_DOWN_REWARD,
     TAKE_DOWN_PENALTY,
     DEFAULT_MIDPOINT_ALPHA,
@@ -145,6 +146,7 @@ class QuidditchTeamEnv(ParallelEnv):
         self._red_crossing_started: bool = False
         self._red_enter_signed_dist: float = 0.0
         self._red_prev_signed_dist: float  = 0.0
+        self._dist_b2r_prev: float = 0.0  # used by closing-velocity shaping inside the tag zone
 
         self._np_random: np.random.Generator = np.random.default_rng()
 
@@ -219,6 +221,7 @@ class QuidditchTeamEnv(ParallelEnv):
         self._red_crossing_started  = False
         self._red_enter_signed_dist = 0.0
         self._red_prev_signed_dist  = self._signed_dist_to_hoop_plane(self._red_pos())
+        self._dist_b2r_prev         = float(np.linalg.norm(self._red_pos() - self._blue_pos()))
 
         if self.render_mode == "human":
             time.sleep(1)
@@ -279,12 +282,27 @@ class QuidditchTeamEnv(ParallelEnv):
                 ts.state = _TagState.IN_ZONE if in_zone else _TagState.IDLE
 
         rewards = {self._red_id: 0.0, self._blue_id: 0.0}
+
+        # Positions used by tag shaping, distance shaping, OOB, and scoring.
+        red_pos  = self._red_pos()
+        blue_pos = self._blue_pos()
+        dist_b2r = float(np.linalg.norm(red_pos - blue_pos))
+
         if tag_entry:
             rewards[self._blue_id] += TAG_ENTRY_REWARD
             rewards[self._red_id]  -= TAG_ENTRY_REWARD
         if tag_during:
-            rewards[self._blue_id] += TAG_DURATION_REWARD
-            rewards[self._red_id]  -= TAG_DURATION_REWARD
+            # Proximity-graded: peak at contact, 0 at zone boundary.
+            prox_bonus = TAG_DURATION_REWARD_MAX * max(
+                0.0, 1.0 - dist_b2r / self.cfg.tag_radius
+            )
+            # Closing-velocity: blue closing on red faster than red flees.
+            closing = (self._dist_b2r_prev - dist_b2r) / self._red.step_period
+            close_bonus = CLOSING_VEL_REWARD_SCALE * max(0.0, closing)
+            tag_bonus = prox_bonus + close_bonus
+            rewards[self._blue_id] += tag_bonus
+            rewards[self._red_id]  -= tag_bonus
+        self._dist_b2r_prev = dist_b2r
 
         infos: dict[str, dict[str, Any]] = {
             self._red_id:  {"tag_entry": tag_entry, "tag_during": tag_during},
@@ -311,8 +329,6 @@ class QuidditchTeamEnv(ParallelEnv):
         )
 
         # ── OOB ──────────────────────────────────────────────────────────────
-        red_pos  = self._red_pos()
-        blue_pos = self._blue_pos()
         red_oob  = float(np.linalg.norm(red_pos[:2]))  > ARENA_RADIUS
         blue_oob = float(np.linalg.norm(blue_pos[:2])) > ARENA_RADIUS
 
