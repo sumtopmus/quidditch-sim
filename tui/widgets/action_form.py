@@ -29,8 +29,8 @@ class ActionForm(Widget):
             self.action = action
             self.argv = argv
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
         self._action: Action | None = None
         self._values: dict[str, Any] = {}
 
@@ -40,9 +40,13 @@ class ActionForm(Widget):
     def set_action(self, action: Action) -> None:
         self._action = action
         self._values = {f.name: f.default for f in action.fields}
-        self._render()
+        self._rebuild()
 
-    def _render(self) -> None:
+    def _rebuild(self) -> None:
+        # NOTE: this method intentionally avoids the name `_render` — that
+        # collides with Textual's Widget._render, which must return a Visual.
+        # Overriding it (to return None and mount children) breaks the render
+        # pipeline with AttributeError on NoneType.render_strips.
         body = self.query_one("#form-body", Vertical)
         body.remove_children()
         a = self._action

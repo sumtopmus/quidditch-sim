@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 from textual.app import ComposeResult
 from textual.containers import Vertical
@@ -35,8 +36,8 @@ def _sparkline(values: list[float]) -> str:
 class TrainingWidget(Widget):
     """Reads ``<run_dir>/tui_progress.json`` and renders progress + stats."""
 
-    def __init__(self) -> None:
-        super().__init__()
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
         self._run_dir: Path | None = None
         self._timer: Timer | None = None
 
