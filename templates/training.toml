@@ -22,6 +22,7 @@ run_name        = "ppo_hoop"
 total_timesteps = 10_000_000
 n_envs          = 8
 seed            = 42    # integer ≥ 0 for reproducible runs; -1 to disable
+frame_stack     = 1     # team-play only: stack last N obs (1 = off).  Lets the MLP see time-derivatives.
 
 [training.ppo]
 n_steps    = 1024

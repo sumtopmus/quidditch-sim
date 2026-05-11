@@ -126,6 +126,7 @@ def build_callbacks(
     n_envs: int,
     video_env_fn: Callable[[], Any] | None = None,
     verbose: int = 0,
+    frame_stack: int = 1,
 ) -> list:
     """Build the standard SB3 callback set: checkpoint + eval + (optional) video.
 
@@ -144,12 +145,16 @@ def build_callbacks(
         config["training"]["callbacks"]["checkpoint_freq_steps"] // n_envs, 1
     )
 
-    from stable_baselines3.common.vec_env import DummyVecEnv
+    from stable_baselines3.common.vec_env import DummyVecEnv, VecFrameStack
     from stable_baselines3.common.monitor import Monitor
     # Monitor-wrap eval env so SB3's evaluate_policy stops warning about it —
     # eval reward/length numbers stay correct either way (no other wrapper
     # mutates them) but the wrapper is the canonical fix.
     eval_env = DummyVecEnv([lambda: Monitor(eval_env_fn())])
+    # Must match the training-env stack depth or SB3 will reject the eval env
+    # at EvalCallback construction (obs-space shape mismatch).
+    if frame_stack > 1:
+        eval_env = VecFrameStack(eval_env, n_stack=frame_stack)
 
     cbs: list = [
         CheckpointCallback(

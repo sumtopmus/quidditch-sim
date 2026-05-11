@@ -11,9 +11,75 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 import gymnasium as gym
+import mujoco
 import numpy as np
 
+from envs.quidditch.constants import HOOP_CENTER
 from envs.quidditch.team_env import QuidditchTeamEnv
+
+
+# ── Learner-obs augmentation ─────────────────────────────────────────────────
+# OpponentControlledEnv hands the learner a 25-d obs derived from team_env's
+# raw 22-d per-agent obs.  The transformation is wrapper-local: team_env and
+# the frozen-opponent path see the original 22-d shape.
+#
+# Layout (25 floats):
+#   [0:15]   raw team-env obs slots 0:15  (ang_vel, ang_pos, lin_vel_b, lin_pos,
+#                                          unit_to_goal)  — unchanged
+#   [15:18]  vec_to_hoop = HOOP_CENTER - learner_pos (world frame)
+#              — replaces the team-env's slot 15 signed-distance scalar
+#   [18:21]  opp_pos_rel = opp_pos - learner_pos (world frame)
+#              — same content as raw team-env slots 16:19
+#   [21:24]  opp_vel_rel (world frame, via qvel[dofadr:+3])
+#              — replaces team-env slots 19:22 which were body-mixed
+#   [24]     closing_rate = -d‖opp_pos - learner_pos‖/dt  — new scalar
+#
+# Closing_rate requires one scalar of state (prev distance), reset on every
+# env reset.
+AUGMENTED_OBS_DIM: int = 25
+
+
+class FrameStackWrapper(gym.Wrapper):
+    """Single-env frame stacking, compatible with SB3's VecFrameStack layout.
+
+    Stacks the last ``n_stack`` 1-D observations along axis 0 — oldest first,
+    newest last — matching ``VecFrameStack`` so a model trained under a
+    frame-stacked vec env can be evaluated on a frame-stacked single env
+    (e.g. the periodic video callback) without obs-shape mismatch.
+    """
+
+    def __init__(self, env: gym.Env, n_stack: int) -> None:
+        super().__init__(env)
+        if n_stack < 1:
+            raise ValueError(f"n_stack must be ≥ 1, got {n_stack}")
+        single_shape = env.observation_space.shape
+        if len(single_shape) != 1:
+            raise ValueError(
+                f"FrameStackWrapper expects 1-D obs, got shape {single_shape}"
+            )
+        self.n_stack = n_stack
+        self._single = single_shape[0]
+        new_shape = (self._single * n_stack,)
+        self.observation_space = gym.spaces.Box(
+            low=-np.inf, high=np.inf, shape=new_shape,
+            dtype=env.observation_space.dtype,
+        )
+        self._frames = np.zeros(new_shape, dtype=env.observation_space.dtype)
+
+    def reset(self, **kwargs):
+        obs, info = self.env.reset(**kwargs)
+        # Initialise every stack slot to the current obs so the policy never
+        # sees an all-zero "history" that wouldn't appear in the vec env.
+        for i in range(self.n_stack):
+            self._frames[i * self._single : (i + 1) * self._single] = obs
+        return self._frames.copy(), info
+
+    def step(self, action):
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        # Shift older frames left (drop oldest); append newest at the tail.
+        self._frames[: -self._single] = self._frames[self._single :]
+        self._frames[-self._single :] = obs
+        return self._frames.copy(), reward, terminated, truncated, info
 
 
 @runtime_checkable
@@ -217,19 +283,87 @@ class OpponentControlledEnv(gym.Env):
         self.opponent_id = next(a for a in team_env.possible_agents if a != learner_id)
         self.opponent = opponent
 
-        self.observation_space = team_env.observation_space(learner_id)
+        # Learner's policy sees the 25-d augmented obs; the opponent (via
+        # self._last_opp_obs) still receives team_env's raw 22-d obs because
+        # that's what frozen-opponent checkpoints were trained on.
+        self.observation_space = gym.spaces.Box(
+            low=-np.inf, high=np.inf, shape=(AUGMENTED_OBS_DIM,), dtype=np.float32,
+        )
         self.action_space      = team_env.action_space(learner_id)
         self.render_mode = team_env.render_mode
 
         self._last_opp_obs: np.ndarray = np.zeros(
-            self.observation_space.shape, dtype=np.float32
+            team_env.observation_space(self.opponent_id).shape, dtype=np.float32,
+        )
+        # Free-joint dofadr lookups (cached on first reset, when world exists).
+        self._learner_dofadr: int = -1
+        self._opp_dofadr:     int = -1
+        # State for closing_rate computation.
+        self._prev_dist_to_opp: float = 0.0
+
+    def _cache_dofadrs(self) -> None:
+        model = self.team_env._world.model
+        for prefix, attr in (
+            (self.learner_id,  "_learner_dofadr"),
+            (self.opponent_id, "_opp_dofadr"),
+        ):
+            bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, prefix)
+            jnt = int(model.body_jntadr[bid])
+            setattr(self, attr, int(model.jnt_dofadr[jnt]))
+
+    def _augment_learner_obs(self, raw_obs: np.ndarray) -> np.ndarray:
+        """Map team_env's 22-d learner obs to the wrapper's 25-d obs.
+
+        Slot 15 (signed-distance scalar) is dropped; slots 19:22 (body-mixed
+        relative velocity) are dropped.  In their place we install:
+          [15:18] vec_to_hoop          (world frame)
+          [21:24] opp_vel_rel          (world frame, via free-joint qvel)
+          [24]    closing_rate         (−d‖opp − learner‖/dt)
+        """
+        data  = self.team_env._world.data
+        # Free-joint qvel[0:3] is world-frame linear velocity for both bodies.
+        learner_vel_world = data.qvel[
+            self._learner_dofadr : self._learner_dofadr + 3
+        ].astype(np.float64)
+        opp_vel_world     = data.qvel[
+            self._opp_dofadr : self._opp_dofadr + 3
+        ].astype(np.float64)
+        opp_vel_rel       = (opp_vel_world - learner_vel_world).astype(np.float32)
+
+        # Positions come from the raw obs to avoid an extra sensor read:
+        #   raw_obs[9:12]  = learner_pos          (world)
+        #   raw_obs[16:19] = opp_pos - learner_pos (world)
+        learner_pos = raw_obs[9:12]
+        opp_pos_rel = raw_obs[16:19]
+        vec_to_hoop = (HOOP_CENTER - learner_pos).astype(np.float32)
+
+        dist_to_opp = float(np.linalg.norm(opp_pos_rel))
+        closing_rate = (
+            (self._prev_dist_to_opp - dist_to_opp) / self.team_env._red.step_period
+        )
+        self._prev_dist_to_opp = dist_to_opp
+
+        return np.concatenate(
+            [
+                raw_obs[0:15],               # ang_vel + ang_pos + lin_vel_b + lin_pos + unit_to_goal
+                vec_to_hoop,                 # [15:18]
+                opp_pos_rel,                 # [18:21]
+                opp_vel_rel,                 # [21:24]
+                np.array([closing_rate], dtype=np.float32),
+            ],
+            dtype=np.float32,
         )
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         obs, infos = self.team_env.reset(seed=seed, options=options)
         self.opponent.reset()
+        if self._learner_dofadr < 0:
+            self._cache_dofadrs()
         self._last_opp_obs = obs[self.opponent_id]
-        return obs[self.learner_id], infos[self.learner_id]
+        # Initialise prev-distance so the first step's closing_rate is 0.
+        opp_pos_rel = obs[self.learner_id][16:19]
+        self._prev_dist_to_opp = float(np.linalg.norm(opp_pos_rel))
+        return self._augment_learner_obs(obs[self.learner_id]), infos[self.learner_id]
 
     def step(self, action):
         opp_action = self.opponent.act(self._last_opp_obs)
@@ -237,7 +371,7 @@ class OpponentControlledEnv(gym.Env):
         obs, rew, term, trunc, infos = self.team_env.step(actions)
         self._last_opp_obs = obs[self.opponent_id]
         return (
-            obs[self.learner_id],
+            self._augment_learner_obs(obs[self.learner_id]),
             float(rew[self.learner_id]),
             bool(term[self.learner_id]),
             bool(trunc[self.learner_id]),

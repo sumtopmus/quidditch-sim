@@ -33,7 +33,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 from stable_baselines3 import PPO
-from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv
+from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFrameStack
 
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 from envs.quidditch.opponents import OpponentControlledEnv, from_spec
@@ -154,6 +154,11 @@ def main() -> None:
         for _ in range(n_envs)
     ]
     vec_env = SubprocVecEnv(env_fns) if n_envs > 1 else DummyVecEnv(env_fns)
+    # Frame-stack so the MLP can derive closing-rate signals across time steps.
+    # The eval / video envs in build_callbacks must match this stack depth.
+    frame_stack = int(config["training"].get("frame_stack", 1))
+    if frame_stack > 1:
+        vec_env = VecFrameStack(vec_env, n_stack=frame_stack)
 
     ppo_kwargs: dict = {
         k: v for k, v in config["training"].get("ppo", {}).items()
@@ -213,12 +218,16 @@ def main() -> None:
     # Video env factory: mirrors the eval env but in rgb_array mode so
     # the offscreen renderer produces frames.  build_callbacks only
     # appends the video callback when video_env_fn is provided.
-    def _make_video_env() -> OpponentControlledEnv:
+    def _make_video_env():
         team = QuidditchTeamEnv(cfg=cfg, render_mode="rgb_array")
         opp  = from_spec(args.opponent, deterministic=True)
-        return OpponentControlledEnv(
+        env = OpponentControlledEnv(
             team, learner_id=args.learner, opponent=opp,
         )
+        if frame_stack > 1:
+            from envs.quidditch.opponents import FrameStackWrapper
+            return FrameStackWrapper(env, n_stack=frame_stack)
+        return env
 
     callbacks = build_callbacks(
         run_dir=run_dir,
@@ -227,6 +236,7 @@ def main() -> None:
         config=config,
         n_envs=n_envs,
         video_env_fn=_make_video_env,
+        frame_stack=frame_stack,
         verbose=verbose,
     )
 
