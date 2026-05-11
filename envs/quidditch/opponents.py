@@ -81,6 +81,13 @@ class FrameStackWrapper(gym.Wrapper):
         self._frames[-self._single :] = obs
         return self._frames.copy(), reward, terminated, truncated, info
 
+    # gym.Wrapper.__getattr__ skips underscore-prefixed names, so passthroughs
+    # the video callback needs (e.g. env._world.render_cells) won't resolve
+    # through the wrapper without an explicit hop.
+    @property
+    def _world(self):
+        return self.env._world
+
 
 @runtime_checkable
 class Opponent(Protocol):
