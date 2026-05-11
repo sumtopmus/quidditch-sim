@@ -48,14 +48,11 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 from stable_baselines3 import PPO
 from stable_baselines3.common.env_util import make_vec_env
 from stable_baselines3.common.vec_env import SubprocVecEnv
-from stable_baselines3.common.callbacks import (
-    CheckpointCallback,
-    EvalCallback,
-)
 
 from envs.quidditch.simple_env import QuidditchSimpleEnv
 from core.quadrotor import CONTROL_HZ
-from callbacks import VideoRecorderCallback, ResumeProgressCallback
+from callbacks import ResumeProgressCallback
+from scripts._train_common import build_callbacks
 
 
 def _ts() -> str:
@@ -311,58 +308,23 @@ def main() -> None:
         env_kwargs={"render_mode": None, **base_env_kwargs},
         vec_env_cls=SubprocVecEnv,
     )
-    # Eval env: single instance, DummyVecEnv is sufficient (no subprocess overhead).
-    eval_env = make_vec_env(
-        QuidditchSimpleEnv,
-        n_envs=1,
-        seed=seed,
-        env_kwargs={"render_mode": None, **base_env_kwargs},
-    )
 
     # ---- callbacks ----
-    # SB3 callback frequencies are in per-env steps; divide by n_envs to get
-    # the correct call cadence for VecEnv (e.g. 50_000 // 4 = 12_500 calls).
-    eval_freq = max(cfg["training"]["eval"]["eval_freq_steps"] // args.n_envs, 1)
-    checkpoint_freq = max(
-        cfg["training"]["callbacks"]["checkpoint_freq_steps"] // args.n_envs, 1
-    )
-    # Video cadence is a multiple of eval cadence; default 2 preserves the
-    # legacy 100k-step interval when eval_freq_steps=50k.
-    video_every_n_evals = int(
-        cfg["training"]["callbacks"].get("video_every_n_evals", 2)
-    )
-    video_freq = eval_freq * video_every_n_evals
-
-    checkpoint_cb = CheckpointCallback(
-        save_freq=checkpoint_freq,
-        save_path=ckpt_dir,
-        name_prefix="ppo_hoop",
+    # Shared with team training via scripts._train_common.build_callbacks:
+    # checkpoint + eval + video + TUI progress, all built consistently.
+    callbacks = build_callbacks(
+        run_dir=Path(trial_dir),
+        eval_env_fn=lambda: QuidditchSimpleEnv(render_mode=None, **base_env_kwargs),
+        config=cfg,
+        n_envs=args.n_envs,
+        video_env_fn=lambda: QuidditchSimpleEnv(
+            render_mode="rgb_array", **base_env_kwargs
+        ),
         verbose=verbose,
-    )
-    eval_cb = EvalCallback(
-        eval_env,
-        best_model_save_path=trial_dir,  # saves best_model.zip here
-        log_path=trial_dir,
-        eval_freq=eval_freq,
-        n_eval_episodes=cfg["training"]["eval"]["n_eval_episodes"],
-        deterministic=True,
-        verbose=verbose,
-    )
-    # Video sub-section is optional in older configs; defaults match the
-    # template ([training.callbacks.video] grid=true with 960x540 cells →
-    # 1080p stitched, cams = south/east/top/fixed).
-    video_cfg = cfg["training"]["callbacks"].get("video", {})
-    video_cb = VideoRecorderCallback(
-        env_fn=lambda: QuidditchSimpleEnv(render_mode="rgb_array", **base_env_kwargs),
-        video_dir=video_dir,
-        record_freq=video_freq,
-        fps=cfg["training"]["callbacks"]["video_fps"],
-        sim_hz=CONTROL_HZ,
-        verbose=verbose,
-        grid=video_cfg.get("grid", True),
-        grid_cams=tuple(video_cfg["cells"]) if "cells" in video_cfg else None,
-        cell_width=video_cfg.get("cell_width", 960),
-        cell_height=video_cfg.get("cell_height", 540),
+        total_timesteps=args.timesteps,
+        kind="single",
+        learner=None,
+        opponent_spec=None,
     )
 
     # ---- model ----
@@ -463,7 +425,7 @@ def main() -> None:
     )
     model.learn(
         total_timesteps=args.timesteps,
-        callback=[checkpoint_cb, eval_cb, video_cb, *extra_callbacks],
+        callback=callbacks + extra_callbacks,
         reset_num_timesteps=args.resume is None,
         progress_bar=not args.verbose and args.resume is None,
     )
