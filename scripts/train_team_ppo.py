@@ -238,6 +238,10 @@ def main() -> None:
         video_env_fn=_make_video_env,
         frame_stack=frame_stack,
         verbose=verbose,
+        total_timesteps=args.timesteps,
+        kind="team",
+        learner=args.learner,
+        opponent_spec=args.opponent,
     )
 
     resume_info = (

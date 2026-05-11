@@ -18,7 +18,7 @@ import tomllib
 import warnings
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Callable, Literal
 
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 
@@ -127,6 +127,10 @@ def build_callbacks(
     video_env_fn: Callable[[], Any] | None = None,
     verbose: int = 0,
     frame_stack: int = 1,
+    total_timesteps: int | None = None,
+    kind: Literal["single", "team"] = "team",
+    learner: str | None = None,
+    opponent_spec: str | None = None,
 ) -> list:
     """Build the standard SB3 callback set: checkpoint + eval + (optional) video.
 
@@ -206,6 +210,18 @@ def build_callbacks(
                 cell_width=video_cfg.get("cell_width", 960),
                 cell_height=video_cfg.get("cell_height", 540),
                 verbose=verbose,
+            )
+        )
+
+    if total_timesteps is not None:
+        from core.training.tui_progress_callback import TUIProgressCallback
+        cbs.append(
+            TUIProgressCallback(
+                run_dir=run_dir,
+                total_timesteps=total_timesteps,
+                kind=kind,
+                learner=learner,
+                opponent_spec=opponent_spec,
             )
         )
 
