@@ -229,36 +229,42 @@ class World:
     def _make_key_callback(self):
         """Build a key_callback for `mujoco.viewer.launch_passive`.
 
-        Direct-select named cameras with digit keys; ` (grave accent) returns
-        to free cam.  Tab still cycles through fixed cameras (built into the
-        viewer) — these digit shortcuts are additive, not a replacement.
+        Direct-select named cameras with letter keys; ` (grave accent)
+        returns to free cam.  MuJoCo's built-in ``[`` / ``]`` still cycle
+        through every fixed cam in declaration order — these shortcuts
+        are additive, not a replacement.
 
             ` (grave) → free cam
-            1 → north  2 → east       3 → south  4 → west
-            5 → tpv    6 → port       7 → starboard
-            8 → fpv    9 → top        0 → fixed
+            N → north  E → east  S → south  W → west
+            R → red_0_tpv   (chase cam behind Red)
+            B → blue_0_tpv  (chase cam behind Blue)
+            T → top         (map-style cam, 5 m up)
+            F → fixed       (cinematic broadcast cam)
 
-        Per-drone names (tpv, port, starboard, fpv) go through
-        ``resolve_cam_name`` so they auto-prefix to the first registered
-        drone (e.g. ``red_0_tpv`` in single-agent, the Red side in team
-        scenes).  Cameras that don't exist in the model — bare or
-        prefixed — are silently skipped at build time, so their digit is
-        a no-op.
+        Letter dispatch is case-insensitive (GLFW reports the uppercase
+        code regardless of Shift).  Letters were chosen over digits
+        because MuJoCo's own bindings hijack the number row: pressing
+        ``3`` toggles geom-group 3 (collision hulls + tag spheres) at
+        the same time the cam switches, which is confusing.  Use
+        ``[`` / ``]`` to reach the per-drone fpv / port / starboard
+        cams (not letter-bound) on demand.
+
+        Cameras that don't exist in the model (e.g. blue_0_tpv in
+        single-agent scenes) are silently skipped at build time, so
+        their key is a no-op.
         """
-        digit_to_cam = {
-            "1": "north",
-            "2": "east",
-            "3": "south",
-            "4": "west",
-            "5": "tpv",
-            "6": "port",
-            "7": "starboard",
-            "8": "fpv",
-            "9": "top",
-            "0": "fixed",
+        key_to_cam = {
+            "N": "north",
+            "E": "east",
+            "S": "south",
+            "W": "west",
+            "R": "red_0_tpv",
+            "B": "blue_0_tpv",
+            "T": "top",
+            "F": "fixed",
         }
         cam_ids: dict[str, int] = {}
-        for digit, name in digit_to_cam.items():
+        for key, name in key_to_cam.items():
             resolved = self.resolve_cam_name(name)
             if resolved is None:
                 continue
@@ -266,7 +272,7 @@ class World:
                 self.model, mujoco.mjtObj.mjOBJ_CAMERA, resolved
             )
             if cid >= 0:
-                cam_ids[digit] = cid
+                cam_ids[key] = cid
 
         def cb(keycode: int) -> None:
             if self._viewer is None:
@@ -274,7 +280,9 @@ class World:
             ch = chr(keycode) if 0 < keycode < 128 else ""
             if ch == "`":
                 self._viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FREE
-            elif ch in cam_ids:
+                return
+            ch = ch.upper()
+            if ch in cam_ids:
                 self._viewer.cam.type = mujoco.mjtCamera.mjCAMERA_FIXED
                 self._viewer.cam.fixedcamid = cam_ids[ch]
 
