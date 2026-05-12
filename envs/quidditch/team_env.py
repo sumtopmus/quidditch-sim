@@ -490,9 +490,14 @@ class QuidditchTeamEnv(ParallelEnv):
         truncations  = {self._red_id: False, self._blue_id: False}
         if done:
             self.agents = []
+        # Carry forward the originating cause flag so end-of-episode bucketing
+        # still classifies this as a drone-drone crash (aftermath only fires
+        # on drone_drone_crash — see _enter_aftermath caller).
         infos: dict[str, dict[str, Any]] = {
-            self._red_id:  {"aftermath": True, "step": self._step_count},
-            self._blue_id: {"aftermath": True, "step": self._step_count},
+            self._red_id:  {"aftermath": True, "drone_drone_crash": True,
+                            "step": self._step_count},
+            self._blue_id: {"aftermath": True, "drone_drone_crash": True,
+                            "step": self._step_count},
         }
         return self._all_obs(), rewards, terminations, truncations, infos
 

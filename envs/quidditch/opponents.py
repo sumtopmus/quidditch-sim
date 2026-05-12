@@ -307,6 +307,9 @@ class OpponentControlledEnv(gym.Env):
         self._opp_dofadr:     int = -1
         # State for closing_rate computation.
         self._prev_dist_to_opp: float = 0.0
+        # Last team_env infos from reset/step — exposed for eval callers that
+        # need both agents' info dicts (the wrapper only forwards the learner's).
+        self.last_team_infos: dict = {}
 
     def _cache_dofadrs(self) -> None:
         model = self.team_env._world.model
@@ -370,6 +373,7 @@ class OpponentControlledEnv(gym.Env):
         # Initialise prev-distance so the first step's closing_rate is 0.
         opp_pos_rel = obs[self.learner_id][16:19]
         self._prev_dist_to_opp = float(np.linalg.norm(opp_pos_rel))
+        self.last_team_infos = infos
         return self._augment_learner_obs(obs[self.learner_id]), infos[self.learner_id]
 
     def step(self, action):
@@ -377,6 +381,7 @@ class OpponentControlledEnv(gym.Env):
         actions = {self.learner_id: action, self.opponent_id: opp_action}
         obs, rew, term, trunc, infos = self.team_env.step(actions)
         self._last_opp_obs = obs[self.opponent_id]
+        self.last_team_infos = infos
         return (
             self._augment_learner_obs(obs[self.learner_id]),
             float(rew[self.learner_id]),

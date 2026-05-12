@@ -192,12 +192,15 @@ resume-team: ## ▶️  Resume team-play training  RUN_NAME=... [TRIAL=...] [CHE
 	   $(if $(LEARNER),--learner $(LEARNER)) \
 	   $(if $(OPPONENT),--opponent "$(OPPONENT)")
 
-eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI=1] [DETERMINISTIC=1]
+eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI=1] [DETERMINISTIC=1] [LEARNER=red_0|blue_0] [LEARNER_FRAME_STACK=N] [RANDOMISE_START=1]
 	@test -n "$(RED)" -a -n "$(BLUE)" || { echo "ERROR: RED=<spec> BLUE=<spec> required"; exit 1; }; \
 	 $(if $(GUI),$(MJPYTHON),$(PYTHON)) scripts/eval_team.py --red "$(RED)" --blue "$(BLUE)" \
 	   $(if $(EPISODES),--episodes $(EPISODES)) \
 	   $(if $(GUI),--gui) \
-	   $(if $(DETERMINISTIC),--deterministic)
+	   $(if $(DETERMINISTIC),--deterministic) \
+	   $(if $(LEARNER),--learner $(LEARNER)) \
+	   $(if $(LEARNER_FRAME_STACK),--learner-frame-stack $(LEARNER_FRAME_STACK)) \
+	   $(if $(RANDOMISE_START),--randomise-start)
 
 clean: ## 🧹 Remove __pycache__ and .pyc files
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
