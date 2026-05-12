@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import shutil
+import sys
 import tomllib
 import warnings
 from datetime import datetime, timedelta
@@ -21,6 +22,214 @@ from pathlib import Path
 from typing import Any, Callable
 
 from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+
+from envs.quidditch.obs_spec import ObsBlock, ObsSpec
+
+
+def _format_slot(block: ObsBlock) -> str:
+    """Return the inline-table TOML representation of one ObsBlock."""
+    parts = [f'name = "{block.name}"', f"dim = {block.dim}"]
+    if block.frame is not None:
+        parts.append(f'frame = "{block.frame}"')
+    if block.notes is not None:
+        # Escape backslashes and double-quotes for TOML basic strings.
+        escaped = block.notes.replace("\\", "\\\\").replace('"', '\\"')
+        parts.append(f'notes = "{escaped}"')
+    return "{" + ", ".join(parts) + "}"
+
+
+def format_obs_block(spec: ObsSpec, n_stack: int) -> str:
+    """Return the [obs] block text (including the [obs] header) for run_info.toml.
+
+    Inline-array-of-tables form: one {name=..., dim=..., frame=..., notes=...}
+    entry per block.  Optional fields (frame, notes) are omitted when None.
+    """
+    lines = ["\n[obs]", f"dim     = {spec.dim}", f"n_stack = {n_stack}",
+             "# slots is an inline array-of-tables; each entry is one ObsBlock.",
+             "slots = ["]
+    for block in spec.blocks:
+        lines.append(f"  {_format_slot(block)},")
+    lines.append("]\n")
+    return "\n".join(lines)
+
+
+def read_obs_spec(info_path: Path | str) -> tuple[ObsSpec, int] | None:
+    """Parse run_info.toml and return (ObsSpec, n_stack) or None if [obs] absent."""
+    data = tomllib.loads(Path(info_path).read_text())
+    obs = data.get("obs")
+    if obs is None:
+        return None
+    blocks = tuple(
+        ObsBlock(
+            name=s["name"], dim=s["dim"],
+            frame=s.get("frame"), notes=s.get("notes"),
+        )
+        for s in obs["slots"]
+    )
+    spec = ObsSpec(blocks)
+    if spec.dim != obs["dim"]:
+        raise ValueError(
+            f"[obs].dim={obs['dim']} disagrees with sum of slot dims ({spec.dim}) "
+            f"in {info_path}"
+        )
+    return spec, int(obs["n_stack"])
+
+
+def _block_summary(block: ObsBlock | None) -> str:
+    if block is None:
+        return "—"  # em-dash
+    parts = [block.name.ljust(14), f"dim={block.dim}"]
+    if block.frame is not None:
+        parts.append(block.frame)
+    return " ".join(parts)
+
+
+def _render_diff(parent_spec: ObsSpec | None, parent_n_stack: int | None,
+                 current_spec: ObsSpec, current_n_stack: int,
+                 parent_path: Path) -> str:
+    """Render the column-by-column diff including emoji status indicators."""
+    out: list[str] = []
+    out.append("Obs spec mismatch between parent and current env.")
+    out.append(f"  parent: {parent_path}")
+    if parent_spec is None:
+        out.append(f"  (parent has no [obs] block — older run, pre-obs-spec feature)")
+        out.append(f"  current: {current_spec.dim}-d  (n_stack={current_n_stack})")
+        out.append("")
+        out.append("  Run with --obs-surgery to copy matching blocks and "
+                   "small-init the rest.")
+        return "\n".join(out)
+
+    out.append(f"  current: {current_spec.dim}-d  (n_stack={current_n_stack})")
+    out.append("")
+    header = f"  {'offset':<8} {'parent':<30}  {'current':<30}"
+    out.append(header)
+    out.append(f"  {'-' * 6:<8} {'-' * 28:<30}  {'-' * 28:<30}")
+
+    # Parallel walk by name+dim.  Same-name-same-dim aligns; otherwise look
+    # ahead to decide whether to emit "removed" (advance parent) or "added"
+    # (advance current) — the choice depends on which side carries the upcoming
+    # match.
+    p_blocks = list(parent_spec.blocks)
+    c_blocks = list(current_spec.blocks)
+    pi = ci = 0
+    p_off = c_off = 0
+    notes_diffs: list[tuple[str, str | None, str | None]] = []
+
+    def _pair_aligned(pb: ObsBlock, cb: ObsBlock) -> bool:
+        return pb.name == cb.name and pb.dim == cb.dim
+
+    while pi < len(p_blocks) or ci < len(c_blocks):
+        pb = p_blocks[pi] if pi < len(p_blocks) else None
+        cb = c_blocks[ci] if ci < len(c_blocks) else None
+        if pb is not None and cb is not None and _pair_aligned(pb, cb):
+            # Aligned: either exact match, frame-only diff, or notes-only diff.
+            offset = f"{p_off}:{p_off + pb.dim}"
+            if pb.frame == cb.frame:
+                status = "✅"
+                if pb.notes != cb.notes:
+                    notes_diffs.append((pb.name, pb.notes, cb.notes))
+            else:
+                status = "⚠️"  # frame changed
+            out.append(
+                f"  {offset:<8} {_block_summary(pb):<30}  {_block_summary(cb):<30}  "
+                f"{status}{'  frame changed' if status == '⚠️' else ''}"
+            )
+            pi += 1; ci += 1
+            p_off += pb.dim; c_off += cb.dim
+            continue
+        # Decide which side to advance: if parent's head will be matched by a
+        # later current block, emit "added" for current's head first; otherwise
+        # parent's head is gone — emit "removed" and advance parent.
+        parent_head_in_current = (
+            pb is not None
+            and any(_pair_aligned(pb, c) for c in c_blocks[ci:])
+        )
+        advance_parent = cb is None or (pb is not None and not parent_head_in_current)
+        if advance_parent and pb is not None:
+            offset = f"{p_off}:{p_off + pb.dim}"
+            out.append(
+                f"  {offset:<8} {_block_summary(pb):<30}  {_block_summary(None):<30}  "
+                f"❌  removed"
+            )
+            pi += 1; p_off += pb.dim
+        else:
+            offset = f"{c_off}:{c_off + cb.dim}"
+            out.append(
+                f"  {offset:<8} {_block_summary(None):<30}  {_block_summary(cb):<30}  "
+                f"❌  added"
+            )
+            ci += 1; c_off += cb.dim
+
+    if parent_n_stack != current_n_stack:
+        out.append(
+            f"  {'n_stack':<8} {str(parent_n_stack):<30}  {str(current_n_stack):<30}  "
+            f"❌"
+        )
+
+    if notes_diffs:
+        out.append("")
+        out.append("  ⚠️  Notes changed on matching blocks "
+                   "(informational, load proceeds):")
+        for name, pn, cn in notes_diffs:
+            out.append(f"       {name}:")
+            out.append(f"         parent:  {pn or '(none)'}")
+            out.append(f"         current: {cn or '(none)'}")
+
+    out.append("")
+    out.append("  Run with --obs-surgery to copy matching blocks and "
+               "small-init the rest.")
+    return "\n".join(out)
+
+
+def _is_compat(parent_spec: ObsSpec, parent_n_stack: int,
+               current_spec: ObsSpec, current_n_stack: int) -> bool:
+    """Return True iff load can proceed without surgery."""
+    if parent_n_stack != current_n_stack:
+        return False
+    if len(parent_spec.blocks) != len(current_spec.blocks):
+        return False
+    for pb, cb in zip(parent_spec.blocks, current_spec.blocks):
+        if pb.name != cb.name or pb.dim != cb.dim or pb.frame != cb.frame:
+            return False
+    # Notes differences are tolerated (informational).
+    return True
+
+
+def check_obs_compat(parent_info: Path | str, current: ObsSpec, current_n_stack: int,
+                     *, surgery: bool) -> tuple[ObsSpec | None, int | None]:
+    """Compare parent's [obs] block to (current, current_n_stack).
+
+    Returns (parent_spec, parent_n_stack) on success.  On strict-mode failure
+    (mismatch with surgery=False), prints the diff to stdout and calls
+    sys.exit(2).  When surgery=True, accepts any mismatch (including a parent
+    that lacks an [obs] block — returns (None, None) in that case).
+    """
+    parent_path = Path(parent_info)
+    parsed = read_obs_spec(parent_path)
+
+    if parsed is None:
+        if surgery:
+            return None, None
+        print(_render_diff(None, None, current, current_n_stack, parent_path))
+        sys.exit(2)
+
+    parent_spec, parent_n_stack = parsed
+    if _is_compat(parent_spec, parent_n_stack, current, current_n_stack):
+        # Even on compat, surface notes diffs as informational.
+        diff = _render_diff(parent_spec, parent_n_stack, current, current_n_stack,
+                            parent_path)
+        if "Notes changed" in diff:
+            # Print only the notes-changed section (compat passed otherwise).
+            tail = diff.split("⚠️  Notes changed", 1)
+            print("⚠️  Notes changed" + tail[1])
+        return parent_spec, parent_n_stack
+
+    if surgery:
+        return parent_spec, parent_n_stack
+
+    print(_render_diff(parent_spec, parent_n_stack, current, current_n_stack,
+                       parent_path))
+    sys.exit(2)
 
 
 def load_config(path: str | Path) -> dict[str, Any]:
@@ -89,6 +298,8 @@ def write_run_info(
     extra: dict[str, Any] | None = None,
     resume: dict[str, Any] | None = None,
     pretrain: dict[str, Any] | None = None,
+    obs_spec: ObsSpec | None = None,
+    n_stack: int = 1,
     started: datetime | None = None,
     elapsed_s: float | None = None,
     steps_trained: int | None = None,
@@ -143,6 +354,8 @@ def write_run_info(
             f"{total_line}\n"
         )
 
+    obs_block = format_obs_block(obs_spec, n_stack) if obs_spec is not None else ""
+
     content = (
         "# Run info — written by train_team_ppo.py.  Read by scripts/lineage.py.\n"
         "\n"
@@ -155,6 +368,7 @@ def write_run_info(
         f"{steps_line}\n"
         f"{resume_block}"
         f"{pretrain_block}"
+        f"{obs_block}"
         f"{extra_block}"
     )
     (run_dir / "info.toml").write_text(content)
