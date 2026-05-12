@@ -37,36 +37,43 @@ class ActionForm(Widget):
     def compose(self) -> ComposeResult:
         yield Vertical(id="form-body")
 
-    def set_action(self, action: Action) -> None:
+    async def set_action(self, action: Action) -> None:
         self._action = action
         self._values = {f.name: f.default for f in action.fields}
-        self._rebuild()
+        await self._rebuild()
 
-    def _rebuild(self) -> None:
+    async def _rebuild(self) -> None:
         # NOTE: this method intentionally avoids the name `_render` — that
         # collides with Textual's Widget._render, which must return a Visual.
         # Overriding it (to return None and mount children) breaks the render
         # pipeline with AttributeError on NoneType.render_strips.
+        #
+        # remove_children() is async — it returns an AwaitRemove that the
+        # event loop must process before subsequent mount() calls run.
+        # Without `await`, the new mounts race ahead of the removal and
+        # DuplicateIds fires whenever two actions share a field name like
+        # RUN_NAME.
         body = self.query_one("#form-body", Vertical)
-        body.remove_children()
+        await body.remove_children()
         a = self._action
         if a is None:
-            body.mount(Static("Select an action ↑↓", classes="dim"))
+            await body.mount(Static("Select an action ↑↓", classes="dim"))
             return
 
         glyph = getattr(theme.ACTIVE, a.glyph_attr, "·")
-        body.mount(Static(f"{glyph}  {a.label}", classes="accent"))
-        body.mount(Static(""))  # spacer
-
+        children: list[Widget] = [
+            Static(f"{glyph}  {a.label}", classes="accent"),
+            Static(""),
+        ]
         for f in a.fields:
-            body.mount(Static(f.label + (" *" if f.required else "")))
-            body.mount(self._build_widget(f))
-
-        body.mount(Static(""))
-        body.mount(Horizontal(
+            children.append(Static(f.label + (" *" if f.required else "")))
+            children.append(self._build_widget(f))
+        children.append(Static(""))
+        children.append(Horizontal(
             Button("Run", id="btn-run", variant="success"),
             Button("Dry-run", id="btn-dryrun"),
         ))
+        await body.mount(*children)
 
     def _build_widget(self, f: FieldSpec) -> Widget:
         wid = f"field-{f.name}"

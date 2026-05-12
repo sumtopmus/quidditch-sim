@@ -61,8 +61,8 @@ class DroneSimApp(App):
     # ------------------------------------------------------------------
     # Tree → form coupling
 
-    def on_action_tree_selected(self, message: ActionTree.Selected) -> None:
-        self.query_one(ActionForm).set_action(message.action)
+    async def on_action_tree_selected(self, message: ActionTree.Selected) -> None:
+        await self.query_one(ActionForm).set_action(message.action)
 
     # ------------------------------------------------------------------
     # Form → run / dry-run
