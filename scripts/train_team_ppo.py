@@ -37,8 +37,10 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFram
 
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 from envs.quidditch.opponents import OpponentControlledEnv, from_spec
+from envs.quidditch.obs_spec import AUGMENTED_OBS
 from scripts._train_common import (
-    make_run_dir, build_callbacks, load_config, read_parent_chain_total, write_run_info,
+    check_obs_compat, make_run_dir, build_callbacks, load_config,
+    read_parent_chain_total, write_run_info,
 )
 from scripts.callbacks import ResumeProgressCallback
 
@@ -99,7 +101,18 @@ def parse_args() -> argparse.Namespace:
                    help="path to a parent best_model.zip whose weights are "
                         "loaded as init.  Fresh optimizer + step counter; "
                         "writes [pretrain] to info.toml for lineage tracking.")
-    return p.parse_args()
+    p.add_argument(
+        "--obs-surgery",
+        action="store_true",
+        help="When --pretrain or --warm-start is given and the obs spec has "
+             "changed since the parent run, copy matching named blocks and "
+             "small-init the rest.  Rejected with --resume.",
+    )
+    args = p.parse_args()
+    if args.obs_surgery and args.resume is not None:
+        p.error("--obs-surgery is not allowed with --resume; "
+                "resume requires an exact obs-spec match")
+    return args
 
 
 def make_env_fn(*, cfg: TeamConfig, learner_id: str, opponent_spec: str):
@@ -188,6 +201,12 @@ def main() -> None:
     pretrain_chain_total: int | None = None
     if args.resume is not None:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ▶️  Resuming from {args.resume}")
+        # Resume requires exact obs-spec match: --obs-surgery is forbidden here
+        # because resume means "same run, same model, same env."  A mismatch
+        # implies code drift under the run; stop and investigate.
+        parent_info = Path(args.resume).parent.parent / "info.toml"
+        check_obs_compat(parent_info, current=AUGMENTED_OBS,
+                         current_n_stack=frame_stack, surgery=False)
         # Override learning_rate from config so e.g. lr=1e-4 takes effect on
         # resume.  Other PPO hyperparameters keep their checkpoint values —
         # changing gamma/n_steps/etc. mid-training breaks invariants the value
@@ -206,12 +225,31 @@ def main() -> None:
             f"{resumed_at:,} steps; {remaining:,} remaining to {total_timesteps:,}"
         )
     elif args.warm_start:
-        from core.policies.warm_start import warm_start_ppo
+        from core.policies.warm_start import warm_start_ppo_by_spec
+        from envs.quidditch.obs_spec import SIMPLE_ENV_OBS
         ws_cfg = config.get("training", {}).get("team", {}).get("warm_start", {})
-        model = warm_start_ppo(
+        parent_info = Path(args.warm_start).parent / "info.toml"
+        if not parent_info.exists():
+            parent_info = Path(args.warm_start).parent.parent / "info.toml"
+        parent = check_obs_compat(
+            parent_info, current=AUGMENTED_OBS,
+            current_n_stack=frame_stack, surgery=True,
+        )
+        if parent[0] is None:
+            # Legacy: parent without [obs] block is assumed SIMPLE_ENV_OBS,
+            # n_stack=1.  That's the only meaning of "--warm-start" historically.
+            print(f"[warm-start] parent has no [obs] block; assuming "
+                  f"SIMPLE_ENV_OBS / n_stack=1")
+            parent_spec, parent_n_stack = SIMPLE_ENV_OBS, 1
+        else:
+            parent_spec, parent_n_stack = parent
+        model = warm_start_ppo_by_spec(
             old_checkpoint=args.warm_start,
             new_env=vec_env,
-            new_input_dim=22, old_input_dim=16,
+            parent_spec=parent_spec,
+            parent_n_stack=parent_n_stack,
+            current_spec=AUGMENTED_OBS,
+            current_n_stack=frame_stack,
             new_dim_init_scale=ws_cfg.get("new_dim_init_scale", 0.01),
             tensorboard_log=str(run_dir),
             seed=seed,
@@ -220,6 +258,14 @@ def main() -> None:
         )
     elif args.pretrain is not None:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 Pretraining from {args.pretrain}")
+        # Pretrain may cross obs-spec boundaries when --obs-surgery is set.
+        # Search both layouts: models/<run>/best_model.zip and
+        # runs/<run>/<trial>/checkpoints/<name>.zip.
+        parent_info = Path(args.pretrain).parent / "info.toml"
+        if not parent_info.exists():
+            parent_info = Path(args.pretrain).parent.parent / "info.toml"
+        check_obs_compat(parent_info, current=AUGMENTED_OBS,
+                         current_n_stack=frame_stack, surgery=args.obs_surgery)
         # Explicit per-key overrides so the child uses the *current* config's
         # hyperparams, not whatever the parent was trained with.  Matches the
         # single-agent --pretrain semantics in scripts/train_ppo.py.
@@ -304,6 +350,8 @@ def main() -> None:
                "warm_start_from": args.warm_start},
         resume=resume_info,
         pretrain=pretrain_info,
+        obs_spec=AUGMENTED_OBS,
+        n_stack=int(config["training"].get("frame_stack", 1)),
         started=started,
     )
 
@@ -336,6 +384,8 @@ def main() -> None:
                    "warm_start_from": args.warm_start},
             resume=resume_info,
             pretrain=pretrain_info,
+            obs_spec=AUGMENTED_OBS,
+            n_stack=int(config["training"].get("frame_stack", 1)),
             started=started, elapsed_s=elapsed_s,
             steps_trained=final_steps_trained,
         )
