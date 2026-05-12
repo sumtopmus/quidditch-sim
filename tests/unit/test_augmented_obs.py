@@ -15,14 +15,17 @@ import mujoco
 import numpy as np
 
 from envs.quidditch.constants import HOOP_CENTER
+from envs.quidditch.obs_spec import AUGMENTED_OBS
 from envs.quidditch.opponents import (
-    AUGMENTED_OBS_DIM,
     FrameStackWrapper,
     OpponentControlledEnv,
     from_spec,
 )
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 from tests.conftest import set_body_state
+
+
+AUGMENTED_OBS_DIM = AUGMENTED_OBS.dim
 
 
 def _make_blue_env() -> OpponentControlledEnv:

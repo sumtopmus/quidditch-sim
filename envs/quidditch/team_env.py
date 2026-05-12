@@ -7,7 +7,7 @@ as `attacker` and the other as `defender` via constructor kwargs.
 Phase 2 design: see docs/superpowers/specs/2026-05-06-team-play-design.md.
 
 Observation (22 floats per agent — slots 0:16 byte-for-byte compatible
-with simple_env._obs so warm_start_ppo can copy the input layer):
+with simple_env._obs so warm_start_ppo_by_spec can copy the input layer):
     [0:3]   angular velocity  — body frame, rad/s
     [3:6]   attitude euler    — ground frame, rad
     [6:9]   linear velocity   — body frame, m/s
@@ -34,6 +34,8 @@ from pettingzoo import ParallelEnv
 from core.world import World
 from core.quadrotor import Quadrotor
 from core.drone.cf2x import cf2x_assets, cf2x_fragment
+from envs.quidditch import obs_spec
+from envs.quidditch.obs_spec import TEAM_ENV_OBS
 from envs.quidditch.scene import arena_wall_fragment, hoop_fragment
 from envs.quidditch.scoring import GeomDistanceScorer
 from envs.quidditch.tagging import TagDistanceScorer
@@ -115,7 +117,8 @@ class QuidditchTeamEnv(ParallelEnv):
         self.possible_agents = [self._red_id, self._blue_id]
         self.agents: list[str] = list(self.possible_agents)
 
-        obs_box = spaces.Box(low=-np.inf, high=np.inf, shape=(22,), dtype=np.float32)
+        obs_box = spaces.Box(low=-np.inf, high=np.inf, shape=(TEAM_ENV_OBS.dim,),
+                             dtype=np.float32)
         act_box = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
         self.observation_spaces: dict[str, spaces.Box] = {
             self._red_id:  obs_box,
@@ -473,15 +476,22 @@ class QuidditchTeamEnv(ParallelEnv):
         unit_to_goal = vec_to_goal / (dist_g + 1e-8)
         signed_dist_norm = self._signed_dist_to_hoop_plane(lin_pos) / ARENA_RADIUS
 
+        # OPP_VEL_REL_BODY (legacy body_mixed): each velocity is in its own body
+        # frame.  This is contractually frozen for TEAM_ENV_OBS so frozen-Red
+        # checkpoints keep working.  The world-frame variant lives in AUGMENTED_OBS.
         opp_pos_rel = opp_pos     - lin_pos
         opp_vel_rel = opp_lin_vel - lin_vel_b
 
-        return np.concatenate(
-            [ang_vel, ang_pos, lin_vel_b, lin_pos,
-             unit_to_goal, [signed_dist_norm],
-             opp_pos_rel, opp_vel_rel],
-            dtype=np.float32,
-        )
+        return obs_spec.pack(TEAM_ENV_OBS, {
+            "ang_vel":          ang_vel,
+            "ang_pos":          ang_pos,
+            "lin_vel":          lin_vel_b,
+            "lin_pos":          lin_pos,
+            "unit_to_goal":     unit_to_goal,
+            "signed_dist_norm": [signed_dist_norm],
+            "opp_pos_rel":      opp_pos_rel,
+            "opp_vel_rel":      opp_vel_rel,
+        })
 
     def _all_obs(self) -> dict[str, np.ndarray]:
         return {a: self._build_agent_obs(a) for a in self.possible_agents}
