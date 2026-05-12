@@ -33,6 +33,8 @@ from pathlib import Path
 # Allow imports from the project root (envs/, scripts/) regardless of CWD.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+from scripts._train_common import read_parent_chain_total
+
 # SB3 warns when train and eval vec envs are different types (SubprocVecEnv vs
 # DummyVecEnv).  Using DummyVecEnv for the single-instance eval env is
 # intentional — no subprocess overhead needed for n_envs=1.
@@ -189,32 +191,6 @@ def _write_run_info(
 
     with open(path, "w") as fh:
         fh.write(content)
-
-
-def _read_parent_chain_total(pretrain_path: str) -> int | None:
-    """Read parent's [pretrain].total_steps (or [run].steps_trained as fallback).
-
-    Returns None if no info file is found alongside the pretrain checkpoint.
-    `total_steps` already reflects the parent's full ancestry, so child's
-    cumulative = this_value + child's own num_timesteps.
-    """
-    parent_dir = Path(pretrain_path).resolve().parent
-    for fname in ("info.toml", "run_info.toml"):
-        candidate = parent_dir / fname
-        if not candidate.exists():
-            continue
-        try:
-            data = tomllib.loads(candidate.read_text())
-        except Exception:
-            return None
-        total = data.get("pretrain", {}).get("total_steps")
-        if isinstance(total, int):
-            return total
-        steps_trained = data.get("run", {}).get("steps_trained")
-        if isinstance(steps_trained, int):
-            return steps_trained
-        return None
-    return None
 
 
 def _load_best_metrics(trial_dir: str) -> dict | None:
@@ -403,7 +379,7 @@ def main() -> None:
         # the counter (reset_num_timesteps=True for pretrain).  Then walk parent's
         # info.toml to get the cumulative-chain total (handles deeper ancestry).
         pretrain_parent_steps = int(model.num_timesteps)
-        chain_total = _read_parent_chain_total(args.pretrain)
+        chain_total = read_parent_chain_total(args.pretrain)
         pretrain_chain_total = (
             chain_total if chain_total is not None else pretrain_parent_steps
         )

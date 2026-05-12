@@ -38,7 +38,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFram
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 from envs.quidditch.opponents import OpponentControlledEnv, from_spec
 from scripts._train_common import (
-    make_run_dir, build_callbacks, load_config, write_run_info,
+    make_run_dir, build_callbacks, load_config, read_parent_chain_total, write_run_info,
 )
 from scripts.callbacks import ResumeProgressCallback
 
@@ -77,10 +77,16 @@ def parse_args() -> argparse.Namespace:
         help="Print SB3 training logs instead of showing a rich progress bar.",
     )
 
-    # --warm-start and --resume are mutually exclusive: warm-start does the
-    # 16->22 input-layer surgery from a single-agent checkpoint; resume picks
-    # up an existing team-play trial mid-flight (same I/O dimensions, keeps
-    # optimizer state, keeps step counter).
+    # --warm-start / --resume / --pretrain are mutually exclusive — three
+    # different init modes:
+    #   * --warm-start  surgically extends a single-agent (16-d) checkpoint's
+    #                   input layer to the team obs space (22-d).
+    #   * --resume      continues an existing team trial mid-flight (same I/O,
+    #                   keeps optimizer state + step counter).
+    #   * --pretrain    same-architecture lineage warm-start: loads policy +
+    #                   value weights, resets optimizer + step counter, writes
+    #                   a [pretrain] block to info.toml so scripts/lineage.py
+    #                   can walk the chain back to the parent.
     g = p.add_mutually_exclusive_group()
     g.add_argument("--warm-start", default="",
                    help="path to old single-agent best_model.zip (input-layer surgery)")
@@ -89,6 +95,10 @@ def parse_args() -> argparse.Namespace:
                         "counter; trains for the remaining steps to total_timesteps. "
                         "Loads --learner / --opponent from the parent trial's info.toml "
                         "if not given on the CLI.")
+    g.add_argument("--pretrain", default=None, metavar="PATH",
+                   help="path to a parent best_model.zip whose weights are "
+                        "loaded as init.  Fresh optimizer + step counter; "
+                        "writes [pretrain] to info.toml for lineage tracking.")
     return p.parse_args()
 
 
@@ -174,6 +184,8 @@ def main() -> None:
     verbose = 1 if args.verbose else 0
 
     resumed_at: int | None = None
+    pretrain_parent_steps: int | None = None
+    pretrain_chain_total: int | None = None
     if args.resume is not None:
         print(f"[{datetime.now().strftime('%H:%M:%S')}] ▶️  Resuming from {args.resume}")
         # Override learning_rate from config so e.g. lr=1e-4 takes effect on
@@ -205,6 +217,38 @@ def main() -> None:
             seed=seed,
             verbose=verbose,
             **ppo_kwargs,
+        )
+    elif args.pretrain is not None:
+        print(f"[{datetime.now().strftime('%H:%M:%S')}] 🔄 Pretraining from {args.pretrain}")
+        # Explicit per-key overrides so the child uses the *current* config's
+        # hyperparams, not whatever the parent was trained with.  Matches the
+        # single-agent --pretrain semantics in scripts/train_ppo.py.
+        model = PPO.load(
+            args.pretrain,
+            env=vec_env,
+            tensorboard_log=str(run_dir),
+            verbose=verbose,
+            n_steps=ppo_kwargs.get("n_steps"),
+            batch_size=ppo_kwargs.get("batch_size"),
+            n_epochs=ppo_kwargs.get("n_epochs"),
+            learning_rate=ppo_kwargs["learning_rate"],
+            gamma=ppo_kwargs.get("gamma"),
+            gae_lambda=ppo_kwargs.get("gae_lambda"),
+            clip_range=ppo_kwargs.get("clip_range"),
+            ent_coef=ppo_kwargs.get("ent_coef"),
+        )
+        # Capture parent step count BEFORE model.learn() resets the counter
+        # via reset_num_timesteps=True (computed below as args.resume is None).
+        # Then walk parent's info.toml so the child's [pretrain].total_steps
+        # reflects the full ancestry, not just the immediate parent.
+        pretrain_parent_steps = int(model.num_timesteps)
+        chain_total = read_parent_chain_total(args.pretrain)
+        pretrain_chain_total = (
+            chain_total if chain_total is not None else pretrain_parent_steps
+        )
+        print(
+            f"[{datetime.now().strftime('%H:%M:%S')}] ⛓  Pretrain parent has "
+            f"{pretrain_parent_steps:,} steps; chain total {pretrain_chain_total:,}"
         )
     else:
         model = PPO(
@@ -244,6 +288,14 @@ def main() -> None:
         {"checkpoint": args.resume, "resumed_at": resumed_at}
         if args.resume is not None else None
     )
+    pretrain_info = (
+        {
+            "parent": args.pretrain,
+            "parent_steps": pretrain_parent_steps,
+            "total_steps": None,  # filled in after training (chain_total + this run's steps)
+        }
+        if args.pretrain is not None else None
+    )
 
     started = datetime.now()
     write_run_info(
@@ -251,6 +303,7 @@ def main() -> None:
         extra={"learner": args.learner, "opponent_spec": args.opponent,
                "warm_start_from": args.warm_start},
         resume=resume_info,
+        pretrain=pretrain_info,
         started=started,
     )
 
@@ -268,13 +321,23 @@ def main() -> None:
     finally:
         model.save(str(run_dir / "final_model"))
         elapsed_s = (datetime.now() - started).total_seconds()
+        final_steps_trained = int(model.num_timesteps)
+        if pretrain_info is not None:
+            # Chain total = parent's full ancestry + this trial's contribution.
+            # model.num_timesteps was reset to 0 at training start (because
+            # reset_num_timesteps=True for pretrain), so final_steps_trained
+            # is exactly this run's contribution.
+            pretrain_info["total_steps"] = (
+                (pretrain_chain_total or 0) + final_steps_trained
+            )
         write_run_info(
             run_dir, config=config, args=args,
             extra={"learner": args.learner, "opponent_spec": args.opponent,
                    "warm_start_from": args.warm_start},
             resume=resume_info,
+            pretrain=pretrain_info,
             started=started, elapsed_s=elapsed_s,
-            steps_trained=int(model.num_timesteps),
+            steps_trained=final_steps_trained,
         )
 
 
