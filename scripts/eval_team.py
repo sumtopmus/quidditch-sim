@@ -41,17 +41,26 @@ def main() -> None:
     p.add_argument("--deterministic", action="store_const", const=True, default=None,
                    help="pass deterministic=True to all frozen: opponents "
                         "(default: True with --gui, False otherwise)")
+    p.add_argument("--crash-aftermath-seconds", type=float, default=None,
+                   help="extra seconds with Red's motors cut after a drone-drone ram, "
+                        "so the crash stays on screen (default: 3.0 with --gui, 0.0 otherwise)")
     args = p.parse_args()
 
     if args.episodes is None:
         args.episodes = 5 if args.gui else 100
     if args.deterministic is None:
         args.deterministic = bool(args.gui)
+    if args.crash_aftermath_seconds is None:
+        args.crash_aftermath_seconds = 3.0 if args.gui else 0.0
 
     red_opp  = from_spec(args.red,  deterministic=args.deterministic)
     blue_opp = from_spec(args.blue, deterministic=args.deterministic)
 
-    cfg = TeamConfig(randomise_red_start=True, episode_seconds=args.episode_seconds)
+    cfg = TeamConfig(
+        randomise_red_start=True,
+        episode_seconds=args.episode_seconds,
+        crash_aftermath_seconds=args.crash_aftermath_seconds,
+    )
     render_mode = "human" if args.gui else None
     env = QuidditchTeamEnv(cfg=cfg, render_mode=render_mode)
 

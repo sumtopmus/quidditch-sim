@@ -93,6 +93,12 @@ class TeamConfig:
     walls_collide: bool = True
     randomise_red_start: bool = True
     episode_seconds: float = EPISODE_SECONDS_DEFAULT
+    # Eval-only: when > 0, a drone-drone ram does not terminate immediately.
+    # Instead Red's motors are cut and the env keeps stepping for this many
+    # extra seconds so the crash is observable on video.  Rewards are frozen
+    # at 0 during the aftermath; all other terminal conditions are suppressed
+    # until the timer expires.  Default 0 = legacy training-safe behavior.
+    crash_aftermath_seconds: float = 0.0
 
 
 class QuidditchTeamEnv(ParallelEnv):
@@ -148,6 +154,10 @@ class QuidditchTeamEnv(ParallelEnv):
         self._red_enter_signed_dist: float = 0.0
         self._red_prev_signed_dist: float  = 0.0
         self._dist_b2r_prev: float = 0.0  # used by closing-velocity shaping inside the tag zone
+
+        # Aftermath state: when > 0, a drone-drone ram already fired and the
+        # env is in the post-crash observation window with Red's motors cut.
+        self._aftermath_steps_left: int = 0
 
         self._np_random: np.random.Generator = np.random.default_rng()
 
@@ -223,6 +233,7 @@ class QuidditchTeamEnv(ParallelEnv):
         self._red_enter_signed_dist = 0.0
         self._red_prev_signed_dist  = self._signed_dist_to_hoop_plane(self._red_pos())
         self._dist_b2r_prev         = float(np.linalg.norm(self._red_pos() - self._blue_pos()))
+        self._aftermath_steps_left  = 0
 
         if self.render_mode == "human":
             time.sleep(1)
@@ -238,6 +249,9 @@ class QuidditchTeamEnv(ParallelEnv):
         dict[str, bool], dict[str, bool], dict[str, dict[str, Any]],
     ]:
         assert self._red is not None and self._blue is not None
+
+        if self._aftermath_steps_left > 0:
+            return self._step_aftermath(actions)
 
         for agent_id, action in actions.items():
             delta = np.asarray(action, dtype=np.float32) * ACTION_SCALE
@@ -387,6 +401,18 @@ class QuidditchTeamEnv(ParallelEnv):
             or red_floor or red_wall_crash or red_oob
             or blue_floor or blue_wall_crash or blue_oob
         )
+
+        # Aftermath latch: drone-drone ram defers termination so the crash
+        # is visible on video.  Take-down rewards still fire on this trigger
+        # step; subsequent aftermath steps pay 0 reward (see _step_aftermath).
+        if (
+            drone_drone_crash
+            and self.cfg.crash_aftermath_seconds > 0.0
+            and self._aftermath_steps_left == 0
+        ):
+            self._enter_aftermath()
+            any_terminal = False
+
         terminations = {self._red_id: any_terminal, self._blue_id: any_terminal}
         truncations  = {self._red_id: False, self._blue_id: False}
         if not any_terminal and self._step_count >= self._max_steps:
@@ -422,6 +448,53 @@ class QuidditchTeamEnv(ParallelEnv):
             self._hoop_scorer = None
             self._tag_scorer  = None
             self._crash_detector = None
+
+    # ── Aftermath ────────────────────────────────────────────────────────────
+
+    def _enter_aftermath(self) -> None:
+        """Cut Red's motors and arm the aftermath countdown."""
+        self._red.disable_motors()
+        n = int(ceil(self.cfg.crash_aftermath_seconds / self._red.step_period))
+        self._aftermath_steps_left = max(1, n)
+
+    def _step_aftermath(
+        self, actions: dict[str, np.ndarray],
+    ) -> tuple[
+        dict[str, np.ndarray], dict[str, float],
+        dict[str, bool], dict[str, bool], dict[str, dict[str, Any]],
+    ]:
+        """Step the world during the post-crash observation window.
+
+        Red's motors are off (latched in `_enter_aftermath`), so Red's action
+        is ignored.  Blue's policy keeps driving Blue normally.  Rewards are
+        frozen at 0 and every terminal condition is suppressed until the
+        timer expires, at which point the episode ends (terminated).
+        """
+        blue_action = actions.get(self._blue_id)
+        if blue_action is not None:
+            delta = np.asarray(blue_action, dtype=np.float32) * ACTION_SCALE
+            self._setpoint_blue += delta
+            self._setpoint_blue[0] = np.clip(self._setpoint_blue[0], -ARENA_RADIUS, ARENA_RADIUS)
+            self._setpoint_blue[1] = np.clip(self._setpoint_blue[1], -ARENA_RADIUS, ARENA_RADIUS)
+            self._setpoint_blue[2] = (self._setpoint_blue[2] + np.pi) % (2 * np.pi) - np.pi
+            self._setpoint_blue[3] = np.clip(self._setpoint_blue[3], 0.01, 4.0)
+            self._blue.set_setpoint(self._setpoint_blue)
+
+        self._world.step()
+        self._step_count += 1
+        self._aftermath_steps_left -= 1
+
+        rewards = {self._red_id: 0.0, self._blue_id: 0.0}
+        done = self._aftermath_steps_left <= 0
+        terminations = {self._red_id: done, self._blue_id: done}
+        truncations  = {self._red_id: False, self._blue_id: False}
+        if done:
+            self.agents = []
+        infos: dict[str, dict[str, Any]] = {
+            self._red_id:  {"aftermath": True, "step": self._step_count},
+            self._blue_id: {"aftermath": True, "step": self._step_count},
+        }
+        return self._all_obs(), rewards, terminations, truncations, infos
 
     # ── Helpers ──────────────────────────────────────────────────────────────
 

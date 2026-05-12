@@ -137,6 +137,7 @@ class Quadrotor:
         self._controller = Mode7Controller(_DT_CONTROL)
         self._setpoint = np.zeros(4, dtype=np.float64)
         self._pwm = np.full(4, 0.364)  # approx hover throttle
+        self._motors_disabled: bool = False
 
         # Initial pose — written into qpos by World.reset() via _reset_qpos().
         # Defaults to origin + identity orientation; callers set via set_start().
@@ -156,6 +157,17 @@ class Quadrotor:
                 f"Quadrotor supports only mode 7 (position setpoint), got {mode}"
             )
         self._controller.reset()
+
+    def disable_motors(self) -> None:
+        """Cut all motor output until the next reset.
+
+        After this call, `_compute_control` becomes a no-op and
+        `_apply_control` writes zeros into `data.xfrc_applied` for this
+        drone, so the body free-falls under gravity + residual contact
+        forces.  Cleared by `_reset_controller()` on the next episode.
+        """
+        self._motors_disabled = True
+        self._pwm[:] = 0.0
 
     def set_setpoint(self, setpoint: np.ndarray) -> None:
         """Update the position setpoint (4,) = (x, y, yaw, z)."""
@@ -297,9 +309,12 @@ class Quadrotor:
         # Hold position, initial yaw, ≥10 cm up.
         self._setpoint[:] = [pos[0], pos[1], orn[2], max(pos[2], 0.1)]
         self._pwm[:] = 0.364
+        self._motors_disabled = False
 
     def _compute_control(self) -> None:
         """Run one controller step → updated PWM (called once per control step)."""
+        if self._motors_disabled:
+            return
         state = self.state()
         self._pwm = self._controller.step(state, self._setpoint)
 
@@ -309,6 +324,9 @@ class Quadrotor:
         Called every physics substep (``_PHYS_PER_CTRL`` times per control
         step) so the world-frame wrench tracks the current rotation matrix.
         """
+        if self._motors_disabled:
+            self._world.data.xfrc_applied[self._drone_id, :] = 0.0
+            return
         rpm  = self._pwm * MAX_RPM
         rpm2 = rpm * rpm
         f    = THRUST_COEF * rpm2    # per-motor thrust [N], shape (4,)
