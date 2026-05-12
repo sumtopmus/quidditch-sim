@@ -1,0 +1,14 @@
+# Run info — written by train_team_ppo.py.
+
+[run]
+name          = "ppo_hoop_blue_4"
+trial         = "20260511_202612"
+started       = "2026-05-11T20:26:13"
+elapsed       = "48m37s"
+finished      = "2026-05-11T21:14:51"
+steps_trained = 20004864
+
+[extra]
+learner = "blue_0"
+opponent_spec = "beeline_red"
+warm_start_from = ""
