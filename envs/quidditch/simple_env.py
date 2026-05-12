@@ -49,6 +49,8 @@ from gymnasium import spaces
 from core.world import World
 from core.quadrotor import Quadrotor
 from core.drone.cf2x import cf2x_assets, cf2x_fragment
+from envs.quidditch import obs_spec
+from envs.quidditch.obs_spec import SIMPLE_ENV_OBS
 from envs.quidditch.scene import hoop_fragment, arena_wall_fragment
 from envs.quidditch.scoring import GeomDistanceScorer
 from envs.quidditch.constants import (
@@ -113,9 +115,9 @@ class QuidditchSimpleEnv(gym.Env):
         self.randomise_start = randomise_start
         self.episode_seconds = float(episode_seconds)
 
-        # 16-dim flat obs vector
+        # Obs layout declared in envs.quidditch.obs_spec.SIMPLE_ENV_OBS.
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(16,), dtype=np.float32
+            low=-np.inf, high=np.inf, shape=(SIMPLE_ENV_OBS.dim,), dtype=np.float32,
         )
         # 4-dim normalized action
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
@@ -278,14 +280,15 @@ class QuidditchSimpleEnv(gym.Env):
 
         # NB: Slots [0:16] are contractually frozen — the team env's per-agent obs
         # uses the SAME encoding for slots 0:15 (and the same signed_dist_norm at
-        # slot 15) so that warm_start_ppo can copy the input layer of the
-        # single-agent best into the team env's policy as weight surgery.  Do not
-        # reorder these slots without also updating envs/quidditch/team_env.py
-        # AND core/policies/warm_start.py.
-        return np.concatenate(
-            [ang_vel, ang_pos, lin_vel, lin_pos, unit_to_hoop, [signed_dist_norm]],
-            dtype=np.float32,
-        )
+        # slot 15) so warm_start_ppo_by_spec can copy the input layer by name.
+        return obs_spec.pack(SIMPLE_ENV_OBS, {
+            "ang_vel":          ang_vel,
+            "ang_pos":          ang_pos,
+            "lin_vel":          lin_vel,
+            "lin_pos":          lin_pos,
+            "unit_to_goal":     unit_to_hoop,
+            "signed_dist_norm": [signed_dist_norm],
+        })
 
     @staticmethod
     def _signed_dist(pos: np.ndarray) -> float:

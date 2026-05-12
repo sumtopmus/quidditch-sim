@@ -45,10 +45,15 @@ def test_resume_continues_step_counter_and_writes_resume_block(tmp_path: Path) -
     ckpt = parent_dir / "checkpoints" / f"ppo_{cold_steps}_steps.zip"
     model.save(str(ckpt))
 
-    # Write a parent info.toml so _read_parent_extra works.
+    # Write a parent info.toml so _read_parent_extra and check_obs_compat work.
+    # The [obs] block must match the current AUGMENTED_OBS spec (resume forbids
+    # surgery), and n_stack must match the current config's frame_stack (1).
+    from envs.quidditch.obs_spec import AUGMENTED_OBS
+    from scripts._train_common import format_obs_block
     (parent_dir / "info.toml").write_text(
         '[run]\nname = "team_resume_test"\ntrial = "20260508_000000"\n'
-        '\n[extra]\n'
+        + format_obs_block(AUGMENTED_OBS, n_stack=1)
+        + '\n[extra]\n'
         'learner = "red_0"\n'
         'opponent_spec = "beeline_blue"\n'
         'warm_start_from = ""\n'

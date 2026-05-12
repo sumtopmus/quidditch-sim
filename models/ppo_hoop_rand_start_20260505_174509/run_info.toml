@@ -18,3 +18,17 @@ total_steps  = 30007296
 mean_reward = 8.1737
 std_reward  = 0.7289
 at_step     = 9250000
+
+# back-filled by scripts/backfill_obs_spec.py on 2026-05-12
+[obs]
+dim     = 16
+n_stack = 1
+# slots is an inline array-of-tables; each entry is one ObsBlock.
+slots = [
+  {name = "ang_vel", dim = 3, frame = "body"},
+  {name = "ang_pos", dim = 3, frame = "body"},
+  {name = "lin_vel", dim = 3, frame = "body"},
+  {name = "lin_pos", dim = 3, frame = "world"},
+  {name = "unit_to_goal", dim = 3, frame = "world", notes = "unit vector toward hoop (red) or midpoint (blue)"},
+  {name = "signed_dist_norm", dim = 1, notes = "(pos - hoop)·hoop_normal / ARENA_RADIUS"},
+]

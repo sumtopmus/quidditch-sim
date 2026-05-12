@@ -33,7 +33,7 @@ from pathlib import Path
 # Allow imports from the project root (envs/, scripts/) regardless of CWD.
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-from scripts._train_common import read_parent_chain_total
+from scripts._train_common import check_obs_compat, read_parent_chain_total
 
 # SB3 warns when train and eval vec envs are different types (SubprocVecEnv vs
 # DummyVecEnv).  Using DummyVecEnv for the single-instance eval env is
@@ -56,8 +56,9 @@ from stable_baselines3.common.callbacks import (
 )
 
 from envs.quidditch.simple_env import QuidditchSimpleEnv
+from envs.quidditch.obs_spec import SIMPLE_ENV_OBS
 from core.quadrotor import CONTROL_HZ
-from callbacks import VideoRecorderCallback, ResumeProgressCallback
+from scripts.callbacks import VideoRecorderCallback, ResumeProgressCallback
 
 
 def _ts() -> str:
@@ -116,6 +117,8 @@ def _write_run_info(
     best: dict | None = None,
     resume: dict | None = None,
     pretrain: dict | None = None,
+    obs_spec=None,
+    n_stack: int = 1,
 ) -> None:
     """Write (or overwrite) a human-readable TOML summary of this trial.
 
@@ -174,6 +177,9 @@ def _write_run_info(
     else:
         pretrain_block = ""
 
+    from scripts._train_common import format_obs_block
+    obs_block = format_obs_block(obs_spec, n_stack) if obs_spec is not None else ""
+
     content = (
         "# Run info — written by train_ppo.py.  Read by scripts/lineage.py.\n"
         "\n"
@@ -186,6 +192,7 @@ def _write_run_info(
         f"{steps_line}\n"
         f"{resume_block}"
         f"{pretrain_block}"
+        f"{obs_block}"
         f"{best_block}"
     )
 
@@ -249,7 +256,18 @@ def parse_args() -> argparse.Namespace:
         action="store_true",
         help="Print SB3 training logs instead of showing a rich progress bar.",
     )
-    return p.parse_args()
+    p.add_argument(
+        "--obs-surgery",
+        action="store_true",
+        help="When --pretrain is given and the obs spec has changed since the "
+             "parent run, copy matching named blocks and small-init the rest.  "
+             "Rejected with --resume.",
+    )
+    args = p.parse_args()
+    if args.obs_surgery and args.resume is not None:
+        p.error("--obs-surgery is not allowed with --resume; "
+                "resume requires an exact obs-spec match")
+    return args
 
 
 def main() -> None:
@@ -347,6 +365,10 @@ def main() -> None:
     pretrain_chain_total: int | None = None
     if args.resume:
         print(f"{_ts()} ▶️  Resuming from {args.resume}")
+        # Resume requires exact obs-spec match (no surgery).
+        parent_info = Path(args.resume).parent.parent / "info.toml"
+        check_obs_compat(parent_info, current=SIMPLE_ENV_OBS,
+                         current_n_stack=1, surgery=False)
         model = PPO.load(
             args.resume,
             env=train_env,
@@ -360,6 +382,12 @@ def main() -> None:
         )
     elif args.pretrain:
         print(f"{_ts()} 🔄 Warm-starting from {args.pretrain}")
+        # Pretrain may cross obs-spec boundaries when --obs-surgery is set.
+        parent_info = Path(args.pretrain).parent / "info.toml"
+        if not parent_info.exists():
+            parent_info = Path(args.pretrain).parent.parent / "info.toml"
+        check_obs_compat(parent_info, current=SIMPLE_ENV_OBS,
+                         current_n_stack=1, surgery=args.obs_surgery)
         model = PPO.load(
             args.pretrain,
             env=train_env,
@@ -423,6 +451,8 @@ def main() -> None:
         started=start_time,
         resume=resume_info,
         pretrain=pretrain_info,
+        obs_spec=SIMPLE_ENV_OBS,
+        n_stack=1,
     )
 
     print(
@@ -464,6 +494,8 @@ def main() -> None:
         best=_load_best_metrics(trial_dir),
         resume=resume_info,
         pretrain=pretrain_info,
+        obs_spec=SIMPLE_ENV_OBS,
+        n_stack=1,
     )
 
     print(

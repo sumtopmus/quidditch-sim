@@ -12,3 +12,20 @@ steps_trained = 20004864
 learner = "blue_0"
 opponent_spec = "beeline_red"
 warm_start_from = ""
+
+# back-filled by scripts/backfill_obs_spec.py on 2026-05-12
+[obs]
+dim     = 25
+n_stack = 3
+# slots is an inline array-of-tables; each entry is one ObsBlock.
+slots = [
+  {name = "ang_vel", dim = 3, frame = "body"},
+  {name = "ang_pos", dim = 3, frame = "body"},
+  {name = "lin_vel", dim = 3, frame = "body"},
+  {name = "lin_pos", dim = 3, frame = "world"},
+  {name = "unit_to_goal", dim = 3, frame = "world", notes = "unit vector toward hoop (red) or midpoint (blue)"},
+  {name = "vec_to_hoop", dim = 3, frame = "world", notes = "HOOP_CENTER - learner_pos, not normalized"},
+  {name = "opp_pos_rel", dim = 3, frame = "world"},
+  {name = "opp_vel_rel", dim = 3, frame = "world"},
+  {name = "closing_rate", dim = 1, notes = "-d‖opp - learner‖/dt"},
+]
