@@ -3,11 +3,102 @@ from __future__ import annotations
 
 from typing import Any
 
+from textual import events
 from textual.app import ComposeResult
+from textual.binding import Binding
 from textual.containers import Vertical, Horizontal
 from textual.message import Message
+from textual.reactive import reactive
 from textual.widget import Widget
 from textual.widgets import Button, Input, Select, Static, Switch
+
+
+class FormInput(Input):
+    """Text input with vim-style nav / edit modes.
+
+    On focus, the field starts in **nav mode**: the cursor is hidden,
+    character input is suppressed, and ↑/↓/←/→/Tab/Shift+Tab bubble up to
+    ``ActionForm`` for field navigation.  Pressing **Enter** switches to
+    **edit mode** — the cursor appears, the field accepts typing, and the
+    standard Input bindings apply.  **Esc** returns to nav mode.  Losing
+    focus always resets to nav mode.
+
+    The cursor is hidden in nav mode via the ``nav-mode`` class, which
+    overrides ``.input--cursor`` styling to be transparent.
+    """
+
+    DEFAULT_CSS = """
+    FormInput.nav-mode .input--cursor {
+        background: transparent;
+        color: transparent;
+        text-style: none;
+    }
+    """
+
+    edit_mode: reactive[bool] = reactive(False)
+
+    def __init__(self, *args: Any, **kwargs: Any) -> None:
+        super().__init__(*args, **kwargs)
+        # Don't blink — visibility is governed by the nav-mode class instead.
+        self.cursor_blink = False
+
+    def on_focus(self) -> None:
+        self.edit_mode = False
+
+    def on_blur(self) -> None:
+        self.edit_mode = False
+
+    def watch_edit_mode(self, _old: bool, new: bool) -> None:
+        if new:
+            self.remove_class("nav-mode")
+        else:
+            self.add_class("nav-mode")
+
+    def on_mount(self) -> None:
+        # Apply the initial class so cursor is hidden before first focus.
+        self.add_class("nav-mode")
+
+    def on_key(self, event: events.Key) -> None:
+        if self.edit_mode:
+            if event.key == "escape":
+                event.stop()
+                self.edit_mode = False
+                return
+            # Otherwise: default Input behavior (cursor, typing, etc.).
+            return
+        # Nav mode below.
+        if event.key == "enter":
+            event.stop()
+            self.edit_mode = True
+            return
+        # Let navigation keys bubble — ActionForm / Input bindings handle them.
+        if event.key in ("up", "down", "left", "right",
+                         "tab", "shift+tab", "escape"):
+            return
+        # Swallow everything else so characters don't insert in nav mode.
+        event.stop()
+        event.prevent_default()
+
+
+class FormSelect(Select):
+    """A Select where ↑/↓ navigate form fields instead of opening the menu.
+
+    Textual's default Select binds ``enter,down,space,up`` to ``show_overlay``.
+    Subclass BINDINGS in Textual **accumulate** through MRO rather than
+    replace — so adding ``enter,space`` here would not remove the inherited
+    ``down`` / ``up`` triggers.  The fix is to bind ``down`` and ``up``
+    explicitly to a different action; Textual matches per-key during dispatch,
+    so the subclass's per-key entry wins over the parent's comma-string entry.
+
+    Enter and space continue to open the overlay via the inherited binding.
+    Once the overlay is open, focus moves into it and these bindings no
+    longer apply — overlay's own ↑/↓ (option navigation) take over.
+    """
+
+    BINDINGS = [
+        Binding("down", "app.focus_next",     "next field", show=False),
+        Binding("up",   "app.focus_previous", "prev field", show=False),
+    ]
 
 from tui import theme
 from tui.actions.base import Action, FieldKind, FieldSpec
@@ -16,6 +107,22 @@ from tui.state import scan
 
 class ActionForm(Widget):
     """Renders the currently-selected action's form fields and Run / Dry-run buttons."""
+
+    # Keep field navigation consistent with the action tree: ↑/↓ moves between
+    # focusable form children.  These fire as the key event bubbles up from
+    # the focused child (Input / FormSelect / Switch / Button), so the user
+    # doesn't have to Tab through fields.
+    #
+    # Left arrow: jump to the previous sibling in a Horizontal row (e.g.
+    # Run ← Dry-run); if there's no previous sibling, hop back to the action
+    # tree.  Inside Input, the Input's own ``cursor_left`` binding wins (it's
+    # on the focused widget so it dispatches first), so text editing is
+    # unaffected.
+    BINDINGS = [
+        Binding("up",   "app.focus_previous", "prev field", show=False),
+        Binding("down", "app.focus_next",     "next field", show=False),
+        Binding("left", "leftmost_or_tree",      "tree",       show=False),
+    ]
 
     class Run(Message):
         def __init__(self, action: Action, values: dict[str, Any]) -> None:
@@ -78,14 +185,13 @@ class ActionForm(Widget):
     def _build_widget(self, f: FieldSpec) -> Widget:
         wid = f"field-{f.name}"
         if f.kind == FieldKind.TEXT:
-            w = Input(value=str(f.default or ""), id=wid)
-            return w
+            return FormInput(value=str(f.default or ""), id=wid)
         if f.kind == FieldKind.INT:
-            return Input(value=str(f.default or ""), id=wid, type="integer")
+            return FormInput(value=str(f.default or ""), id=wid, type="integer")
         if f.kind == FieldKind.BOOL:
             return Switch(value=bool(f.default), id=wid)
         # picker:* — fill choices from scan
-        return Select(self._picker_choices(f), id=wid, prompt="(none)")
+        return FormSelect(self._picker_choices(f), id=wid, prompt="(none)")
 
     def _picker_choices(self, f: FieldSpec) -> list[tuple[str, str]]:
         if f.kind == FieldKind.PICKER_MODELS:
@@ -153,3 +259,22 @@ class ActionForm(Widget):
                 self.app.notify(f"required: {f.label}", severity="error")
                 return False
         return True
+
+    # ------------------------------------------------------------------
+    # Left-arrow navigation: previous-in-row, or back to the tree.
+
+    def action_leftmost_or_tree(self) -> None:
+        focused = self.app.focused
+        if focused is None:
+            return
+        parent = focused.parent
+        if isinstance(parent, Horizontal):
+            siblings = [c for c in parent.children if c.can_focus]
+            if focused in siblings:
+                ix = siblings.index(focused)
+                if ix > 0:
+                    siblings[ix - 1].focus()
+                    return
+        # Leftmost in its row (or not in a row) — hop back to the action tree.
+        from tui.widgets.action_tree import ActionTree
+        self.app.query_one(ActionTree).focus()

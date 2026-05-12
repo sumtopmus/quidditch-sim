@@ -23,6 +23,13 @@ Footer {
     padding: 0 1;
 }
 
+/* The pane that contains focus gets a brighter accent border so it's clear
+   which pane the keyboard is currently driving.  Same hue as the rest of
+   the accent palette, just at full saturation. */
+.panel:focus-within {
+    border: round #a78bfa;
+}
+
 #actions {
     width: 38;
 }
@@ -54,6 +61,14 @@ Footer {
 
 .tree-disabled {
     color: #5a6178;
+}
+
+/* Highlighted row in the action tree — same text color as the rest of the
+   tree (so it doesn't fight the palette), but with a subtle background
+   tint + bold so focus position is unambiguous. */
+.tree-cursor {
+    background: #2a2f3d;
+    text-style: bold;
 }
 
 Button {

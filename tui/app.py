@@ -26,6 +26,10 @@ class DroneSimApp(App):
         ("ctrl+c", "stop_selected", "stop"),
         ("l", "show_logs", "logs"),
         ("t", "toggle_tensorboard", "tensorboard"),
+        # Pane navigation: Escape from anywhere returns to the action tree.
+        # Forward direction (tree → form) is bound on ActionTree itself
+        # (Enter / Right) so it only fires when the tree has focus.
+        ("escape", "focus_actions", "back to tree"),
     ]
 
     def __init__(self, *, initial_group: str | None = None) -> None:
@@ -57,6 +61,8 @@ class DroneSimApp(App):
                 if a.group.lower() == self._initial_group.lower():
                     tree.cursor = i
                     break
+        # Land focus on the tree so ↑/↓ navigation works without a prior click.
+        self.query_one(ActionTree).focus()
 
     # ------------------------------------------------------------------
     # Tree → form coupling
@@ -153,6 +159,18 @@ class DroneSimApp(App):
             self.notify("tensorboard at http://localhost:6006")
         except Exception as e:  # noqa: BLE001
             self.notify(f"could not start tensorboard: {e}", severity="error")
+
+    def action_focus_actions(self) -> None:
+        self.query_one(ActionTree).focus()
+
+    def action_focus_form(self) -> None:
+        # Focus the first focusable descendant of the form pane (Input / Select /
+        # Switch / Button).  If the current action has no fields, there's
+        # nothing to focus inside — fall back to leaving focus on the tree.
+        form = self.query_one(ActionForm)
+        for child in form.query("Input, Select, Switch, Button"):
+            child.focus()
+            return
 
     def action_quit_with_prompt(self) -> None:
         if self._pm.is_running("training"):
