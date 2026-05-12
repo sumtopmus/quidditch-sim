@@ -34,7 +34,7 @@ TAG_COOLDOWN_SECONDS: float = 1.0      # post-exit gate on the tag-entry pulse
 # Crashes: drone-vs-{drone, wall} contact magnitudes.  At |v_rel| > threshold
 # the contact is treated as a decisive crash; below threshold contacts apply
 # physics but do not terminate the episode.
-CRASH_VEL_THR: float = 1.5             # m/s, |v_rel · contact_normal| threshold
+CRASH_VEL_THR: float = 1.0             # m/s, |v_rel · contact_normal| threshold
 
 # Default Blue start (hovering 1 m in front of the hoop, slightly below hoop height).
 BLUE_START_POS = np.array([1.0, 0.0, 1.5], dtype=np.float64)

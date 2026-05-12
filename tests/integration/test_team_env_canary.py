@@ -2,10 +2,13 @@
 
 Ported from scripts/check_team_env.py.
 
-Locked fingerprint (2026-05-11, after proximity + closing-velocity shaping):
-    step 176: TAG_ENTRY            blue +5.080  red -5.084
-    step 684: TERMINATED (SCORE)   blue -10.005 red +9.999
-    EPISODE END: red_total +1.542, blue_total -7.229
+Locked fingerprint (2026-05-11, after hoop-anchor + zero-sum dist mirror
+for blue; CRASH_VEL_THR dropped 1.5 → 1.0 m/s):
+    step 176: TAG_ENTRY            blue +5.082  red -5.084
+    step 684: TERMINATED (SCORE)   blue -10.007 red +9.999
+    EPISODE END: red_total +1.542, blue_total -6.327
+
+Red's per-step rewards are unchanged — only blue's shaping was extended.
 """
 from __future__ import annotations
 
@@ -64,7 +67,7 @@ def test_beeline_red_vs_beeline_blue_canary() -> None:
         assert seen_tag_entry_step == 176, (
             f"expected first tag_entry at step 176, got {seen_tag_entry_step}"
         )
-        assert seen_tag_entry_rew["blue_0"] == pytest.approx(+5.080, abs=1e-3)
+        assert seen_tag_entry_rew["blue_0"] == pytest.approx(+5.082, abs=1e-3)
         assert seen_tag_entry_rew["red_0"]  == pytest.approx(-5.084, abs=1e-3)
 
         assert seen_terminate_step == 684, (
@@ -74,10 +77,10 @@ def test_beeline_red_vs_beeline_blue_canary() -> None:
         assert seen_terminate_info["red_0"]["scored"], (
             f"expected SCORE termination, got info={seen_terminate_info}"
         )
-        assert seen_terminate_rew["blue_0"] == pytest.approx(-10.005, abs=1e-3)
+        assert seen_terminate_rew["blue_0"] == pytest.approx(-10.007, abs=1e-3)
         assert seen_terminate_rew["red_0"]  == pytest.approx(+9.999,  abs=1e-3)
 
         assert total["red_0"]  == pytest.approx(+1.542, abs=1e-3)
-        assert total["blue_0"] == pytest.approx(-7.229, abs=1e-3)
+        assert total["blue_0"] == pytest.approx(-6.327, abs=1e-3)
     finally:
         env.close()

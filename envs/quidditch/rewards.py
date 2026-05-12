@@ -17,6 +17,12 @@ from __future__ import annotations
 SCORE_REWARD:           float = 10.0  # drone scores through the hoop
 CRASH_PENALTY:          float = -20.0  # drone hits wall, floor, or goes OOB
 DIST_REWARD_SCALE:      float = 0.01  # multiplier on −dist/ARENA_RADIUS shaping
+# Blue-only hoop anchor: a per-step pull toward the hoop so the defender
+# doesn't follow red to the arena edge and leave the goal undefended.
+# Added in 2026-05-11 after observing blue learn to "fly to a safe corner" —
+# the midpoint shaping alone wasn't enough to keep blue near the hoop when
+# red wandered far from it.
+HOOP_ANCHOR_SCALE:      float = 0.005
 
 # ── Team-only (team_env) ────────────────────────────────────────────────────
 # Soft-tag (proximity-based): zero-sum between blue (defender) and red (attacker).

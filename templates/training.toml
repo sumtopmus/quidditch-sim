@@ -92,7 +92,7 @@ hoop_prefix      = "hoop_0"
 midpoint_alpha   = 0.5    # midpoint = α·red_pos + (1-α)·hoop_center
 tag_radius       = 0.3    # m
 tag_cooldown_s   = 1.0    # s, post-exit gate on tag-entry pulse
-crash_vel_thr    = 1.5    # m/s, |v_rel·normal| above this terminates with -20
+crash_vel_thr    = 1.0    # m/s, |v_rel·normal| above this terminates with -20
 walls_collide    = true   # arena_wall_fragment(with_collisions=true)
 
 # Team-play training defaults.  Selected when train_team_ppo.py is invoked;

@@ -143,7 +143,7 @@ def main() -> None:
         midpoint_alpha   = env_team_cfg.get("midpoint_alpha",   0.5),
         tag_radius       = env_team_cfg.get("tag_radius",       0.3),
         tag_cooldown_s   = env_team_cfg.get("tag_cooldown_s",   1.0),
-        crash_vel_thr    = env_team_cfg.get("crash_vel_thr",    1.5),
+        crash_vel_thr    = env_team_cfg.get("crash_vel_thr",    1.0),
         walls_collide    = env_team_cfg.get("walls_collide",    True),
         randomise_red_start = config.get("env", {}).get("randomise_start", True),
         episode_seconds     = config.get("env", {}).get("episode_seconds", 30.0),

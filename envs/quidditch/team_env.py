@@ -54,6 +54,7 @@ from envs.quidditch.rewards import (
     SCORE_REWARD,
     CRASH_PENALTY,
     DIST_REWARD_SCALE,
+    HOOP_ANCHOR_SCALE,
     TAG_ENTRY_REWARD,
     TAG_DURATION_REWARD_MAX,
     CLOSING_VEL_REWARD_SCALE,
@@ -352,6 +353,17 @@ class QuidditchTeamEnv(ParallelEnv):
         dist_blue = float(np.linalg.norm(blue_pos - self._midpoint()))
         rewards[self._red_id]  -= (dist_red  / ARENA_RADIUS) * DIST_REWARD_SCALE
         rewards[self._blue_id] -= (dist_blue / ARENA_RADIUS) * DIST_REWARD_SCALE
+        # Zero-sum mirror of red's hoop-distance penalty: blue is rewarded
+        # when red is far from the hoop (= blue is succeeding at defending).
+        # Same magnitude as red's penalty so the two cancel when summed.
+        rewards[self._blue_id] += (dist_red / ARENA_RADIUS) * DIST_REWARD_SCALE
+        # Blue-only hoop anchor: penalise blue for being far from the hoop
+        # regardless of red's position, so the defender doesn't follow red
+        # to the arena edge and abandon the goal.
+        dist_blue_to_hoop = float(np.linalg.norm(blue_pos - HOOP_CENTER))
+        rewards[self._blue_id] -= (
+            (dist_blue_to_hoop / ARENA_RADIUS) * HOOP_ANCHOR_SCALE
+        )
 
         # ── Score reward (terminal, asymmetric) ──────────────────────────────
         if scored:
