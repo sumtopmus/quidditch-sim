@@ -38,6 +38,7 @@ from stable_baselines3.common.vec_env import DummyVecEnv, SubprocVecEnv, VecFram
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 from envs.quidditch.opponents import OpponentControlledEnv, from_spec
 from envs.quidditch.obs_spec import AUGMENTED_OBS
+from envs.quidditch.env_factories import TeamEnvFactory
 from scripts._train_common import (
     check_obs_compat, make_run_dir, build_callbacks, load_config,
     read_parent_chain_total, write_run_info,
@@ -115,14 +116,6 @@ def parse_args() -> argparse.Namespace:
     return args
 
 
-def make_env_fn(*, cfg: TeamConfig, learner_id: str, opponent_spec: str):
-    def _thunk():
-        team = QuidditchTeamEnv(cfg=cfg)
-        opp = from_spec(opponent_spec)
-        return OpponentControlledEnv(team, learner_id=learner_id, opponent=opp)
-    return _thunk
-
-
 def main() -> None:
     args = parse_args()
 
@@ -172,16 +165,20 @@ def main() -> None:
         episode_seconds     = config.get("env", {}).get("episode_seconds", 30.0),
     )
 
-    env_fns = [
-        make_env_fn(cfg=cfg, learner_id=args.learner, opponent_spec=args.opponent)
-        for _ in range(n_envs)
-    ]
-    vec_env = SubprocVecEnv(env_fns) if n_envs > 1 else DummyVecEnv(env_fns)
-    # Frame-stack so the MLP can derive closing-rate signals across time steps.
-    # The eval / video envs in build_callbacks must match this stack depth.
+    # Factory owns vec-env construction (SubprocVecEnv for n_envs>1, plus
+    # optional VecFrameStack so the MLP can derive closing-rate signals across
+    # time steps).  Eval / video envs built below mirror the same stack depth.
     frame_stack = int(config["training"].get("frame_stack", 1))
-    if frame_stack > 1:
-        vec_env = VecFrameStack(vec_env, n_stack=frame_stack)
+    factory = TeamEnvFactory(
+        n_envs=n_envs,
+        team_cfg=cfg,
+        learner_id=args.learner,
+        opponent_spec=args.opponent,
+        obs_spec_name="AUGMENTED_OBS",
+        frame_stack=frame_stack,
+        seed=seed,
+    )
+    vec_env = factory.build_train_env()
 
     ppo_kwargs: dict = {
         k: v for k, v in config["training"].get("ppo", {}).items()
@@ -305,24 +302,19 @@ def main() -> None:
             **ppo_kwargs,
         )
 
-    # Video env factory: mirrors the eval env but in rgb_array mode so
-    # the offscreen renderer produces frames.  build_callbacks only
-    # appends the video callback when video_env_fn is provided.
-    def _make_video_env():
-        team = QuidditchTeamEnv(cfg=cfg, render_mode="rgb_array")
-        opp  = from_spec(args.opponent, deterministic=True)
-        env = OpponentControlledEnv(
-            team, learner_id=args.learner, opponent=opp,
-        )
-        if frame_stack > 1:
-            from envs.quidditch.opponents import FrameStackWrapper
-            return FrameStackWrapper(env, n_stack=frame_stack)
-        return env
+    # Video env mirrors the eval env but in rgb_array mode so the offscreen
+    # renderer produces frames.  build_callbacks only appends the video
+    # callback when video_env_fn is provided.
+    _make_video_env = factory.build_video_env_fn()
+
+    def _eval_env_fn():
+        team = QuidditchTeamEnv(cfg=cfg)
+        opp = from_spec(args.opponent)
+        return OpponentControlledEnv(team, learner_id=args.learner, opponent=opp)
 
     callbacks = build_callbacks(
         run_dir=run_dir,
-        eval_env_fn=make_env_fn(cfg=cfg, learner_id=args.learner,
-                                 opponent_spec=args.opponent),
+        eval_env_fn=_eval_env_fn,
         config=config,
         n_envs=n_envs,
         video_env_fn=_make_video_env,

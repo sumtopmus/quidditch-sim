@@ -57,6 +57,7 @@ from stable_baselines3.common.callbacks import (
 
 from envs.quidditch.simple_env import QuidditchSimpleEnv
 from envs.quidditch.obs_spec import SIMPLE_ENV_OBS
+from envs.quidditch.env_factories import SimpleEnvFactory
 from core.quadrotor import CONTROL_HZ
 from scripts.callbacks import VideoRecorderCallback, ResumeProgressCallback
 
@@ -295,23 +296,16 @@ def main() -> None:
 
     # ---- environments ----
     base_env_kwargs = _load_env_kwargs()
-    # SubprocVecEnv spawns one OS process per env so physics steps run in
-    # parallel across CPU cores.  Use class + env_kwargs (not a lambda) so
-    # the factory is picklable under macOS's "spawn" multiprocessing start method.
-    train_env = make_vec_env(
-        QuidditchSimpleEnv,
+    # Factory owns construction; train_env is a SubprocVecEnv when n_envs > 1
+    # (parallel physics across CPU cores) and a DummyVecEnv for n_envs=1.
+    factory = SimpleEnvFactory(
         n_envs=args.n_envs,
-        seed=seed,
-        env_kwargs={"render_mode": None, **base_env_kwargs},
-        vec_env_cls=SubprocVecEnv,
+        randomise_start=bool(base_env_kwargs.get("randomise_start", False)),
+        episode_seconds=float(base_env_kwargs.get("episode_seconds", 30.0)),
+        seed=seed if seed is not None else 42,
     )
-    # Eval env: single instance, DummyVecEnv is sufficient (no subprocess overhead).
-    eval_env = make_vec_env(
-        QuidditchSimpleEnv,
-        n_envs=1,
-        seed=seed,
-        env_kwargs={"render_mode": None, **base_env_kwargs},
-    )
+    train_env = factory.build_train_env()
+    eval_env = factory.build_eval_env()
 
     # ---- callbacks ----
     # SB3 callback frequencies are in per-env steps; divide by n_envs to get
