@@ -1,4 +1,4 @@
-"""Single-drone scripted scoring canary.
+"""Single-drone scripted scoring canary, Hydra-composed.
 
 Two-phase script: climb to hoop altitude at the arena centre, then push
 past the hoop along its outward normal.  Aiming directly at HOOP_CENTER
@@ -15,15 +15,24 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from hydra.utils import instantiate
 
 from envs.quidditch.constants import HOOP_CENTER, HOOP_OUTWARD_NORMAL
 from envs.quidditch.simple_env import QuidditchSimpleEnv
+from tests.conftest import hydra_compose
 
 pytestmark = pytest.mark.slow
 
 
 def test_scripted_flyaway_scores_through_hoop() -> None:
-    env = QuidditchSimpleEnv(render_mode=None, randomise_start=False)
+    """Reward stack composed via Hydra; canary fingerprint preserved."""
+    with hydra_compose(experiment="canary_single") as cfg:
+        reward_stack = instantiate(cfg.reward, _convert_="all")
+        assert len(reward_stack.terms) == 3, (
+            "canary_single must produce a 3-term stack: HoopDistancePenalty + "
+            "ScoreEvent + CrashEvent"
+        )
+        env = QuidditchSimpleEnv(render_mode=None, randomise_start=False)
     try:
         obs, _ = env.reset()
 

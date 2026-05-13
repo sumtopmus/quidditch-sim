@@ -1,23 +1,18 @@
-"""Shared training infrastructure used by train_team_ppo.py.
+"""Shared training infrastructure used by scripts/train.py.
 
 Owns:
-  - run-dir creation with timestamps
-  - info.toml / config snapshot writers
-  - the standard callback set (checkpoint + eval)
-  - TOML config loader
+  - the standard callback set (checkpoint + eval + optional video)
+  - .hydra/meta.yaml helpers (write + append + parent-chain walk)
+  - legacy info.toml obs-spec reader + compat check (used by Phase 6 migrator)
 
-Env-specific code (QuidditchSimpleEnv vs QuidditchTeamEnv + opponent) lives
-in the respective entry scripts.  train_ppo.py keeps its own copies of these
-helpers (untouched) so the single-agent canary commit stays bit-identical.
+The Hydra entrypoint (`scripts/train.py`) owns run-dir creation, config
+loading, and lifecycle management; this module is a thin helpers library.
 """
 from __future__ import annotations
 
-import argparse
-import shutil
 import sys
 import tomllib
 import warnings
-from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Callable
 
@@ -230,151 +225,6 @@ def check_obs_compat(parent_info: Path | str, current: ObsSpec, current_n_stack:
     print(_render_diff(parent_spec, parent_n_stack, current, current_n_stack,
                        parent_path))
     sys.exit(2)
-
-
-def load_config(path: str | Path) -> dict[str, Any]:
-    """Read a TOML training config and return as a dict.  Raises if missing."""
-    p = Path(path)
-    if not p.exists():
-        raise FileNotFoundError(
-            f"{p} not found.  Run `make configs` to copy templates/training.toml."
-        )
-    with p.open("rb") as fh:
-        return tomllib.load(fh)
-
-
-def make_run_dir(*, run_name: str, runs_root: str | Path = "runs") -> Path:
-    """Create runs/<run_name>/<YYYYMMDD_HHMMSS>/ and return it."""
-    trial = datetime.now().strftime("%Y%m%d_%H%M%S")
-    out = Path(runs_root) / run_name / trial
-    out.mkdir(parents=True, exist_ok=True)
-    (out / "checkpoints").mkdir(exist_ok=True)
-    (out / "videos").mkdir(exist_ok=True)
-    return out
-
-
-def read_parent_chain_total(pretrain_path: str | Path) -> int | None:
-    """Read parent's `[pretrain].total_steps` (or `[run].steps_trained` as fallback).
-
-    Returns None if no info file is found alongside the pretrain checkpoint.
-    `total_steps` already reflects the parent's full ancestry, so the child's
-    cumulative = this_value + child's own num_timesteps.  Shared with
-    train_ppo.py so single-agent and team chains use identical lineage logic.
-    """
-    parent_dir = Path(pretrain_path).resolve().parent
-    for fname in ("info.toml", "run_info.toml"):
-        candidate = parent_dir / fname
-        if not candidate.exists():
-            continue
-        try:
-            data = tomllib.loads(candidate.read_text())
-        except Exception:
-            return None
-        total = data.get("pretrain", {}).get("total_steps")
-        if isinstance(total, int):
-            return total
-        steps_trained = data.get("run", {}).get("steps_trained")
-        if isinstance(steps_trained, int):
-            return steps_trained
-        return None
-    return None
-
-
-def _fmt_elapsed(seconds: float) -> str:
-    h, rem = divmod(int(seconds), 3600)
-    m, s = divmod(rem, 60)
-    if h:
-        return f"{h}h{m:02d}m{s:02d}s"
-    if m:
-        return f"{m}m{s:02d}s"
-    return f"{s}s"
-
-
-def write_run_info(
-    run_dir: Path,
-    *,
-    config: dict[str, Any],
-    args: argparse.Namespace,
-    extra: dict[str, Any] | None = None,
-    resume: dict[str, Any] | None = None,
-    pretrain: dict[str, Any] | None = None,
-    obs_spec: ObsSpec | None = None,
-    n_stack: int = 1,
-    started: datetime | None = None,
-    elapsed_s: float | None = None,
-    steps_trained: int | None = None,
-) -> None:
-    """Write a human-readable info.toml + snapshot the config."""
-    started = started or datetime.now()
-    if elapsed_s is not None:
-        elapsed_line = f'elapsed       = "{_fmt_elapsed(elapsed_s)}"'
-        finished_line = (
-            f'finished      = '
-            f'"{(started + timedelta(seconds=elapsed_s)).isoformat(timespec="seconds")}"'
-        )
-    else:
-        elapsed_line = 'elapsed       = "in progress"'
-        finished_line = 'finished      = "in progress"'
-    steps_line = (
-        f"steps_trained = {steps_trained}"
-        if steps_trained is not None
-        else 'steps_trained = "in progress"'
-    )
-
-    extra_block = ""
-    if extra:
-        extra_block = "\n[extra]\n"
-        for k, v in extra.items():
-            if isinstance(v, str):
-                extra_block += f'{k} = "{v}"\n'
-            else:
-                extra_block += f"{k} = {v}\n"
-
-    resume_block = ""
-    if resume:
-        resume_block = (
-            "\n[resume]\n"
-            f'checkpoint  = "{resume["checkpoint"]}"\n'
-            f'resumed_at  = {resume["resumed_at"]}\n'
-        )
-
-    pretrain_block = ""
-    if pretrain:
-        total_line = (
-            f"total_steps  = {pretrain['total_steps']}"
-            if pretrain.get("total_steps") is not None
-            else 'total_steps  = "in progress"'
-        )
-        pretrain_block = (
-            "\n[pretrain]\n"
-            "# parent path is recorded as passed to --pretrain (typically "
-            "relative to repo root).\n"
-            f'parent       = "{pretrain["parent"]}"\n'
-            f"parent_steps = {pretrain['parent_steps']}\n"
-            f"{total_line}\n"
-        )
-
-    obs_block = format_obs_block(obs_spec, n_stack) if obs_spec is not None else ""
-
-    content = (
-        "# Run info — written by train_team_ppo.py.  Read by scripts/lineage.py.\n"
-        "\n"
-        "[run]\n"
-        f'name          = "{getattr(args, "run_name", None) or run_dir.parent.name}"\n'
-        f'trial         = "{run_dir.name}"\n'
-        f'started       = "{started.isoformat(timespec="seconds")}"\n'
-        f"{elapsed_line}\n"
-        f"{finished_line}\n"
-        f"{steps_line}\n"
-        f"{resume_block}"
-        f"{pretrain_block}"
-        f"{obs_block}"
-        f"{extra_block}"
-    )
-    (run_dir / "info.toml").write_text(content)
-    cfg_path = getattr(args, "config", None)
-    if cfg_path and Path(cfg_path).exists():
-        shutil.copy(cfg_path, run_dir / "config_snapshot.toml")
 
 
 def build_callbacks(
