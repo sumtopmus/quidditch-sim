@@ -1,0 +1,3 @@
+# Resolves at runtime to envs.quidditch.obs_spec.SIMPLE_ENV_OBS
+name: SIMPLE_ENV_OBS
+n_stack: 1

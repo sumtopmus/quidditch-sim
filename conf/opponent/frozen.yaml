@@ -1,0 +1,5 @@
+kind: frozen
+_target_: envs.quidditch.opponents.FrozenPolicyOpponent
+_partial_: true
+model_path: ???                     # experiment must override
+deterministic: false

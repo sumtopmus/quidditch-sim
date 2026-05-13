@@ -469,3 +469,89 @@ def build_callbacks(
         )
 
     return cbs
+
+
+# ── meta.yaml helpers (Phase 4 additions; TOML helpers stay until Phase 5) ───
+def _git_hash() -> str:
+    """Return the current HEAD short hash, or '<unknown>' if not in a repo."""
+    import subprocess
+    try:
+        return subprocess.check_output(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parent.parent,
+            stderr=subprocess.DEVNULL,
+        ).decode().strip()
+    except Exception:
+        return "<unknown>"
+
+
+def write_meta_yaml(
+    run_dir: Path | str,
+    *,
+    git_hash: str | None = None,
+    parent_chain_total: int = 0,
+    init_mode: str = "scratch",
+    parent_path: str | None = None,
+) -> None:
+    """Write the start-of-run meta.yaml into `<run_dir>/.hydra/meta.yaml`.
+
+    Final stats are appended later by `append_meta_yaml_final_stats`.
+    """
+    import yaml
+    run_dir = Path(run_dir)
+    (run_dir / ".hydra").mkdir(parents=True, exist_ok=True)
+    payload = {
+        "git_hash":           git_hash if git_hash is not None else _git_hash(),
+        "parent_chain_total": int(parent_chain_total),
+        "init_mode":          str(init_mode),
+        "parent_path":        parent_path,
+    }
+    (run_dir / ".hydra" / "meta.yaml").write_text(yaml.safe_dump(payload))
+
+
+def append_meta_yaml_final_stats(
+    run_dir: Path | str,
+    *,
+    wall_time_s: float,
+    completed_steps: int,
+    best_eval_reward: float | None = None,
+    peak_eval_step: int | None = None,
+) -> None:
+    """Merge final-stats fields into `<run_dir>/.hydra/meta.yaml`."""
+    import yaml
+    run_dir = Path(run_dir)
+    p = run_dir / ".hydra" / "meta.yaml"
+    if p.exists():
+        payload = yaml.safe_load(p.read_text()) or {}
+    else:
+        payload = {}
+    payload["final_stats"] = {
+        "wall_time_s":      float(wall_time_s),
+        "completed_steps":  int(completed_steps),
+        "best_eval_reward": None if best_eval_reward is None else float(best_eval_reward),
+        "peak_eval_step":   None if peak_eval_step  is None else int(peak_eval_step),
+    }
+    p.write_text(yaml.safe_dump(payload))
+
+
+def read_parent_chain_total_from_hydra(parent_path: str | Path) -> int | None:
+    """Walk up from a parent best_model path to its `.hydra/meta.yaml` and
+    return parent_chain_total + final_stats.completed_steps.
+
+    parent_path forms:
+      - models/X/best_model[.zip]        → models/X/.hydra/meta.yaml
+      - runs/X/<trial>/checkpoints/c.zip → runs/X/<trial>/.hydra/meta.yaml
+      - runs/X/<trial>/best_model[.zip]  → runs/X/<trial>/.hydra/meta.yaml
+    """
+    import yaml
+    parent_path = Path(parent_path).resolve()
+    # Strip a trailing checkpoints/ if present.
+    candidates = [parent_path.parent, parent_path.parent.parent]
+    for cand in candidates:
+        meta_path = cand / ".hydra" / "meta.yaml"
+        if meta_path.exists():
+            data = yaml.safe_load(meta_path.read_text()) or {}
+            ancestry = int(data.get("parent_chain_total", 0))
+            this_run = int(data.get("final_stats", {}).get("completed_steps", 0))
+            return ancestry + this_run
+    return None

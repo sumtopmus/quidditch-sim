@@ -1,0 +1,9 @@
+# Pretrain: load policy + value from a parent best_model; fresh optimizer +
+# step counter; writes a [pretrain] block-equivalent in meta.yaml.
+# obs_surgery is forbidden here (must use init=warm_start for that).
+
+mode: pretrain
+parent: ???                         # path to parent best_model[.zip]
+parent_run: null
+parent_checkpoint: null
+obs_surgery: false

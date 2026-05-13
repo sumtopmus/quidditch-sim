@@ -1,0 +1,20 @@
+# @package _global_
+# Pins the inputs for tests/integration/test_scoring_canary.py.  Locked
+# fingerprint: SCORED at step 434 / total reward 7.3837.
+# DO NOT EDIT without re-pinning the canary.
+
+run_name: _canary_single
+
+defaults:
+  - override /env: simple
+  - override /obs: simple
+  - override /reward: single_agent
+  - override /opponent: none
+  - override /eval: default
+  - override /init: scratch
+  - override /curriculum: fixed_start
+
+env:
+  n_envs: 1
+trainer:
+  total_timesteps: 1

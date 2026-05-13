@@ -27,6 +27,11 @@ class SimpleEnvFactory:
     episode_seconds: float
     obs_spec_name: str = "SIMPLE_ENV_OBS"
     seed: int = 42
+    # Optional reward stack injected by scripts/train.py after instantiation.
+    # The env itself still constructs its own RewardStack in __init__ from
+    # Python constants — Phase 5 wires this in.  Held here so Hydra can hand
+    # a composed stack to the factory without yet touching the env class.
+    reward_stack: Any = None
 
     def _make_thunk(self):
         from envs.quidditch.simple_env import QuidditchSimpleEnv
@@ -71,6 +76,8 @@ class TeamEnvFactory:
     obs_spec_name: str = "AUGMENTED_OBS"
     frame_stack: int = 3
     seed: int = 42
+    # See SimpleEnvFactory.reward_stack — same semantics.
+    reward_stack: Any = None
 
     def _make_thunk(self):
         from envs.quidditch.team_env import QuidditchTeamEnv

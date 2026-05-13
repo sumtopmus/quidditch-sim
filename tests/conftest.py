@@ -56,3 +56,39 @@ def set_body_state(
     qva = int(world.model.jnt_dofadr[jnt])
     world.data.qvel[qva : qva + 3] = vel
     world.data.qvel[qva + 3 : qva + 6] = 0.0
+
+
+# ── Hydra config composition for tests ──────────────────────────────────────
+from contextlib import contextmanager
+from pathlib import Path
+
+
+@contextmanager
+def hydra_compose(experiment: str | None = None, overrides: list[str] | None = None):
+    """Compose a Hydra config without running @hydra.main.
+
+    Usage:
+        with hydra_compose(experiment="canary_team") as cfg:
+            stack = instantiate(cfg.reward)
+
+    Each call uses a fresh Hydra context (initialize() is idempotent only when
+    cleared; this context-manager handles cleanup).
+    """
+    import hydra
+    from hydra.core.global_hydra import GlobalHydra
+
+    # Resolve conf/ relative to the repo root, not pytest's cwd.
+    conf_path = (Path(__file__).parent.parent / "conf").resolve()
+    if GlobalHydra.instance().is_initialized():
+        GlobalHydra.instance().clear()
+
+    # register_configs must run before compose for schema validation to fire.
+    from config_schema import register_configs
+    register_configs()
+
+    with hydra.initialize_config_dir(config_dir=str(conf_path), version_base=None):
+        ov = list(overrides or [])
+        if experiment is not None:
+            ov.append(f"+experiment={experiment}")
+        cfg = hydra.compose(config_name="config", overrides=ov)
+        yield cfg

@@ -1,0 +1,41 @@
+# Pre-2026-05-12 team reward stack: no HoopAnchor, no ZeroSumDistMirror,
+# flat tag-duration bonus instead of proximity-graded + closing-velocity.
+# Kept for ablation reference.  NOT used by any current experiment YAML.
+
+_target_: envs.quidditch.rewards.stack.RewardStack
+terms:
+  - _target_: envs.quidditch.rewards.terms.TagEntryPulse
+    magnitude: 5.0
+    gainer: blue_0
+    loser:  red_0
+
+  # The legacy flat 0.02-per-step tag-during bonus.  Approximated here as
+  # ProximityGradedTag(max_reward=0.02) — actual team_v1 reproduction
+  # requires restoring the legacy constants.  Marker only.
+  - _target_: envs.quidditch.rewards.terms.ProximityGradedTag
+    max_reward: 0.02            # legacy flat magnitude
+    gainer: blue_0
+    loser:  red_0
+
+  - _target_: envs.quidditch.rewards.terms.HoopDistancePenalty
+    scale: 0.01
+    agent_to_target:
+      red_0:  hoop
+      blue_0: midpoint
+
+  - _target_: envs.quidditch.rewards.terms.ScoreEvent
+    magnitude: 10.0
+    scorer: red_0
+    zero_sum_opponent: blue_0
+
+  - _target_: envs.quidditch.rewards.terms.TakeDown
+    aggressor_reward: 20.0
+    victim_penalty: -20.0
+    aggressor: blue_0
+    victim: red_0
+
+  - _target_: envs.quidditch.rewards.terms.CrashEvent
+    magnitude: -20.0
+    agent_to_crash_flags:
+      red_0:  [red_floor,  red_wall_crash,  red_oob]
+      blue_0: [blue_floor, blue_wall_crash, blue_oob]

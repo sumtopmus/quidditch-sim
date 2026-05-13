@@ -1,0 +1,20 @@
+# Single-agent reward stack — pins the scoring canary's reward arithmetic.
+# Magnitudes match envs/quidditch/rewards/__init__.py SCORE_REWARD/CRASH_PENALTY/
+# DIST_REWARD_SCALE.
+
+_target_: envs.quidditch.rewards.stack.RewardStack
+terms:
+  - _target_: envs.quidditch.rewards.terms.HoopDistancePenalty
+    scale: 0.01
+    agent_to_target:
+      drone_0: drone_hoop
+
+  - _target_: envs.quidditch.rewards.terms.ScoreEvent
+    magnitude: 10.0
+    scorer: drone_0
+    zero_sum_opponent: null
+
+  - _target_: envs.quidditch.rewards.terms.CrashEvent
+    magnitude: -20.0
+    agent_to_crash_flags:
+      drone_0: [drone_crash]

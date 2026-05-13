@@ -1,0 +1,19 @@
+# @package _global_
+# Pins inputs for tests/integration/test_team_env_canary.py.
+# DO NOT EDIT without re-running the canary and repinning.
+
+run_name: _canary_team
+
+defaults:
+  - override /env: team
+  - override /obs: augmented
+  - override /reward: team_v2
+  - override /opponent: beeline_red
+  - override /eval: default
+  - override /init: scratch
+  - override /curriculum: fixed_start
+
+env:
+  n_envs: 1
+trainer:
+  total_timesteps: 1

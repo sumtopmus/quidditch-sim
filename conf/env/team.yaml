@@ -1,0 +1,22 @@
+# TeamEnvFactory.  team_cfg, learner_id, opponent_spec are wired by train.py.
+
+_target_: envs.quidditch.env_factories.TeamEnvFactory
+n_envs: 8
+team_cfg: ???                       # built by train.py from team_env_params (below)
+learner_id: blue_0
+opponent_spec: ???                  # built by train.py from cfg.opponent
+obs_spec_name: ${obs.name}
+frame_stack: ${obs.n_stack}
+seed: ${seed}
+
+# Physics thresholds shared with reward terms (via interpolation in conf/reward/team_v2.yaml).
+# These values are read by train.py to build the TeamConfig dataclass.
+team_env_params:
+  red_prefix:      red_0
+  blue_prefix:     blue_0
+  hoop_prefix:     hoop_0
+  midpoint_alpha:  0.3
+  tag_radius:      0.3
+  tag_cooldown_s:  1.0
+  crash_vel_thr:   1.0
+  walls_collide:   true
