@@ -1,0 +1,2 @@
+# Top-level Hydra config — populated in Phase 4.
+# This file exists in Phase 1 only so `conf/` is non-empty and importable.
