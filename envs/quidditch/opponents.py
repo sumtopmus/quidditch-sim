@@ -14,29 +14,17 @@ import gymnasium as gym
 import mujoco
 import numpy as np
 
+from envs.quidditch import obs_spec
 from envs.quidditch.constants import HOOP_CENTER
+from envs.quidditch.obs_spec import AUGMENTED_OBS
 from envs.quidditch.team_env import QuidditchTeamEnv
 
 
 # ── Learner-obs augmentation ─────────────────────────────────────────────────
 # OpponentControlledEnv hands the learner a 25-d obs derived from team_env's
 # raw 22-d per-agent obs.  The transformation is wrapper-local: team_env and
-# the frozen-opponent path see the original 22-d shape.
-#
-# Layout (25 floats):
-#   [0:15]   raw team-env obs slots 0:15  (ang_vel, ang_pos, lin_vel_b, lin_pos,
-#                                          unit_to_goal)  — unchanged
-#   [15:18]  vec_to_hoop = HOOP_CENTER - learner_pos (world frame)
-#              — replaces the team-env's slot 15 signed-distance scalar
-#   [18:21]  opp_pos_rel = opp_pos - learner_pos (world frame)
-#              — same content as raw team-env slots 16:19
-#   [21:24]  opp_vel_rel (world frame, via qvel[dofadr:+3])
-#              — replaces team-env slots 19:22 which were body-mixed
-#   [24]     closing_rate = -d‖opp_pos - learner_pos‖/dt  — new scalar
-#
-# Closing_rate requires one scalar of state (prev distance), reset on every
-# env reset.
-AUGMENTED_OBS_DIM: int = 25
+# the frozen-opponent path see the original 22-d shape.  See AUGMENTED_OBS in
+# envs.quidditch.obs_spec for the canonical slot layout.
 
 
 class FrameStackWrapper(gym.Wrapper):
@@ -294,7 +282,7 @@ class OpponentControlledEnv(gym.Env):
         # self._last_opp_obs) still receives team_env's raw 22-d obs because
         # that's what frozen-opponent checkpoints were trained on.
         self.observation_space = gym.spaces.Box(
-            low=-np.inf, high=np.inf, shape=(AUGMENTED_OBS_DIM,), dtype=np.float32,
+            low=-np.inf, high=np.inf, shape=(AUGMENTED_OBS.dim,), dtype=np.float32,
         )
         self.action_space      = team_env.action_space(learner_id)
         self.render_mode = team_env.render_mode
@@ -322,15 +310,14 @@ class OpponentControlledEnv(gym.Env):
             setattr(self, attr, int(model.jnt_dofadr[jnt]))
 
     def _augment_learner_obs(self, raw_obs: np.ndarray) -> np.ndarray:
-        """Map team_env's 22-d learner obs to the wrapper's 25-d obs.
+        """Map team_env's 22-d learner obs to the 25-d AUGMENTED_OBS layout.
 
-        Slot 15 (signed-distance scalar) is dropped; slots 19:22 (body-mixed
-        relative velocity) are dropped.  In their place we install:
-          [15:18] vec_to_hoop          (world frame)
-          [21:24] opp_vel_rel          (world frame, via free-joint qvel)
-          [24]    closing_rate         (−d‖opp − learner‖/dt)
+        The raw 22-d obs is TEAM_ENV_OBS (body-mixed opp_vel_rel + signed-distance
+        scalar).  Here we replace slot 15 with vec_to_hoop (world), slots 19:22
+        with world-frame opp_vel_rel, and append closing_rate.  See the [obs]
+        section of the design spec for the contract.
         """
-        data  = self.team_env._world.data
+        data = self.team_env._world.data
         # Free-joint qvel[0:3] is world-frame linear velocity for both bodies.
         learner_vel_world = data.qvel[
             self._learner_dofadr : self._learner_dofadr + 3
@@ -340,7 +327,7 @@ class OpponentControlledEnv(gym.Env):
         ].astype(np.float64)
         opp_vel_rel       = (opp_vel_world - learner_vel_world).astype(np.float32)
 
-        # Positions come from the raw obs to avoid an extra sensor read:
+        # Pull positions from raw_obs so we don't redo sensor reads:
         #   raw_obs[9:12]  = learner_pos          (world)
         #   raw_obs[16:19] = opp_pos - learner_pos (world)
         learner_pos = raw_obs[9:12]
@@ -353,16 +340,17 @@ class OpponentControlledEnv(gym.Env):
         )
         self._prev_dist_to_opp = dist_to_opp
 
-        return np.concatenate(
-            [
-                raw_obs[0:15],               # ang_vel + ang_pos + lin_vel_b + lin_pos + unit_to_goal
-                vec_to_hoop,                 # [15:18]
-                opp_pos_rel,                 # [18:21]
-                opp_vel_rel,                 # [21:24]
-                np.array([closing_rate], dtype=np.float32),
-            ],
-            dtype=np.float32,
-        )
+        return obs_spec.pack(AUGMENTED_OBS, {
+            "ang_vel":      raw_obs[0:3],
+            "ang_pos":      raw_obs[3:6],
+            "lin_vel":      raw_obs[6:9],
+            "lin_pos":      raw_obs[9:12],
+            "unit_to_goal": raw_obs[12:15],
+            "vec_to_hoop":  vec_to_hoop,
+            "opp_pos_rel":  opp_pos_rel,
+            "opp_vel_rel":  opp_vel_rel,
+            "closing_rate": [closing_rate],
+        })
 
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         obs, infos = self.team_env.reset(seed=seed, options=options)
