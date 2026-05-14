@@ -46,7 +46,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless lineage promote install clean list-runs eval-team
+.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless lineage promote install clean list-runs eval-team sweep sweep-agent sweep-agents
 
 .DEFAULT_GOAL := help
 
@@ -146,6 +146,27 @@ eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI
 	   $(if $(LEARNER),--learner $(LEARNER)) \
 	   $(if $(LEARNER_FRAME_STACK),--learner-frame-stack $(LEARNER_FRAME_STACK)) \
 	   $(if $(RANDOMISE_START),--randomise-start)
+
+# ── Sweeps ───────────────────────────────────────────────────────────────────
+
+WANDB_PROJECT ?= drone-quidditch
+SWEEP ?=
+ID    ?=
+N     ?= 1
+
+sweep: ## 🔁 Create a wandb sweep controller  SWEEP=<name> (file under sweeps/)
+	@test -n "$(SWEEP)" || { echo "ERROR: SWEEP=<name> required (see sweeps/)"; exit 1; }
+	@test -f "sweeps/$(SWEEP).yaml" || { echo "ERROR: sweeps/$(SWEEP).yaml not found"; exit 1; }
+	$(CONDA_RUN) wandb sweep --project $(WANDB_PROJECT) sweeps/$(SWEEP).yaml
+
+sweep-agent: ## 🤖 Run one sweep agent  ID=<sweep_id>
+	@test -n "$(ID)" || { echo "ERROR: ID=<sweep_id> required (copy from 'make sweep' output)"; exit 1; }
+	$(CONDA_RUN) wandb agent $(ID)
+
+sweep-agents: ## 🤖🤖 Run N parallel sweep agents  ID=<sweep_id> N=<n>
+	@test -n "$(ID)" || { echo "ERROR: ID=<sweep_id> required"; exit 1; }
+	@echo "Spawning $(N) agents.  Single-machine: N=1 is the sane default for CPU laptop trainings."
+	@for i in $$(seq 1 $(N)); do $(CONDA_RUN) wandb agent $(ID) & done; wait
 
 clean: ## 🧹 Remove __pycache__ and .pyc files
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true

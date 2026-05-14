@@ -1,0 +1,46 @@
+# Sweep: tune lr × ent_coef × batch_size on the blue_v5 experiment.
+#
+# Wandb's sweep schema, NOT Hydra's — placed under sweeps/ (not conf/) so
+# Hydra doesn't try to compose it.  `command:` hands wandb-chosen parameter
+# values to scripts.train as Hydra CLI overrides via `${args_no_hyphens}`.
+#
+# Usage:
+#   wandb sweep --project drone-quidditch sweeps/blue_v5_lr_ent.yaml
+#   wandb agent <printed-sweep-id>
+#
+# The agent sets WANDB_SWEEP_ID in the environment, which the run's
+# _wandb_init.py sees and uses to set job_type=sweep-train automatically.
+
+program: scripts/train.py
+method: bayes
+metric:
+  name: eval/mean_reward
+  goal: maximize
+
+parameters:
+  trainer.lr:
+    distribution: log_uniform_values
+    min: 1.0e-5
+    max: 1.0e-3
+  trainer.ent_coef:
+    values: [0.005, 0.01, 0.02]
+  trainer.batch_size:
+    values: [256, 512, 1024]
+
+# Hyperband early-termination.  min_iter=5 means ≥5 evals (≈1M steps at
+# eval_freq_steps=200_000) before a run can be killed — well past the
+# first metric.  Comment out the early_terminate block for the first run
+# of a new sweep until the metric signal is trusted.
+early_terminate:
+  type: hyperband
+  min_iter: 5
+  s: 2
+
+command:
+  - ${env}
+  - python
+  - -m
+  - scripts.train
+  - +experiment=blue_v5
+  - ${args_no_hyphens}
+  - hydra.run.dir=runs/${run_name}_sweep/${now:%Y%m%d_%H%M%S}_${oc.env:WANDB_RUN_ID}
