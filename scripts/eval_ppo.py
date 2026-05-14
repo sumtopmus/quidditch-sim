@@ -97,7 +97,10 @@ def run_episode(env: QuidditchSimpleEnv, model: PPO, deterministic: bool) -> dic
 def main() -> None:
     args = parse_args()
 
-    model_path = args.model
+    # Route through resolve_parent so wandb://run:alias URIs work alongside
+    # filesystem paths.  A plain path passes through unchanged.
+    from scripts._artifact_io import resolve_parent
+    model_path = str(resolve_parent(args.model))
     if not model_path.endswith(".zip") and not os.path.exists(model_path):
         # Try with .zip extension
         if os.path.exists(model_path + ".zip"):
