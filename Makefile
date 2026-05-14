@@ -104,26 +104,11 @@ lineage: ## ⛓  Walk pretrain ancestry of a trial  [RUN_NAME=...] [TRIAL=...]
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
+promote: ## 🏆 Promote best model — alias on wandb + copy to models/  [RUN_NAME=...] [TRIAL=...]
 	@dir="$(_TRIAL_DIR)"; \
 	 [ -n "$$dir" ] || { echo "ERROR: no trials found in $(RUNS_DIR)/"; exit 1; }; \
-	 src="$$dir/best_model.zip"; \
-	 test -f "$$src" || { echo "ERROR: $$src not found — run 'make train EXP=...' first"; exit 1; }; \
-	 label=$$(echo "$$dir" | sed 's|$(RUNS_DIR)/||'); \
-	 dest="$(MODELS_DIR)/$$(echo $$label | tr '/' '_')"; \
-	 mkdir -p "$$dest"; \
-	 cp "$$src"                   "$$dest/best_model.zip"; \
-	 [ -d "$$dir/.hydra" ]        && cp -r "$$dir/.hydra"        "$$dest/.hydra" || true; \
-	 echo ""; \
-	 echo "  Trial:    $$dir"; \
-	 echo "  Promoted  →  $$dest/"; \
-	 echo ""; \
-	 echo "  To use as a pretrain parent in a new experiment YAML:"; \
-	 echo "    init:"; \
-	 echo "      parent: $$dest/best_model"; \
-	 echo ""; \
-	 echo "  To commit:"; \
-	 echo "    git add $$dest && git commit -m 'model: promote $$label best model'"
+	 test -f "$$dir/best_model.zip" || { echo "ERROR: $$dir/best_model.zip not found — run 'make train EXP=...' first"; exit 1; }; \
+	 $(PYTHON) -m scripts.promote "$$dir" --models-root "$(MODELS_DIR)"
 
 # ──────────────────────────────────────────────────────────────────────────────
 
