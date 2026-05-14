@@ -66,7 +66,7 @@ test: ## ✅ Run all tests (unit + integration)
 	@$(PYTHON) -m pytest
 
 test-fast: ## ⚡ Unit tests only (skip slow integration canaries)
-	@$(PYTHON) -m pytest tests/unit
+	@$(PYTHON) -m pytest -m "not slow"
 
 test-warm: ## ✅ Warm-start preserves single-agent behavior  MODEL=<run-name>
 	@test -n "$(MODEL)" || { echo "ERROR: MODEL=<run-name> required (see 'make list-runs')"; exit 1; }; \
