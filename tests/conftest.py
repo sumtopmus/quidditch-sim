@@ -6,6 +6,12 @@ already gives them.
 """
 from __future__ import annotations
 
+import os
+
+# macOS conda libomp guard (matches scripts/train.py / eval_ppo.py / eval_team.py);
+# SubprocVecEnv children abort with OMP error #15 otherwise.
+os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
+
 import mujoco
 
 from core.drone.cf2x import cf2x_assets, cf2x_fragment
