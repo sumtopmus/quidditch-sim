@@ -315,6 +315,7 @@ def main(cfg: DictConfig) -> None:
 
     # 5) Train
     started = datetime.now()
+    best_eval_reward: float | None = None
     try:
         model.learn(
             total_timesteps=cfg.trainer.total_timesteps,
@@ -326,11 +327,33 @@ def main(cfg: DictConfig) -> None:
         elapsed_s = (datetime.now() - started).total_seconds()
         completed_steps = int(model.num_timesteps)
         model.save(str(run_dir / "final_model"))
+
+        # EvalCallback tracks best_mean_reward on the callback instance.
+        # Reach in for the value if eval ran.
+        for cb in callbacks:
+            if hasattr(cb, "best_mean_reward"):
+                rwd = float(cb.best_mean_reward)
+                if rwd > -1e9:                                # SB3 sentinel default
+                    best_eval_reward = rwd
+                break
+
         append_meta_yaml_final_stats(
             run_dir,
             wall_time_s=elapsed_s,
             completed_steps=completed_steps,
+            best_eval_reward=best_eval_reward,
         )
+
+        # Log the best_model + .hydra/ as a wandb artifact (no-op in disabled).
+        from scripts._artifact_io import log_run_artifact
+        log_run_artifact(
+            run=wandb_run,
+            run_dir=run_dir,
+            cfg=cfg,
+            parent_chain_total=parent_chain_total,
+            best_eval_reward=best_eval_reward,
+        )
+
         import wandb as _wandb
         _wandb.finish()
 
