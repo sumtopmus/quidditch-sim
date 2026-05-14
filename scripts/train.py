@@ -39,6 +39,7 @@ from stable_baselines3 import PPO
 from config_schema import register_configs
 from envs.quidditch.obs_spec import SPEC_BY_NAME
 from envs.quidditch.team_env import TeamConfig
+from scripts._artifact_io import resolve_parent
 from scripts._train_common import (
     append_meta_yaml_final_stats,
     build_callbacks,
@@ -157,7 +158,7 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
         ), 0
 
     if cfg.init.mode == "pretrain":
-        parent = Path(cfg.init.parent)
+        parent = resolve_parent(cfg.init.parent)
         parent_hydra = parent.parent / ".hydra"
         if not parent_hydra.exists() and (parent.parent.parent / ".hydra").exists():
             parent_hydra = parent.parent.parent / ".hydra"
@@ -200,7 +201,7 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
 
     if cfg.init.mode == "warm_start":
         from core.policies.warm_start import warm_start_ppo_by_spec
-        parent = Path(cfg.init.parent)
+        parent = resolve_parent(cfg.init.parent)
         parent_hydra = parent.parent / ".hydra"
         if not parent_hydra.exists() and (parent.parent.parent / ".hydra").exists():
             parent_hydra = parent.parent.parent / ".hydra"
