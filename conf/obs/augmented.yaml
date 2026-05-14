@@ -1,0 +1,4 @@
+# Resolves at runtime to envs.quidditch.obs_spec.AUGMENTED_OBS (25-d, world-frame).
+# Current team-play obs.
+name: AUGMENTED_OBS
+n_stack: 3

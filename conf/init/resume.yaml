@@ -1,0 +1,8 @@
+# Resume: continue an existing run from its latest (or specified) checkpoint.
+# Keeps the optimizer state + step counter.  obs_surgery is forbidden.
+
+mode: resume
+parent: null
+parent_run: ???                     # run name to resume from
+parent_checkpoint: null             # null = auto-resolve latest checkpoint in latest trial
+obs_surgery: false

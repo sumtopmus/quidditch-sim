@@ -1,0 +1,11 @@
+run_name: ppo_hoop_rand_start
+seed: 42
+obs:
+  name: SIMPLE_ENV_OBS
+  n_stack: 1
+init:
+  mode: scratch
+  parent: null
+  parent_run: null
+  parent_checkpoint: null
+  obs_surgery: false

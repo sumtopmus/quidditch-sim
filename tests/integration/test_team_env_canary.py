@@ -14,10 +14,27 @@ from __future__ import annotations
 
 import numpy as np
 import pytest
+from hydra.utils import instantiate
 
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
+from tests.conftest import hydra_compose
 
 pytestmark = pytest.mark.slow
+
+
+def test_team_v2_stack_instantiates_via_hydra():
+    """Hydra composes the canary YAML, instantiates the reward stack, and its
+    term-by-term composition matches the team_v2 expected list.  The full
+    forward-simulation canary below asserts the per-step reward fingerprint.
+    """
+    with hydra_compose(experiment="canary_team") as cfg:
+        stack = instantiate(cfg.reward, _convert_="all")
+    expected = [
+        "TagEntryPulse", "ProximityGradedTag", "ClosingVelInTagZone",
+        "HoopDistancePenalty", "ZeroSumDistMirror", "HoopAnchor",
+        "ScoreEvent", "TakeDown", "CrashEvent",
+    ]
+    assert [type(t).__name__ for t in stack.terms] == expected
 
 
 def _beeline_action(obs: np.ndarray) -> np.ndarray:

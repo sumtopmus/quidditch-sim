@@ -1,0 +1,3 @@
+# For single-agent (no opponent).  Sentinel value — train.py checks
+# `cfg.opponent.kind == "none"` to skip opponent instantiation entirely.
+kind: none

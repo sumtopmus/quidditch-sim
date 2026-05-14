@@ -1,0 +1,10 @@
+# SimpleEnvFactory — instantiated with values from the curriculum and obs
+# groups.  reward_stack and (no-op) make_opponent are injected by train.py
+# AFTER Hydra resolves the config tree, so they aren't visible here.
+
+_target_: envs.quidditch.env_factories.SimpleEnvFactory
+n_envs: 8
+randomise_start: ${curriculum.randomise_start}
+episode_seconds: ${curriculum.episode_seconds}
+obs_spec_name: ${obs.name}
+seed: ${seed}

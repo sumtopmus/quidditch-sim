@@ -1,0 +1,4 @@
+# Local-tuning overrides are gitignored.  See lightning-hydra-template pattern.
+default.yaml
+*.yaml
+!.gitignore

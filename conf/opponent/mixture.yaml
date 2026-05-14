@@ -1,0 +1,14 @@
+# League-style mixture — picks one component per episode (weighted random).
+# Composes _partial_ opponents via interpolation; each `weight*opponent` pair
+# becomes a (weight, opponent_instance) tuple at instantiation.
+
+kind: mixture
+_target_: envs.quidditch.opponents.MixtureOpponent
+_partial_: true
+mixture:
+  - - 0.5                            # weight
+    - _target_: envs.quidditch.opponents.BeelineBlue
+  - - 0.5
+    - _target_: envs.quidditch.opponents.FrozenPolicyOpponent
+      model_path: ???
+      deterministic: false

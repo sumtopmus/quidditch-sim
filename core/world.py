@@ -15,8 +15,8 @@ Public surface:
                                           PHYS_PER_CTRL × mj_step
     World.render_frame(w, h) -> ndarray — RGB frame from the "fixed" camera
 
-Camera definitions are loaded from config/camera.toml (raises if missing —
-run ``make configs`` to copy templates/camera.toml).
+Camera definitions are loaded from conf/camera/default.yaml (tracked in git
+— edit in place; raises FileNotFoundError if missing).
     World.disconnect()                  — close viewer + release renderer
     World.idle(active=False)            — block until the viewer window closes
     World.step_period -> float          — 1 / CONTROL_HZ

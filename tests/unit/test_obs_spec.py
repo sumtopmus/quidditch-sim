@@ -116,3 +116,13 @@ def test_team_env_obs_uses_body_mixed_opp_vel_rel():
     assert obs_spec.OPP_VEL_REL_BODY in obs_spec.TEAM_ENV_OBS.blocks
     assert obs_spec.OPP_VEL_REL_BODY not in obs_spec.AUGMENTED_OBS.blocks
     assert obs_spec.OPP_VEL_REL_WORLD in obs_spec.AUGMENTED_OBS.blocks
+
+
+def test_spec_by_name_maps_canonical_specs():
+    from envs.quidditch.obs_spec import (
+        SPEC_BY_NAME, SIMPLE_ENV_OBS, TEAM_ENV_OBS, AUGMENTED_OBS,
+    )
+    assert SPEC_BY_NAME["SIMPLE_ENV_OBS"] is SIMPLE_ENV_OBS
+    assert SPEC_BY_NAME["TEAM_ENV_OBS"]   is TEAM_ENV_OBS
+    assert SPEC_BY_NAME["AUGMENTED_OBS"]  is AUGMENTED_OBS
+    assert set(SPEC_BY_NAME) == {"SIMPLE_ENV_OBS", "TEAM_ENV_OBS", "AUGMENTED_OBS"}
