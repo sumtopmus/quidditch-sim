@@ -97,10 +97,11 @@ eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES
 eval-headless: ## 📈 Evaluate best model headless  [RUN_NAME=...] [TRIAL=...] [EPISODES=50]
 	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --no-render --episodes $(or $(EPISODES),50)
 
-lineage: ## ⛓  Walk pretrain ancestry of a trial  [RUN_NAME=...] [TRIAL=...]
-	@dir="$(_TRIAL_DIR)"; \
-	 test -n "$$dir" || { echo "ERROR: no trials found in $(RUNS_DIR)/"; exit 1; }; \
-	 $(PYTHON) scripts/lineage.py "$$dir"
+lineage: ## ⛓  Walk pretrain ancestry  [RUN_NAME=...] [TRIAL=...] [TARGET=<path-or-uri>] [LOCAL=1] [BOTH=1]
+	@target="$(or $(TARGET),$(_TRIAL_DIR))"; \
+	 test -n "$$target" || { echo "ERROR: pass TARGET=<path-or-uri> or RUN_NAME=..."; exit 1; }; \
+	 $(PYTHON) -m scripts.lineage "$$target" \
+	   $(if $(LOCAL),--local) $(if $(BOTH),--both)
 
 # ──────────────────────────────────────────────────────────────────────────────
 

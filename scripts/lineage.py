@@ -1,208 +1,251 @@
-"""Walk a trial's pretrain ancestry and print one row per training segment.
+"""Walk a trial's pretrain ancestry — two walkers + CLI dispatch.
 
-Each row shows the cumulative step range, the trial dir, and a few key config
-knobs that typically vary across pretrain steps (lr, ent_coef, randomise_start,
-episode_seconds).  The Hydra-shaped config lives in `<trial>/.hydra/config.yaml`;
-legacy info.toml/config.toml are still read for un-migrated promoted models.
+Walker A (local-only): reads `_wandb_metadata.json` chains in `models/<run>/`.
+  Works offline; truncates on missing parents.
 
-Usage:
-    python scripts/lineage.py runs/ppo_hoop_rand_start/20260430_234354
-    python scripts/lineage.py models/ppo_hoop_rand_start_20260430_234354
-    make lineage RUN_NAME=ppo_hoop_rand_start          # latest trial in that run
-    make lineage TRIAL=20260430_234354 RUN_NAME=...    # specific trial
+Walker B (wandb API): uses `artifact.logged_by().used_artifacts()` for the
+  native artifact DAG.  Richer (sees un-vendored intermediates) but needs
+  network + credentials.
 
-The chain is reconstructed by reading the parent edge from each trial's
-.hydra/config.yaml `init.parent` (or `[pretrain].parent` in legacy info.toml)
-and recursing.  If a parent dir is missing the chain is truncated with a warning.
+CLI dispatch:
+    python -m scripts.lineage <target>           # default: B, falls back to A
+    python -m scripts.lineage --local <target>   # A only
+    python -m scripts.lineage --both <target>    # side-by-side
+Targets accepted: filesystem path (runs/.../<trial> or models/<run>),
+                  wandb URI (wandb://run:alias or wandb-artifact://...).
 """
+from __future__ import annotations
 
 import argparse
+import json
 import sys
-import tomllib
 from pathlib import Path
+from typing import Any
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import yaml
 
 
-# (tuple-of-dotted-fallback-paths, column-header, format-string)
-# Hydra layout uses `trainer.*` / `curriculum.*`; legacy snapshots used
-# `training.ppo.*` / `env.*`.  Tuples let us try both.
-DISPLAYED_KEYS = [
-    (("trainer.lr",            "training.ppo.lr",       "ppo.lr"),       "lr",         "{:.1e}"),
-    (("trainer.ent_coef",      "training.ppo.ent_coef", "ppo.ent_coef"), "ent_coef",   "{:.2g}"),
-    (("curriculum.randomise_start", "env.randomise_start"),              "rand_start", "{}"),
-    (("curriculum.episode_seconds", "env.episode_seconds"),              "episode_s",  "{:.1f}"),
-]
-
-
-def _load_toml(path: Path) -> dict:
-    if not path.exists():
-        return {}
+def _load_metadata(p: Path) -> dict | None:
+    if not p.exists():
+        return None
     try:
-        return tomllib.loads(path.read_text())
-    except Exception as exc:
-        print(f"WARN: failed to parse {path}: {exc}", file=sys.stderr)
-        return {}
+        return json.loads(p.read_text())
+    except (json.JSONDecodeError, OSError):
+        return None
 
 
-def _load_yaml(path: Path) -> dict:
-    if not path.exists():
-        return {}
-    try:
-        return yaml.safe_load(path.read_text()) or {}
-    except Exception as exc:
-        print(f"WARN: failed to parse {path}: {exc}", file=sys.stderr)
-        return {}
+def _resolve_uri_to_local_name(uri: str) -> str | None:
+    """`wandb://x:y` → `x`; filesystem path → its parent dir name."""
+    if uri.startswith(("wandb://", "wandb-artifact://")):
+        # Strip the scheme and any qualifier, then split off the alias.
+        body = uri.split("://", 1)[1]
+        name_and_alias = body.rsplit("/", 1)[-1]
+        return name_and_alias.split(":", 1)[0]
+    p = Path(uri)
+    # `models/<name>/best_model` or `models/<name>/`
+    if "best_model" in p.name:
+        return p.parent.name
+    return p.name
 
 
-def _find_first(dir_: Path, candidates: tuple[str, ...]) -> Path | None:
-    for name in candidates:
-        c = dir_ / name
-        if c.exists():
-            return c
-    return None
-
-
-def _resolve_dotted(data: dict, dotted: str):
-    cur = data
-    for key in dotted.split("."):
-        if not isinstance(cur, dict) or key not in cur:
-            return None
-        cur = cur[key]
-    return cur
-
-
-def _resolve_first(data: dict, paths: tuple[str, ...]):
-    """Return the first dotted-path that resolves to a non-None value."""
-    for p in paths:
-        v = _resolve_dotted(data, p)
-        if v is not None:
-            return v
-    return None
-
-
-def walk_chain(start: Path) -> list[dict]:
-    """Walk pretrain ancestry from `start` backwards. Returns oldest-first.
-
-    Each segment reads .hydra/config.yaml + .hydra/meta.yaml when present
-    (Hydra layout, post-Phase-6 migration).  Falls back to info.toml +
-    config.toml for un-migrated dirs.
-    """
+# ── Walker A: local-only ─────────────────────────────────────────────────────
+def walk_chain_local(
+    start_dir: Path | str,
+    models_root: Path | str = Path("models"),
+) -> list[dict[str, Any]]:
+    """Walk `_wandb_metadata.json` chains.  Returns oldest-first."""
+    models_root = Path(models_root)
+    cur = Path(start_dir).resolve()
     chain: list[dict] = []
-    cur: Path | None = start.resolve()
     visited: set[Path] = set()
 
-    while cur is not None:
-        if cur in visited:
-            print(f"WARN: cycle detected at {cur} — stopping walk", file=sys.stderr)
-            break
+    while cur is not None and cur not in visited:
         visited.add(cur)
-
-        if not cur.exists():
-            print(f"WARN: {cur} does not exist — chain truncated", file=sys.stderr)
+        meta = _load_metadata(cur / "_wandb_metadata.json")
+        if meta is None:
+            print(f"WARN: no _wandb_metadata.json at {cur} — chain truncated",
+                  file=sys.stderr)
             break
 
-        hydra_dir = cur / ".hydra"
-        hydra_cfg = _load_yaml(hydra_dir / "config.yaml")
-        hydra_meta = _load_yaml(hydra_dir / "meta.yaml")
-
-        info_path = _find_first(cur, ("info.toml", "run_info.toml"))
-        cfg_path = _find_first(cur, ("config_snapshot.toml", "config.toml"))
-        env_path = _find_first(cur, ("env_snapshot.toml", "env.toml"))
-        info = _load_toml(info_path) if info_path else {}
-        cfg = _load_toml(cfg_path) if cfg_path else {}
-        if env_path:
-            env_data = _load_toml(env_path)
-            if "env" in env_data:
-                cfg.setdefault("env", {}).update(env_data["env"])
-
-        # Merge Hydra config into legacy cfg so _resolve_first lookups see both.
-        # `trainer.*` / `curriculum.*` (Hydra) take precedence over legacy keys.
-        merged_cfg = dict(cfg)
-        merged_cfg.update(hydra_cfg)
-
-        # Steps-trained comes from meta.yaml's final_stats (new) or
-        # run.steps_trained (legacy).
-        steps = None
-        if hydra_meta:
-            steps = hydra_meta.get("final_stats", {}).get("completed_steps")
-        if steps is None:
-            steps = info.get("run", {}).get("steps_trained")
+        # Read .hydra for richer info (steps, obs_spec, init_mode).
+        hydra_cfg_path = cur / ".hydra" / "config.yaml"
+        hydra_meta_path = cur / ".hydra" / "meta.yaml"
+        hydra_cfg = yaml.safe_load(hydra_cfg_path.read_text()) if hydra_cfg_path.exists() else {}
+        hydra_meta = yaml.safe_load(hydra_meta_path.read_text()) if hydra_meta_path.exists() else {}
+        final = hydra_meta.get("final_stats", {})
 
         chain.append({
-            "dir": cur,
-            "info": info,
-            "config": merged_cfg,
-            "hydra_meta": hydra_meta,
-            "steps_trained": steps,
+            "name":      meta.get("name", cur.name),
+            "version":   meta.get("version"),
+            "dir":       cur,
+            "init_mode": (hydra_cfg.get("init") or {}).get("mode"),
+            "obs_spec":  (hydra_cfg.get("obs") or {}).get("name"),
+            "steps":     final.get("completed_steps"),
+            "parent_chain_total": hydra_meta.get("parent_chain_total"),
         })
 
-        # Parent edge: Hydra init.parent first, then legacy [pretrain].parent.
-        parent_path = (
-            hydra_cfg.get("init", {}).get("parent")
-            or info.get("pretrain", {}).get("parent")
-        )
-        if not parent_path:
+        parent_uri = meta.get("parent_uri")
+        if not parent_uri:
             break
-        cur = Path(parent_path).resolve().parent
+        parent_name = _resolve_uri_to_local_name(parent_uri)
+        if parent_name is None:
+            break
+        next_dir = (models_root / parent_name).resolve()
+        if not next_dir.exists():
+            print(f"WARN: parent {parent_uri} not in models/ — chain truncated",
+                  file=sys.stderr)
+            break
+        cur = next_dir
 
     chain.reverse()
     return chain
 
 
+# ── Walker B: wandb API ──────────────────────────────────────────────────────
+def walk_chain_wandb(uri: str) -> list[dict[str, Any]]:
+    """Walk artifact lineage via the wandb API.  Returns oldest-first."""
+    import wandb
+    api = wandb.Api()
+
+    chain: list[dict] = []
+    seen: set[str] = set()
+
+    # We hold artifact objects directly (not URIs) so once we resolve the
+    # entry point we can hop via `run.used_artifacts()` without going back
+    # to api.artifact() — which means the walker tolerates partial mocks
+    # in tests and avoids a network round-trip per node.
+    initial = api.artifact(uri)
+    queue: list = [initial]
+
+    while queue:
+        art = queue.pop(0)
+        key = f"{art.name}:{getattr(art, 'version', '')}"
+        if key in seen:
+            continue
+        seen.add(key)
+
+        meta = art.metadata or {}
+        run = art.logged_by()
+        run_id = getattr(run, "id", None) if run is not None else None
+        chain.append({
+            "name":      art.name,
+            "version":   art.version,
+            "init_mode": meta.get("init_mode"),
+            "obs_spec":  meta.get("obs_spec"),
+            "steps":     meta.get("parent_chain_total"),
+            "logged_by": run_id,
+        })
+
+        if run is None:
+            continue
+        for used in run.used_artifacts():
+            queue.append(used)
+
+    # Oldest-first.
+    chain.reverse()
+    return chain
+
+
+# ── Dispatch ─────────────────────────────────────────────────────────────────
+def walk_dispatch(
+    target: str,
+    models_root: Path | str = Path("models"),
+    prefer: str = "wandb",
+) -> list[dict[str, Any]]:
+    """Pick a walker.  prefer ∈ {"wandb", "local"}; wandb falls back to local on error."""
+    is_uri = target.startswith(("wandb://", "wandb-artifact://"))
+
+    if prefer == "local" or not is_uri:
+        if is_uri:
+            # Resolve URI → local dir.
+            name = _resolve_uri_to_local_name(target)
+            start = Path(models_root) / (name or target)
+        else:
+            start = Path(target)
+        return walk_chain_local(start, models_root=models_root)
+
+    try:
+        return walk_chain_wandb(target)
+    except Exception as e:
+        print(f"WARN: wandb walk failed ({e}); falling back to local", file=sys.stderr)
+        name = _resolve_uri_to_local_name(target)
+        start = Path(models_root) / (name or target)
+        return walk_chain_local(start, models_root=models_root)
+
+
+# ── Render ───────────────────────────────────────────────────────────────────
 def render(chain: list[dict]) -> str:
+    """Render a chain as an aligned table.  Collapses resume segments."""
     if not chain:
-        return "(empty chain — no info.toml found at the given path)"
+        return "(empty chain)"
+
+    # Collapse: consecutive segments with the same name + init_mode=resume
+    # get merged into one row with `(resumed ×N, +M steps)`.
+    collapsed: list[dict] = []
+    for seg in chain:
+        if (
+            collapsed
+            and seg["name"] == collapsed[-1]["name"]
+            and seg.get("init_mode") == "resume"
+        ):
+            prev = collapsed[-1]
+            prev["resume_count"] = prev.get("resume_count", 0) + 1
+            prev["resume_steps"] = prev.get("resume_steps", 0) + (seg.get("steps") or 0)
+        else:
+            collapsed.append(dict(seg))
 
     rows: list[list[str]] = []
-    cumulative = 0
-    cumulative_known = True
+    for seg in collapsed:
+        name = seg["name"]
+        if seg.get("resume_count"):
+            name = f"{name} (resumed ×{seg['resume_count']}, +{seg['resume_steps']:,} steps)"
+        steps = seg.get("steps")
+        steps_str = f"{steps:,}" if isinstance(steps, int) else "?"
+        rows.append([
+            name,
+            str(seg.get("version", "")),
+            str(seg.get("init_mode") or ""),
+            str(seg.get("obs_spec") or ""),
+            steps_str,
+        ])
 
-    for seg in chain:
-        steps = seg.get("steps_trained")
-
-        if isinstance(steps, int):
-            seg_start = cumulative
-            cumulative += steps
-            range_label = f"[{seg_start:>11,}, {cumulative:>11,}]"
-        else:
-            cumulative_known = False
-            range_label = "[?, ?]" if not isinstance(steps, str) else f"[?, {steps}]"
-
-        cells = [range_label, str(seg["dir"])]
-        for paths, _, fmt in DISPLAYED_KEYS:
-            v = _resolve_first(seg["config"], paths)
-            cells.append("-" if v is None else fmt.format(v))
-        rows.append(cells)
-
-    headers = ["step range", "trial dir", *(label for _, label, _ in DISPLAYED_KEYS)]
-    widths = [
-        max(len(h), *(len(r[i]) for r in rows)) for i, h in enumerate(headers)
-    ]
-    fmt_row = "  ".join(f"{{:<{w}}}" for w in widths)
-
-    out = [fmt_row.format(*headers), "  ".join("-" * w for w in widths)]
+    headers = ["run", "version", "init", "obs", "steps"]
+    widths = [max(len(h), *(len(r[i]) for r in rows)) for i, h in enumerate(headers)]
+    fmt = "  ".join(f"{{:<{w}}}" for w in widths)
+    out = [fmt.format(*headers), "  ".join("-" * w for w in widths)]
     for r in rows:
-        out.append(fmt_row.format(*r))
-    out.append("")
-    out.append(
-        f"Total steps: {cumulative:,}"
-        if cumulative_known
-        else f"Total steps: {cumulative:,}+ (some segments missing steps_trained)"
-    )
+        out.append(fmt.format(*r))
     return "\n".join(out)
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(
-        description="Walk a trial's pretrain ancestry chain.",
-    )
-    p.add_argument(
-        "trial_dir",
-        help="Path to a trial dir (runs/<run>/<trial>) or promoted model dir (models/<name>).",
-    )
+    p = argparse.ArgumentParser(description="Walk a run's pretrain ancestry.")
+    p.add_argument("target",
+                   help="filesystem path (runs/<run>/<trial> or models/<run>) "
+                        "or wandb URI (wandb://run:alias)")
+    p.add_argument("--local", action="store_true",
+                   help="local-only walker (skip wandb API)")
+    p.add_argument("--both", action="store_true",
+                   help="run both walkers and print side-by-side")
+    p.add_argument("--models-root", default="models")
     args = p.parse_args()
-    chain = walk_chain(Path(args.trial_dir))
+
+    if args.both:
+        local_chain = walk_dispatch(args.target,
+                                     models_root=args.models_root, prefer="local")
+        wandb_chain = walk_dispatch(args.target,
+                                     models_root=args.models_root, prefer="wandb")
+        print("── local walker ───────────────────────────────────────")
+        print(render(local_chain))
+        print()
+        print("── wandb walker ───────────────────────────────────────")
+        print(render(wandb_chain))
+        return
+
+    prefer = "local" if args.local else "wandb"
+    chain = walk_dispatch(args.target, models_root=args.models_root, prefer=prefer)
     print(render(chain))
 
 
