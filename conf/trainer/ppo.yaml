@@ -1,0 +1,11 @@
+# Base PPO hyperparameters.  Matches the current config/training.toml [training.ppo]
+# block (and its [training] cousin for n_steps / total_timesteps).
+n_steps: 1024
+batch_size: 512
+n_epochs: 6
+lr: 5e-5
+gamma: 0.99
+gae_lambda: 0.95
+clip_range: 0.2
+ent_coef: 0.01
+total_timesteps: 20_000_000

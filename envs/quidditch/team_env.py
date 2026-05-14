@@ -64,6 +64,12 @@ from envs.quidditch.rewards import (
     TAKE_DOWN_PENALTY,
     DEFAULT_MIDPOINT_ALPHA,
 )
+from envs.quidditch.rewards.stack import RewardStack, StepState
+from envs.quidditch.rewards.terms import (
+    HoopDistancePenalty, HoopAnchor, ZeroSumDistMirror,
+    TagEntryPulse, ProximityGradedTag, ClosingVelInTagZone,
+    ScoreEvent, CrashEvent, TakeDown,
+)
 
 
 EPISODE_SECONDS_DEFAULT: float = 30.0
@@ -163,6 +169,32 @@ class QuidditchTeamEnv(ParallelEnv):
         self._aftermath_steps_left: int = 0
 
         self._np_random: np.random.Generator = np.random.default_rng()
+
+        self._reward_stack = RewardStack(terms=[
+            TagEntryPulse(magnitude=TAG_ENTRY_REWARD,
+                           gainer=self._blue_id, loser=self._red_id),
+            ProximityGradedTag(max_reward=TAG_DURATION_REWARD_MAX,
+                                gainer=self._blue_id, loser=self._red_id),
+            ClosingVelInTagZone(scale=CLOSING_VEL_REWARD_SCALE,
+                                 gainer=self._blue_id, loser=self._red_id),
+            HoopDistancePenalty(scale=DIST_REWARD_SCALE,
+                                 agent_to_target={
+                                     self._red_id:  "hoop",
+                                     self._blue_id: "midpoint",
+                                 }),
+            ZeroSumDistMirror(scale=DIST_REWARD_SCALE, agents=(self._blue_id,)),
+            HoopAnchor(scale=HOOP_ANCHOR_SCALE, agents=(self._blue_id,)),
+            ScoreEvent(magnitude=SCORE_REWARD, scorer=self._red_id,
+                        zero_sum_opponent=self._blue_id),
+            TakeDown(aggressor_reward=TAKE_DOWN_REWARD,
+                      victim_penalty=TAKE_DOWN_PENALTY,
+                      aggressor=self._blue_id, victim=self._red_id),
+            CrashEvent(magnitude=CRASH_PENALTY,
+                        agent_to_crash_flags={
+                            self._red_id:  ("red_floor",  "red_wall_crash",  "red_oob"),
+                            self._blue_id: ("blue_floor", "blue_wall_crash", "blue_oob"),
+                        }),
+        ])
 
     def observation_space(self, agent: str) -> spaces.Box:
         return self.observation_spaces[agent]
@@ -299,28 +331,10 @@ class QuidditchTeamEnv(ParallelEnv):
             if ts.cooldown_ticks <= 0:
                 ts.state = _TagState.IN_ZONE if in_zone else _TagState.IDLE
 
-        rewards = {self._red_id: 0.0, self._blue_id: 0.0}
-
         # Positions used by tag shaping, distance shaping, OOB, and scoring.
         red_pos  = self._red_pos()
         blue_pos = self._blue_pos()
         dist_b2r = float(np.linalg.norm(red_pos - blue_pos))
-
-        if tag_entry:
-            rewards[self._blue_id] += TAG_ENTRY_REWARD
-            rewards[self._red_id]  -= TAG_ENTRY_REWARD
-        if tag_during:
-            # Proximity-graded: peak at contact, 0 at zone boundary.
-            prox_bonus = TAG_DURATION_REWARD_MAX * max(
-                0.0, 1.0 - dist_b2r / self.cfg.tag_radius
-            )
-            # Closing-velocity: blue closing on red faster than red flees.
-            closing = (self._dist_b2r_prev - dist_b2r) / self._red.step_period
-            close_bonus = CLOSING_VEL_REWARD_SCALE * max(0.0, closing)
-            tag_bonus = prox_bonus + close_bonus
-            rewards[self._blue_id] += tag_bonus
-            rewards[self._red_id]  -= tag_bonus
-        self._dist_b2r_prev = dist_b2r
 
         infos: dict[str, dict[str, Any]] = {
             self._red_id:  {"tag_entry": tag_entry, "tag_during": tag_during},
@@ -365,37 +379,30 @@ class QuidditchTeamEnv(ParallelEnv):
                     scored = True
         self._red_prev_signed_dist = red_signed
 
-        # ── Distance shaping ─────────────────────────────────────────────────
+        # ── Reward computation via composable stack ──────────────────────────
         dist_red  = float(np.linalg.norm(red_pos - HOOP_CENTER))
         dist_blue = float(np.linalg.norm(blue_pos - self._midpoint()))
-        rewards[self._red_id]  -= (dist_red  / ARENA_RADIUS) * DIST_REWARD_SCALE
-        rewards[self._blue_id] -= (dist_blue / ARENA_RADIUS) * DIST_REWARD_SCALE
-        # Zero-sum mirror of red's hoop-distance penalty: blue is rewarded
-        # when red is far from the hoop (= blue is succeeding at defending).
-        # Same magnitude as red's penalty so the two cancel when summed.
-        rewards[self._blue_id] += (dist_red / ARENA_RADIUS) * DIST_REWARD_SCALE
-        # Blue-only hoop anchor: penalise blue for being far from the hoop
-        # regardless of red's position, so the defender doesn't follow red
-        # to the arena edge and abandon the goal.
         dist_blue_to_hoop = float(np.linalg.norm(blue_pos - HOOP_CENTER))
-        rewards[self._blue_id] -= (
-            (dist_blue_to_hoop / ARENA_RADIUS) * HOOP_ANCHOR_SCALE
+
+        reward_state = StepState(
+            agent_ids=(self._red_id, self._blue_id),
+            red_pos=red_pos, blue_pos=blue_pos,
+            dist_b2r=dist_b2r, dist_b2r_prev=self._dist_b2r_prev,
+            step_period=self._red.step_period,
+            tag_entry=tag_entry, tag_during=tag_during,
+            dist_red_to_hoop=dist_red,
+            dist_blue_to_midpoint=dist_blue,
+            dist_blue_to_hoop=dist_blue_to_hoop,
+            scored=scored,
+            red_floor=red_floor, blue_floor=blue_floor,
+            red_wall_crash=red_wall_crash, blue_wall_crash=blue_wall_crash,
+            red_oob=red_oob, blue_oob=blue_oob,
+            drone_drone_crash=drone_drone_crash,
+            arena_radius=ARENA_RADIUS,
+            tag_radius=self.cfg.tag_radius,
         )
-
-        # ── Score reward (terminal, asymmetric) ──────────────────────────────
-        if scored:
-            rewards[self._red_id]  += SCORE_REWARD
-            rewards[self._blue_id] -= SCORE_REWARD
-
-        # ── Crash rewards ────────────────────────────────────────────────────
-        if drone_drone_crash:
-            rewards[self._blue_id] += TAKE_DOWN_REWARD
-            rewards[self._red_id]  += TAKE_DOWN_PENALTY
-
-        if red_floor or red_wall_crash or red_oob:
-            rewards[self._red_id]  += CRASH_PENALTY
-        if blue_floor or blue_wall_crash or blue_oob:
-            rewards[self._blue_id] += CRASH_PENALTY
+        rewards = self._reward_stack.compute_step(reward_state)
+        self._dist_b2r_prev = dist_b2r
 
         # ── Termination ──────────────────────────────────────────────────────
         any_terminal = (

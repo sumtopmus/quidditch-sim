@@ -65,6 +65,10 @@ from envs.quidditch.rewards import (
     CRASH_PENALTY,
     DIST_REWARD_SCALE,
 )
+from envs.quidditch.rewards.stack import RewardStack, StepState
+from envs.quidditch.rewards.terms import (
+    HoopDistancePenalty, ScoreEvent, CrashEvent,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -132,6 +136,15 @@ class QuidditchSimpleEnv(gym.Env):
         self._crossing_started: bool = False
         self._enter_signed_dist: float = 0.0  # signed_dist when drone entered the score volume
         self._takeoff_grace: int = 0
+
+        self._reward_stack = RewardStack(terms=[
+            HoopDistancePenalty(scale=DIST_REWARD_SCALE,
+                                  agent_to_target={"drone_0": "drone_hoop"}),
+            ScoreEvent(magnitude=SCORE_REWARD, scorer="drone_0",
+                        zero_sum_opponent=None),
+            CrashEvent(magnitude=CRASH_PENALTY,
+                        agent_to_crash_flags={"drone_0": ("drone_crash",)}),
+        ])
 
     # -----------------------------------------------------------------------
     # Gymnasium API
@@ -229,11 +242,14 @@ class QuidditchSimpleEnv(gym.Env):
         truncated = timeout and not terminated
 
         dist = float(np.linalg.norm(drone_pos - HOOP_CENTER))
-        reward = -(dist / ARENA_RADIUS) * DIST_REWARD_SCALE
-        if scored:
-            reward += SCORE_REWARD
-        elif out_of_bounds or crashed:
-            reward += CRASH_PENALTY
+        state = StepState(
+            agent_ids=("drone_0",),
+            dist_drone_to_hoop=dist,
+            scored=bool(scored),
+            drone_crash=bool(out_of_bounds or crashed),
+            arena_radius=ARENA_RADIUS,
+        )
+        reward = self._reward_stack.compute_step(state)["drone_0"]
 
         info = {
             "scored": scored,

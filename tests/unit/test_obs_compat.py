@@ -99,3 +99,27 @@ def test_parent_missing_obs_block_passes_with_surgery(tmp_path: Path):
     parent = check_obs_compat(info, current=AUGMENTED_OBS, current_n_stack=3, surgery=True)
     # Returning (None, None) is the contract for "parent has no spec but surgery requested".
     assert parent == (None, None)
+
+
+# ── New Hydra-based compat check (post-cutover) ─────────────────────────────
+
+
+def test_check_obs_compat_from_hydra_strict_match(tmp_path: Path):
+    from scripts.train import _check_obs_compat_from_hydra
+    hydra_dir = tmp_path / ".hydra"
+    hydra_dir.mkdir()
+    (hydra_dir / "config.yaml").write_text(
+        "obs:\n  name: AUGMENTED_OBS\n  n_stack: 3\n"
+    )
+    _check_obs_compat_from_hydra(hydra_dir, AUGMENTED_OBS, current_n_stack=3)
+
+
+def test_check_obs_compat_from_hydra_raises_on_mismatch(tmp_path: Path):
+    from scripts.train import _check_obs_compat_from_hydra
+    hydra_dir = tmp_path / ".hydra"
+    hydra_dir.mkdir()
+    (hydra_dir / "config.yaml").write_text(
+        "obs:\n  name: TEAM_ENV_OBS\n  n_stack: 1\n"
+    )
+    with pytest.raises(SystemExit):
+        _check_obs_compat_from_hydra(hydra_dir, AUGMENTED_OBS, current_n_stack=3)

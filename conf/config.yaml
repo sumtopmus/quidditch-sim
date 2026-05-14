@@ -1,0 +1,30 @@
+# Top-level Hydra config.  Default group choices below; experiment YAMLs
+# override via `defaults: - override /<group>: <choice>`.
+
+defaults:
+  - trainer: ppo
+  - env: team
+  - obs: augmented
+  - reward: team_v2
+  - opponent: beeline_red
+  - eval: default
+  - init: scratch
+  - curriculum: random_start
+  - _self_                          # values below override the group defaults
+  - optional local: default         # gitignored; missing-file is silent
+
+# Global keys
+run_name: _adhoc                    # overridden by experiment YAML
+seed: 42
+
+# Hydra runtime — redirect the run dir into the existing runs/ layout so
+# `make resume`, `scripts/lineage.py`, `make promote`, and `make tensorboard`
+# continue to work unchanged.
+hydra:
+  run:
+    dir: runs/${run_name}/${now:%Y%m%d_%H%M%S}
+  sweep:
+    dir: multirun/${run_name}/${now:%Y%m%d_%H%M%S}
+    subdir: ${hydra.job.num}
+  job:
+    chdir: false                    # don't cwd into the run dir (keeps relative paths sane)

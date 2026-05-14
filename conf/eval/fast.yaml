@@ -1,0 +1,13 @@
+# Reduced eval for long runs — fewer episodes, less video.
+eval_freq_steps: 500_000
+n_eval_episodes: 3
+checkpoint_freq_steps: 100_000
+
+video:
+  enabled: true
+  every_n_evals: 4
+  fps: 20
+  grid: true
+  cells: ["south", "east", "top", "fixed"]
+  cell_width: 960
+  cell_height: 540

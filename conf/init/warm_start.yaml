@@ -1,0 +1,10 @@
+# Warm-start: load a parent's policy + value, apply input-layer surgery for
+# obs-spec changes (copies matched blocks, small-inits the rest).
+# obs_surgery is True by definition for this mode.
+
+mode: warm_start
+parent: ???                         # path to parent best_model[.zip]
+parent_run: null
+parent_checkpoint: null
+obs_surgery: true
+new_dim_init_scale: 0.01

@@ -1,17 +1,25 @@
 # Quidditch-Sim Makefile
-# Usage:  make <target>  [RUN_NAME=ppo_hoop]  [TRIAL=20240416_143022]
+# Usage:
+#   make train EXP=blue_v5                                          # ladder rung
+#   make train EXP=canary_team OVERRIDES="trainer.total_timesteps=500"
+#   make resume RUN_NAME=ppo_hoop_blue_5 EXP=blue_v5
 #
-# Run layout:  runs/<RUN_NAME>/<trial>/   (trial = auto-timestamp per training run)
+# Hydra owns run-dir layout: runs/<run_name>/<YYYYMMDD_HHMMSS>/
+#   ├── .hydra/{config,overrides,hydra,meta}.yaml
+#   ├── best_model.zip
+#   ├── checkpoints/
+#   └── tb/
 
 CONDA_ENV  ?= uav
-RUN_NAME   ?= ppo_hoop
+RUN_NAME   ?=
 TRIAL      ?=
-PRETRAIN   ?=
 CHECKPOINT ?=
+EXP        ?=
+OVERRIDES  ?=
 RUNS_DIR   := runs
 MODELS_DIR := models
 
-# Resolve the trial directory for eval / promote:
+# Resolve the trial directory for eval / promote / lineage:
 #   TRIAL= given on CLI          → runs/$(RUN_NAME)/$(TRIAL)
 #   RUN_NAME= given on CLI only  → latest trial inside that run
 #   nothing given                → latest trial across all runs
@@ -23,8 +31,6 @@ _TRIAL_DIR      = $(strip $(if $(TRIAL),\
                       $(_LATEST_IN_RUN),\
                       $(_LATEST_OVERALL))))
 _LATEST_CKPT    = $(shell ls -1 "$(_TRIAL_DIR)/checkpoints/"*.zip 2>/dev/null | sort -V | tail -1 | sed 's/\.zip$$//')
-# Run name extracted from the resolved trial dir (e.g. runs/ppo_hoop_randstart/... → ppo_hoop_randstart)
-_RESUME_RUN     = $(word 2,$(subst /, ,$(_TRIAL_DIR)))
 
 # Resolve the conda binary: prefer $CONDA_EXE (set by `conda init`), fall back to PATH.
 CONDA := $(or $(CONDA_EXE),$(shell command -v conda 2>/dev/null))
@@ -41,7 +47,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless tensorboard lineage promote repro install configs clean list-runs train-team-red train-team-red-warm train-team-blue eval-team resume-team
+.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless tensorboard lineage promote install configs clean list-runs eval-team
 
 .DEFAULT_GOAL := help
 
@@ -49,7 +55,10 @@ help: ## 📋 Show available targets
 	@awk 'BEGIN{FS=":.*##"; printf "\nUsage:\n  make \033[36m<target>\033[0m\n\nTargets:\n"} \
 	     /^[a-zA-Z_-]+:.*##/{printf "  \033[36m%-16s\033[0m %s\n", $$1, $$2}' $(MAKEFILE_LIST)
 	@echo ""
-	@echo "Override variables:  make train RUN_NAME=my_run  PRETRAIN=models/...  CONDA_ENV=uav"
+	@echo "Examples:"
+	@echo "  make train EXP=blue_v5"
+	@echo "  make train EXP=canary_team OVERRIDES=\"trainer.total_timesteps=500\""
+	@echo "  make resume RUN_NAME=ppo_hoop_blue_5 EXP=blue_v5"
 
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -72,15 +81,16 @@ demo: ## 🎮 Pick a demo to run (hover, waypoint, scenarios) — opens viewer
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-train: ## 🚀 Run PPO training  [RUN_NAME=...] [PRETRAIN=models/...] [overrides config]
-	@$(PYTHON) scripts/train_ppo.py \
-	  $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME)) \
-	  $(if $(PRETRAIN),--pretrain $(PRETRAIN)/best_model)
+train: ## 🚀 Run PPO training  EXP=<experiment-name>  [OVERRIDES="key=val ..."]
+	@test -n "$(EXP)" || { echo "ERROR: EXP=<experiment-name> required (see conf/experiment/)"; exit 1; }
+	@$(PYTHON) -m scripts.train +experiment=$(EXP) $(OVERRIDES)
 
-resume: ## ▶️  Resume from latest checkpoint  [RUN_NAME=...] [TRIAL=...] [CHECKPOINT=path/to/ckpt]
-	@ckpt="$(or $(CHECKPOINT),$(_LATEST_CKPT))"; \
-	 test -n "$$ckpt" || { echo "ERROR: no checkpoint found in $(_TRIAL_DIR)/checkpoints/ — check RUN_NAME= and TRIAL="; exit 1; }; \
-	 $(PYTHON) scripts/train_ppo.py --run-name "$(_RESUME_RUN)" --resume "$$ckpt"
+resume: ## ▶️  Resume from latest checkpoint  RUN_NAME=...  [EXP=...]  [OVERRIDES=...]
+	@test -n "$(RUN_NAME)" || { echo "ERROR: RUN_NAME=<name> required"; exit 1; }
+	@$(PYTHON) -m scripts.train \
+	  $(if $(EXP),+experiment=$(EXP),) \
+	  init=resume init.parent_run=$(RUN_NAME) \
+	  run_name=$(RUN_NAME) $(OVERRIDES)
 
 eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES=10]
 	@$(MJPYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --episodes $(or $(EPISODES),10)
@@ -104,33 +114,22 @@ promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
 	@dir="$(_TRIAL_DIR)"; \
 	 [ -n "$$dir" ] || { echo "ERROR: no trials found in $(RUNS_DIR)/"; exit 1; }; \
 	 src="$$dir/best_model.zip"; \
-	 test -f "$$src" || { echo "ERROR: $$src not found — run 'make train' first"; exit 1; }; \
+	 test -f "$$src" || { echo "ERROR: $$src not found — run 'make train EXP=...' first"; exit 1; }; \
 	 label=$$(echo "$$dir" | sed 's|$(RUNS_DIR)/||'); \
 	 dest="$(MODELS_DIR)/$$(echo $$label | tr '/' '_')"; \
 	 mkdir -p "$$dest"; \
 	 cp "$$src"                   "$$dest/best_model.zip"; \
-	 [ -f "$$dir/info.toml" ]            && cp "$$dir/info.toml"            "$$dest/run_info.toml" || true; \
-	 [ -f "$$dir/config_snapshot.toml" ] && cp "$$dir/config_snapshot.toml" "$$dest/config.toml"   || true; \
+	 [ -d "$$dir/.hydra" ]        && cp -r "$$dir/.hydra"        "$$dest/.hydra" || true; \
 	 echo ""; \
 	 echo "  Trial:    $$dir"; \
 	 echo "  Promoted  →  $$dest/"; \
 	 echo ""; \
-	 echo "  To reproduce this config:"; \
-	 echo "    make repro MODEL=$$(echo $$label | tr '/' '_')"; \
+	 echo "  To use as a pretrain parent in a new experiment YAML:"; \
+	 echo "    init:"; \
+	 echo "      parent: $$dest/best_model"; \
 	 echo ""; \
 	 echo "  To commit:"; \
 	 echo "    git add $$dest && git commit -m 'model: promote $$label best model'"
-
-repro: ## 🔄 Restore config/training.toml from a promoted model  [MODEL=...]
-	@test -n "$(MODEL)" || { echo "ERROR: specify MODEL=<name>  (see 'make list-runs')"; exit 1; }; \
-	 src="$(MODELS_DIR)/$(MODEL)/config.toml"; \
-	 test -f "$$src" || { echo "ERROR: $$src not found — model promoted before config snapshots were added?"; exit 1; }; \
-	 cp "$$src" config/training.toml; \
-	 echo "Restored config/training.toml from $$src"; \
-	 env_src="$(MODELS_DIR)/$(MODEL)/env.toml"; \
-	 if [ -f "$$env_src" ]; then \
-	   echo "NOTE: $$env_src is from an older promote format; its [env] section is now part of config/training.toml — verify the values match."; \
-	 fi
 
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -139,9 +138,9 @@ install: ## 📦 Create/update the $(CONDA_ENV) conda env + populate config/ fro
 	@$(MAKE) --no-print-directory configs
 	@echo "Done. Verify with: make test"
 
-configs: ## 🛠  Populate config/ from templates/ (idempotent — never overwrites)
+configs: ## 🛠  Populate config/ from templates/ (camera-only; training config now lives in conf/)
 	@mkdir -p config
-	@for f in training camera; do \
+	@for f in camera; do \
 	   if [ ! -f config/$$f.toml ]; then \
 	     cp templates/$$f.toml config/$$f.toml; \
 	     echo "config/$$f.toml << templates/$$f.toml."; \
@@ -169,28 +168,6 @@ list-runs: ## 🗂️  List training runs grouped by config name
 	 else echo "  (none — run 'make promote' after a successful training run)"; fi
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Team play (Phase 2)
-
-train-team-red: ## 🔴 Phase 2a: train Red against scripted Blue
-	@$(PYTHON) scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \
-	  $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
-
-train-team-red-warm: ## 🔴 Phase 2a (warm-start variant)  WARM_START=models/<run> (or set [training.team].warm_start_from)
-	@$(PYTHON) scripts/train_team_ppo.py --learner red_0 --opponent beeline_blue \
-	  $(if $(WARM_START),--warm-start "$(WARM_START)/best_model") \
-	  $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
-
-train-team-blue: ## 🔵 Phase 2b: train Blue against frozen Red  RED=models/<run>
-	@test -n "$(RED)" || { echo "ERROR: RED=models/<run> required"; exit 1; }; \
-	 $(PYTHON) scripts/train_team_ppo.py --learner blue_0 --opponent "frozen:$(RED)/best_model" \
-	   $(if $(filter command line,$(origin RUN_NAME)),--run-name $(RUN_NAME))
-
-resume-team: ## ▶️  Resume team-play training  RUN_NAME=... [TRIAL=...] [CHECKPOINT=...] [LEARNER=...] [OPPONENT=...]
-	@ckpt="$(or $(CHECKPOINT),$(_LATEST_CKPT))"; \
-	 test -n "$$ckpt" || { echo "ERROR: no checkpoint found in $(_TRIAL_DIR)/checkpoints/ — set RUN_NAME= and TRIAL="; exit 1; }; \
-	 $(PYTHON) scripts/train_team_ppo.py --resume "$$ckpt" --run-name "$(_RESUME_RUN)" \
-	   $(if $(LEARNER),--learner $(LEARNER)) \
-	   $(if $(OPPONENT),--opponent "$(OPPONENT)")
 
 eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI=1] [DETERMINISTIC=1] [LEARNER=red_0|blue_0] [LEARNER_FRAME_STACK=N] [RANDOMISE_START=1]
 	@test -n "$(RED)" -a -n "$(BLUE)" || { echo "ERROR: RED=<spec> BLUE=<spec> required"; exit 1; }; \

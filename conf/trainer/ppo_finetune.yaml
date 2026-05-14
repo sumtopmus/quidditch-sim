@@ -1,0 +1,11 @@
+# PPO hyperparameters tuned for warm-start / pretrain runs:
+# lower lr (don't trample inherited weights), shorter horizon, fewer epochs.
+n_steps: 1024
+batch_size: 512
+n_epochs: 6
+lr: 5e-5            # 6x lower than scratch's 3e-4
+gamma: 0.99
+gae_lambda: 0.95
+clip_range: 0.2
+ent_coef: 0.01
+total_timesteps: 10_000_000   # half of scratch

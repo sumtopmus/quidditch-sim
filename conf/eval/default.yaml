@@ -1,0 +1,12 @@
+eval_freq_steps: 200_000
+n_eval_episodes: 5
+checkpoint_freq_steps: 50_000
+
+video:
+  enabled: true
+  every_n_evals: 2          # video runs every Nth eval
+  fps: 20
+  grid: true
+  cells: ["south", "east", "top", "fixed"]
+  cell_width: 960
+  cell_height: 540

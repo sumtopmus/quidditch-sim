@@ -1,0 +1,9 @@
+git_hash: <legacy>
+parent_chain_total: 30007296
+init_mode: pretrain
+parent_path: models/ppo_hoop_fixed_start_20260504_023051/best_model
+final_stats:
+  wall_time_s: null
+  completed_steps: 10002432
+  best_eval_reward: null
+  peak_eval_step: null

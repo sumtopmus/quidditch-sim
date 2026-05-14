@@ -1,0 +1,20 @@
+# @package _global_
+# Pending: pretrain from blue_v4, opponent=beeline_red, randomise_start=true.
+
+run_name: ppo_hoop_blue_5
+
+defaults:
+  - override /env: team
+  - override /obs: augmented
+  - override /reward: team_v2
+  - override /opponent: beeline_red
+  - override /init: pretrain
+  - override /curriculum: random_start
+
+env:
+  learner_id: blue_0
+init:
+  parent: models/ppo_hoop_blue_4_20260511_202612/best_model
+trainer:
+  lr: 3e-4
+  total_timesteps: 10_000_000

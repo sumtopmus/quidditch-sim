@@ -1,0 +1,9 @@
+git_hash: <legacy>
+parent_chain_total: 0
+init_mode: scratch
+parent_path: null
+final_stats:
+  wall_time_s: null
+  completed_steps: 10002432
+  best_eval_reward: null
+  peak_eval_step: null

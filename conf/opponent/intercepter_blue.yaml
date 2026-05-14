@@ -1,0 +1,5 @@
+kind: scripted
+_target_: envs.quidditch.opponents.IntercepterBlue
+_partial_: true
+lookahead: 0.5
+lookahead_max: 1.0
