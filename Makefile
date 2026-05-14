@@ -7,8 +7,7 @@
 # Hydra owns run-dir layout: runs/<run_name>/<YYYYMMDD_HHMMSS>/
 #   ├── .hydra/{config,overrides,hydra,meta}.yaml
 #   ├── best_model.zip
-#   ├── checkpoints/
-#   └── tb/
+#   └── checkpoints/
 
 CONDA_ENV  ?= uav
 RUN_NAME   ?=
@@ -47,7 +46,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless tensorboard lineage promote install clean list-runs eval-team
+.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless lineage promote install clean list-runs eval-team
 
 .DEFAULT_GOAL := help
 
@@ -97,11 +96,6 @@ eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES
 
 eval-headless: ## 📈 Evaluate best model headless  [RUN_NAME=...] [TRIAL=...] [EPISODES=50]
 	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --no-render --episodes $(or $(EPISODES),50)
-
-tensorboard: ## 📊 Launch TensorBoard — all runs, or [RUN_NAME=...] for one config
-	@PYTHONWARNINGS=ignore $(CONDA_RUN) tensorboard \
-	  --logdir $(if $(filter command line,$(origin RUN_NAME)),$(RUNS_DIR)/$(RUN_NAME),$(RUNS_DIR)) \
-	  2>&1 | grep --line-buffered -v "pkg_resources\|TensorFlow installation not found\|experimental fast data\|--load_fast\|issues on GitHub\|tensorflow/tensorboard\|^[[:space:]]*$$"
 
 lineage: ## ⛓  Walk pretrain ancestry of a trial  [RUN_NAME=...] [TRIAL=...]
 	@dir="$(_TRIAL_DIR)"; \

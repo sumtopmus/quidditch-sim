@@ -19,8 +19,8 @@ run_name: _adhoc                    # overridden by experiment YAML
 seed: 42
 
 # Hydra runtime — redirect the run dir into the existing runs/ layout so
-# `make resume`, `scripts/lineage.py`, `make promote`, and `make tensorboard`
-# continue to work unchanged.
+# `make resume`, `scripts/lineage.py`, and `make promote` continue to work
+# unchanged.
 hydra:
   run:
     dir: runs/${run_name}/${now:%Y%m%d_%H%M%S}
