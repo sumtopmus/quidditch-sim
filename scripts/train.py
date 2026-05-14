@@ -147,14 +147,13 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
         "clip_range":    cfg.trainer.clip_range,
         "ent_coef":      cfg.trainer.ent_coef,
     }
-    tb = str(run_dir)
     current_spec = SPEC_BY_NAME[cfg.obs.name]
     frame_stack = int(cfg.obs.n_stack)
 
     if cfg.init.mode == "scratch":
         return PPO(
             "MlpPolicy", vec_env,
-            tensorboard_log=tb, seed=seed, verbose=0, **ppo_kwargs,
+            tensorboard_log=None, seed=seed, verbose=0, **ppo_kwargs,
         ), 0
 
     if cfg.init.mode == "pretrain":
@@ -177,7 +176,7 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
                 )
         else:
             _check_obs_compat_from_hydra(parent_hydra, current_spec, frame_stack)
-        model = PPO.load(str(parent), env=vec_env, tensorboard_log=tb, verbose=0, **ppo_kwargs)
+        model = PPO.load(str(parent), env=vec_env, tensorboard_log=None, verbose=0, **ppo_kwargs)
         chain_total = read_parent_chain_total_from_hydra(str(parent)) or int(model.num_timesteps)
         return model, chain_total
 
@@ -195,7 +194,7 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
         parent_hydra = latest_trial / ".hydra"
         if parent_hydra.exists():
             _check_obs_compat_from_hydra(parent_hydra, current_spec, frame_stack)
-        model = PPO.load(ckpt, env=vec_env, tensorboard_log=tb, verbose=0,
+        model = PPO.load(ckpt, env=vec_env, tensorboard_log=None, verbose=0,
                           learning_rate=cfg.trainer.lr)
         return model, 0
 
@@ -215,7 +214,7 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
             current_spec=current_spec,
             current_n_stack=frame_stack,
             new_dim_init_scale=cfg.init.new_dim_init_scale,
-            tensorboard_log=tb, seed=seed, verbose=0, **ppo_kwargs,
+            tensorboard_log=None, seed=seed, verbose=0, **ppo_kwargs,
         )
         return model, 0
 
@@ -239,6 +238,10 @@ def main(cfg: DictConfig) -> None:
     # own stack from Python constants in Phase 4 (canary preservation).
     env_factory.reward_stack = reward_stack
     train_env = env_factory.build_train_env()
+
+    # 1.5) Initialize wandb run (after Hydra cfg is composed, before model build)
+    from scripts._wandb_init import init_wandb
+    wandb_run = init_wandb(cfg, run_dir=run_dir, role="train")
 
     # 2) Build / load model
     model, parent_chain_total = _build_or_load_model(cfg, train_env, run_dir, seed)
@@ -298,6 +301,18 @@ def main(cfg: DictConfig) -> None:
         frame_stack=frame_stack,
     )
 
+    # Wandb integration callback: hooks SB3's internal logger and forwards
+    # every recorded value to wandb.log.  log="gradients" emits weight+grad
+    # histograms; cfg-gated for cost.  In WANDB_MODE=disabled this is a no-op.
+    from wandb.integration.sb3 import WandbCallback as _WandbCallback
+    callbacks.append(
+        _WandbCallback(
+            verbose=0,
+            log="gradients" if cfg.wandb.log_gradients else None,
+            model_save_path=None,   # we handle artifact upload ourselves in Phase C
+        )
+    )
+
     # 5) Train
     started = datetime.now()
     try:
@@ -316,6 +331,8 @@ def main(cfg: DictConfig) -> None:
             wall_time_s=elapsed_s,
             completed_steps=completed_steps,
         )
+        import wandb as _wandb
+        _wandb.finish()
 
 
 if __name__ == "__main__":
