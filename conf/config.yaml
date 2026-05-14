@@ -10,6 +10,7 @@ defaults:
   - eval: default
   - init: scratch
   - curriculum: random_start
+  - wandb: default
   - _self_                          # values below override the group defaults
   - optional local: default         # gitignored; missing-file is silent
 
