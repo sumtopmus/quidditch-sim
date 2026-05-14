@@ -66,6 +66,21 @@ class InitConfig:
     obs_surgery: bool = False
     new_dim_init_scale: float = 0.01  # only used when mode=warm_start
 
+    def __post_init__(self) -> None:
+        # Ban `:latest` alias in committed configs.  `:latest` shifts as new
+        # versions land; a checked-in lineage parent must pin a stable alias
+        # (`:prod`, `:<run_name>`) or an immutable version (`:v3`).  Schema-
+        # level rejection prevents the footgun of a parent's meaning drifting
+        # under a `git pull` from someone else's promote.
+        if self.mode != "scratch" and self.parent is not None:
+            is_wandb = self.parent.startswith(("wandb://", "wandb-artifact://"))
+            if is_wandb and self.parent.endswith(":latest"):
+                raise ValueError(
+                    f"init.parent={self.parent!r}: `:latest` is banned in "
+                    f"committed configs.  Pin a stable alias (`:prod`, "
+                    f"`:<run_name>`) or an immutable version (`:v<N>`)."
+                )
+
 
 @dataclass
 class CurriculumConfig:
