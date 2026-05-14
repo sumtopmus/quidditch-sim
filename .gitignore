@@ -1,6 +1,7 @@
 # Python
 __pycache__
 *.pyc
+.pytest_cache
 
 # Dev/training artifacts (ephemeral — use `make promote` to save good models)
 runs/
