@@ -1,0 +1,6 @@
+# Two-tier models/:
+#   - committed dirs (per-run): vendored prod checkpoints.  Each has
+#     best_model.zip + .hydra/ + _wandb_metadata.json (pins v<N>).
+#   - .cache/: gitignored landing area for `wandb.use_artifact(...).download()`.
+#     Never committed; safe to wipe.
+.cache/
