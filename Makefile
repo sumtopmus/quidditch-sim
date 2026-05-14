@@ -47,7 +47,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless tensorboard lineage promote install configs clean list-runs eval-team
+.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless tensorboard lineage promote install clean list-runs eval-team
 
 .DEFAULT_GOAL := help
 
@@ -133,21 +133,9 @@ promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-install: ## 📦 Create/update the $(CONDA_ENV) conda env + populate config/ from templates
+install: ## 📦 Create/update the $(CONDA_ENV) conda env
 	@$(CONDA) env create -f environment.yml 2>/dev/null || $(CONDA) env update -f environment.yml --prune
-	@$(MAKE) --no-print-directory configs
 	@echo "Done. Verify with: make test"
-
-configs: ## 🛠  Populate config/ from templates/ (camera-only; training config now lives in conf/)
-	@mkdir -p config
-	@for f in camera; do \
-	   if [ ! -f config/$$f.toml ]; then \
-	     cp templates/$$f.toml config/$$f.toml; \
-	     echo "config/$$f.toml << templates/$$f.toml."; \
-	   else \
-	     echo "config/$$f.toml already exists — not overwritten"; \
-	   fi; \
-	 done
 
 list-runs: ## 🗂️  List training runs grouped by config name
 	@echo "=== $(RUNS_DIR)/ ==="; \

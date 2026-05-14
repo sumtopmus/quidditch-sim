@@ -7,8 +7,7 @@ runs/
 
 # models/ IS tracked; individual zips committed via `make promote`
 
-# Working configs — gitignored so local experiments aren't committed.
-# Edit freely; `make promote` snapshots training/env into models/<run>/.
-# Restore from a promoted model with `make repro MODEL=<name>`.
-# First-time setup: `make install` copies templates/*.toml here.
-config/
+# Hydra local overrides live under conf/local/ — see conf/local/.gitignore
+# for the per-file allowlist.
+# (The legacy config/ dir is gone — training config moved to conf/ and
+#  camera config to conf/camera/default.yaml in the 2026-05-13 Hydra migration.)

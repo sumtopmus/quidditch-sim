@@ -4,13 +4,12 @@ Used by `build_mjcf` (offscreen "fixed" camera + axis-aligned broadcast cams)
 and by the World/Quadrotor viewer setup (live mujoco.viewer).  Single source
 of truth for both.
 
-Camera definitions live in ``config/camera.toml`` (copied from
-``templates/camera.toml`` by ``make configs``, which is also invoked
-by ``make install``).  The file is REQUIRED: ``load_camera_config``
-raises FileNotFoundError if it's missing or any required cam below is
-absent, with a hint to run ``make configs``.
+Camera definitions live in ``conf/camera/default.yaml`` (tracked in git, edit
+in place — the pre-Hydra TOML setup had a templates/ → config/ copy ceremony,
+which is gone now).  Loaded directly via PyYAML; not part of Hydra config
+composition since cameras aren't an experiment axis.
 
-Required cams in the toml: fixed | north | east | south | west | top.
+Required cams: fixed | north | east | south | west | top.
 """
 
 from __future__ import annotations
@@ -21,39 +20,39 @@ from pathlib import Path
 import numpy as np
 
 
-# Cams the toml MUST declare; the loaders below raise if any are missing.
+# Cams the YAML MUST declare; the loaders below raise if any are missing.
 _REQUIRED_CAMS: tuple[str, ...] = (
     "fixed", "north", "east", "south", "west", "top",
 )
 
 _INSTALL_HINT = (
-    "Run `make configs` to copy templates/camera.toml → config/camera.toml."
+    "Edit conf/camera/default.yaml (tracked in git — no copy ceremony required)."
 )
 
 
 def _default_camera_config_path() -> Path:
-    """Resolve to ``<repo>/config/camera.toml`` from this file's location."""
+    """Resolve to ``<repo>/conf/camera/default.yaml`` from this file's location."""
     # core/mjcf/camera.py → core → repo
-    return Path(__file__).resolve().parents[2] / "config" / "camera.toml"
+    return Path(__file__).resolve().parents[2] / "conf" / "camera" / "default.yaml"
 
 
-def _load_camera_toml(path: str | Path | None) -> dict:
-    """Open + parse the toml.  Raises FileNotFoundError with install hint."""
-    import tomllib
+def _load_camera_yaml(path: str | Path | None) -> dict:
+    """Open + parse the YAML.  Raises FileNotFoundError with install hint."""
+    import yaml
 
     p = Path(path) if path is not None else _default_camera_config_path()
     try:
-        with open(p, "rb") as f:
-            data = tomllib.load(f)
+        with open(p, "r") as f:
+            data = yaml.safe_load(f) or {}
     except FileNotFoundError as e:
         raise FileNotFoundError(
             f"{p} not found — {_INSTALL_HINT}"
         ) from e
 
-    cams = data.get("camera")
+    cams = data.get("cameras")
     if not isinstance(cams, dict):
         raise KeyError(
-            f"{p}: expected a top-level [camera.<Name>] section per cam; "
+            f"{p}: expected a top-level `cameras:` map of cam-name → entry; "
             f"got {type(cams).__name__}.  {_INSTALL_HINT}"
         )
 
@@ -67,10 +66,10 @@ def _load_camera_toml(path: str | Path | None) -> dict:
 
 
 def _cam_entry(name: str, entry: dict) -> tuple[tuple, tuple, float | None]:
-    """Validate one [camera.<Name>] entry → (eye, lookat, fovy_or_None)."""
+    """Validate one cameras.<name> entry → (eye, lookat, fovy_or_None)."""
     for key in ("eye", "lookat"):
         if key not in entry:
-            raise KeyError(f"camera.{name}: missing required key '{key}'.")
+            raise KeyError(f"cameras.{name}: missing required key '{key}'.")
     fovy = float(entry["fovy"]) if "fovy" in entry else None
     return tuple(entry["eye"]), tuple(entry["lookat"]), fovy
 
@@ -82,17 +81,16 @@ CameraSpec = tuple[str, tuple, tuple, float | None]   # (name, eye, lookat, fovy
 def load_camera_config(
     path: str | Path | None = None,
 ) -> tuple[CameraSpec, ...]:
-    """Load all cameras from config/camera.toml as a tuple of (name, eye, lookat, fovy).
+    """Load all cameras from conf/camera/default.yaml as a tuple of (name, eye, lookat, fovy).
 
     Required cams: fixed | north | east | south | west | top.  Order in the
     returned tuple matches ``_REQUIRED_CAMS`` (fixed first, compass cardinals
     in NESW order, top last).
 
-    Raises ``FileNotFoundError`` if the toml is missing, or ``KeyError`` if
-    any required cam is absent or missing eye/lookat.  Both errors include
-    a hint to run ``make configs`` to copy templates/camera.toml.
+    Raises ``FileNotFoundError`` if the YAML is missing, or ``KeyError`` if
+    any required cam is absent or missing eye/lookat.
     """
-    cams = _load_camera_toml(path)
+    cams = _load_camera_yaml(path)
     out: list[CameraSpec] = []
     for name in _REQUIRED_CAMS:
         eye, lookat, fovy = _cam_entry(name, cams[name])
