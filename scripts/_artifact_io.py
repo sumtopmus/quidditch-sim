@@ -145,7 +145,14 @@ def log_run_artifact(
     parent_chain_total: int,
     best_eval_reward: float | None,
 ) -> None:
-    """Log this run's best_model + .hydra/ as a wandb artifact.
+    """Log this run's model + .hydra/ as a wandb artifact.
+
+    Source-file preference: best_model.zip (written by EvalCallback after a
+    successful eval) → final_model.zip (always written by train.py's
+    `finally:` block).  Either way the artifact's internal name is
+    `best_model.zip` so downstream `resolve_parent` keeps working without a
+    special case.  Metadata field `model_kind` ∈ {"best", "final"} records
+    the source so a final-only run is auditable (no proven eval signal).
 
     Aliased `:latest` automatically; further aliases (`:prod`, `:<run_name>`)
     are added by scripts/promote.py.  No-op when wandb.run is None or in
@@ -153,10 +160,17 @@ def log_run_artifact(
     """
     if run is None or getattr(run, "disabled", False):
         return
-    best = Path(run_dir) / "best_model.zip"
-    hydra_dir = Path(run_dir) / ".hydra"
-    if not best.exists():
-        # No best_model emitted (e.g., training crashed before first eval).
+    run_dir = Path(run_dir)
+    best = run_dir / "best_model.zip"
+    final = run_dir / "final_model.zip"
+    hydra_dir = run_dir / ".hydra"
+
+    if best.exists():
+        model_path, model_kind = best, "best"
+    elif final.exists():
+        model_path, model_kind = final, "final"
+    else:
+        # Training crashed before either file landed.
         return
 
     art = wandb.Artifact(
@@ -170,9 +184,10 @@ def log_run_artifact(
             "parent_uri":         cfg.init.parent,
             "parent_chain_total": int(parent_chain_total),
             "best_eval_reward":   best_eval_reward,
+            "model_kind":         model_kind,
         },
     )
-    art.add_file(str(best))
+    art.add_file(str(model_path), name="best_model.zip")
     if hydra_dir.exists():
         art.add_dir(str(hydra_dir), name=".hydra")
     run.log_artifact(art, aliases=["latest"])
