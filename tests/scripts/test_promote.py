@@ -8,14 +8,26 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
-def _make_run_dir(tmp_path: Path, run_name: str) -> Path:
-    """Build a fake completed run dir."""
+def _make_run_dir(
+    tmp_path: Path,
+    run_name: str,
+    *,
+    wandb_project: str = "drone-quidditch",
+    entity_override: str | None = None,
+) -> Path:
+    """Build a fake completed run dir.  Includes a wandb config block
+    matching what a real Hydra-composed run writes."""
     run_dir = tmp_path / "runs" / run_name / "20260514_120000"
     run_dir.mkdir(parents=True)
     (run_dir / "best_model.zip").write_bytes(b"model-bytes")
     hydra = run_dir / ".hydra"
     hydra.mkdir()
-    (hydra / "config.yaml").write_text(f"run_name: {run_name}\n")
+    wandb_yaml = f"  project: {wandb_project}\n"
+    if entity_override is not None:
+        wandb_yaml += f"  entity_override: {entity_override}\n"
+    (hydra / "config.yaml").write_text(
+        f"run_name: {run_name}\nwandb:\n{wandb_yaml}"
+    )
     (hydra / "meta.yaml").write_text("git_hash: abc123\nparent_chain_total: 0\n")
     return run_dir
 
@@ -100,3 +112,89 @@ def test_promote_no_best_model_fails(tmp_path: Path) -> None:
 
     with pytest.raises(FileNotFoundError, match="best_model.zip"):
         promote_run_dir(run_dir=run_dir, run_name="x", models_root=tmp_path / "models")
+
+
+def test_promote_qualifies_artifact_path_with_project_and_entity(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Regression: a bare `name:latest` lookup falls through to wandb's
+    workspace-default project (often `uncategorized`) and fails to find
+    artifacts logged to cfg.wandb.project.  We must qualify with
+    entity/project."""
+    from scripts.promote import promote_run_dir
+
+    run_dir = _make_run_dir(tmp_path, "ppo_hoop_blue_5",
+                             wandb_project="drone-quidditch")
+    models_root = tmp_path / "models"
+
+    monkeypatch.setenv("WANDB_ENTITY", "gridcom")
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
+
+    art = MagicMock()
+    art.version = "v0"
+    art.aliases = ["latest"]
+    api = MagicMock()
+    api.artifact.return_value = art
+
+    with patch("wandb.Api", return_value=api):
+        promote_run_dir(run_dir=run_dir, run_name="ppo_hoop_blue_5",
+                        models_root=models_root)
+
+    # Single api.artifact call with fully-qualified path.
+    api.artifact.assert_called_once_with(
+        "gridcom/drone-quidditch/ppo_hoop_blue_5:latest"
+    )
+
+
+def test_promote_falls_back_to_drone_quidditch_when_cfg_lacks_wandb_block(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Old runs (pre-Part-2) may not have a wandb block in .hydra/config.yaml.
+    The resolver should still produce a usable project (default fallback)."""
+    from scripts.promote import _resolve_entity_project
+
+    run_dir = tmp_path / "old_run"
+    run_dir.mkdir()
+    hydra = run_dir / ".hydra"
+    hydra.mkdir()
+    (hydra / "config.yaml").write_text("run_name: legacy\n")
+
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+
+    entity, project = _resolve_entity_project(run_dir)
+    assert project == "drone-quidditch"
+    assert entity is None
+
+
+def test_promote_env_overrides_take_precedence_over_cfg(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    from scripts.promote import _resolve_entity_project
+
+    run_dir = _make_run_dir(tmp_path, "x",
+                             wandb_project="drone-quidditch",
+                             entity_override="team-a")
+
+    monkeypatch.setenv("WANDB_PROJECT", "scratch")
+    monkeypatch.setenv("WANDB_ENTITY", "team-b")
+
+    entity, project = _resolve_entity_project(run_dir)
+    assert project == "scratch"
+    assert entity == "team-b"
+
+
+def test_promote_path_without_entity_when_only_project_set(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """If WANDB_ENTITY isn't set and cfg has no entity_override, the
+    qualified path uses the two-part form (project/name:alias)."""
+    from scripts.promote import _find_run_artifact
+
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+
+    api = MagicMock()
+    with patch("wandb.Api", return_value=api):
+        _find_run_artifact("foo", "20260101_000000",
+                            entity=None, project="drone-quidditch")
+    api.artifact.assert_called_once_with("drone-quidditch/foo:latest")

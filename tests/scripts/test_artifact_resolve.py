@@ -169,3 +169,80 @@ def test_resolve_no_active_wandb_run_still_works(tmp_path: Path) -> None:
 
     assert (tmp_path / "models" / ".cache" / "ppo_hoop_red_1_v0" / "best_model.zip").exists()
     assert out.exists()
+
+
+def test_resolve_qualifies_uri_with_env_project_and_entity(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """Regression: shorthand `wandb://name:alias` must be qualified with
+    entity/project before hitting wandb.Api(), or the lookup routes to
+    `uncategorized/` and silently misses the artifact."""
+    from scripts._artifact_io import resolve_parent
+
+    monkeypatch.setenv("WANDB_ENTITY", "gridcom")
+    monkeypatch.setenv("WANDB_PROJECT", "drone-quidditch")
+
+    art = MagicMock()
+    art.version = "v0"
+    art.name = "x:v0"
+
+    def fake_download(root: str) -> str:
+        Path(root).mkdir(parents=True, exist_ok=True)
+        (Path(root) / "best_model.zip").write_bytes(b"")
+        return root
+
+    art.download.side_effect = fake_download
+    api = MagicMock()
+    api.artifact.return_value = art
+
+    with patch("wandb.Api", return_value=api):
+        with patch("wandb.run", None):
+            resolve_parent("wandb://x:prod", models_root=tmp_path / "models")
+
+    api.artifact.assert_called_once_with("gridcom/drone-quidditch/x:prod")
+
+
+def test_resolve_prefers_live_wandb_run_entity_project(
+    monkeypatch,
+) -> None:
+    """Inside a training run, wandb.run's entity/project is the right
+    default — env vars override it but otherwise we use the live run."""
+    from scripts._artifact_io import _resolve_default_entity_project
+
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
+
+    fake_run = MagicMock()
+    fake_run.entity = "live-entity"
+    fake_run.project = "live-project"
+    with patch("wandb.run", fake_run):
+        entity, project = _resolve_default_entity_project()
+    assert entity == "live-entity"
+    assert project == "live-project"
+
+
+def test_resolve_env_overrides_live_run(monkeypatch) -> None:
+    from scripts._artifact_io import _resolve_default_entity_project
+
+    monkeypatch.setenv("WANDB_ENTITY", "env-entity")
+    monkeypatch.setenv("WANDB_PROJECT", "env-project")
+    fake_run = MagicMock()
+    fake_run.entity = "live-entity"
+    fake_run.project = "live-project"
+    with patch("wandb.run", fake_run):
+        entity, project = _resolve_default_entity_project()
+    assert entity == "env-entity"
+    assert project == "env-project"
+
+
+def test_resolve_falls_back_to_drone_quidditch_when_nothing_set(
+    monkeypatch,
+) -> None:
+    from scripts._artifact_io import _resolve_default_entity_project
+
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    monkeypatch.delenv("WANDB_PROJECT", raising=False)
+    with patch("wandb.run", None):
+        entity, project = _resolve_default_entity_project()
+    assert entity is None
+    assert project == "drone-quidditch"

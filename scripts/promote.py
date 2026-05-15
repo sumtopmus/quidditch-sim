@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import shutil
 import sys
 from pathlib import Path
@@ -37,15 +38,44 @@ def _resolve_run_name(run_dir: Path) -> str:
     return str(cfg.run_name)
 
 
-def _find_run_artifact(run_name: str, timestamp: str):
+def _resolve_entity_project(run_dir: Path) -> tuple[str | None, str]:
+    """Resolve wandb (entity, project) for artifact lookups.
+
+    Without qualification, `wandb.Api().artifact("name:alias")` looks up
+    the user's *default* project (often `uncategorized`), which is NOT
+    where training runs land — they go to cfg.wandb.project.  This helper
+    reads the run's persisted Hydra cfg.wandb block, with env-var
+    overrides (WANDB_ENTITY, WANDB_PROJECT) taking precedence so a user
+    can repoint without editing files.
+    """
+    cfg = OmegaConf.load(run_dir / ".hydra" / "config.yaml")
+    wandb_cfg = cfg.get("wandb") or {}
+    project = (
+        os.environ.get("WANDB_PROJECT")
+        or wandb_cfg.get("project")
+        or "drone-quidditch"
+    )
+    entity = os.environ.get("WANDB_ENTITY") or wandb_cfg.get("entity_override") or None
+    return entity, str(project)
+
+
+def _find_run_artifact(run_name: str, timestamp: str,
+                       entity: str | None, project: str):
     """Find the wandb artifact logged by run_id=<run_name>_<timestamp>.
 
     The simple case: `<run_name>:latest` points to the just-finished run
     (this is the universal case immediately after training completes, since
-    `log_run_artifact` aliases its output as `:latest`).
+    `log_run_artifact` aliases its output as `:latest`).  The qualified
+    path `entity/project/name:alias` is required — without it wandb falls
+    back to the user's default project (`uncategorized`), which never
+    contains training artifacts.
     """
     api = wandb.Api()
-    return api.artifact(f"{run_name}:latest")
+    qualified = (
+        f"{entity}/{project}/{run_name}:latest"
+        if entity else f"{project}/{run_name}:latest"
+    )
+    return api.artifact(qualified)
 
 
 def promote_run_dir(run_dir: Path, run_name: str, models_root: Path) -> None:
@@ -58,7 +88,8 @@ def promote_run_dir(run_dir: Path, run_name: str, models_root: Path) -> None:
         )
 
     timestamp = run_dir.name
-    art = _find_run_artifact(run_name, timestamp)
+    entity, project = _resolve_entity_project(run_dir)
+    art = _find_run_artifact(run_name, timestamp, entity=entity, project=project)
 
     # Mutable aliases: add `prod` + `<run_name>` if not present.
     aliases = list(art.aliases)

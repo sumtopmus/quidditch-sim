@@ -21,11 +21,34 @@ committed checkpoint.
 from __future__ import annotations
 
 import json
+import os
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
 import wandb
+
+
+def _resolve_default_entity_project() -> tuple[str | None, str]:
+    """Compute default (entity, project) for `wandb.Api().artifact(...)` calls.
+
+    Order of precedence:
+      1. WANDB_ENTITY / WANDB_PROJECT env vars (let users repoint without
+         touching code or config).
+      2. The live wandb.run (when resolve_parent fires inside a training
+         run, the run's entity/project is the right default).
+      3. Hardcoded fallback: project=drone-quidditch, entity=None.
+
+    Without explicit qualification, wandb.Api() looks up the user's
+    *workspace default* project — often `uncategorized` — which never
+    contains training artifacts.
+    """
+    entity = os.environ.get("WANDB_ENTITY")
+    project = os.environ.get("WANDB_PROJECT")
+    if wandb.run is not None:
+        entity = entity or wandb.run.entity
+        project = project or wandb.run.project
+    return entity, project or "drone-quidditch"
 
 
 @dataclass(frozen=True)
@@ -114,9 +137,13 @@ def resolve_parent(
 
     parsed = _parse_wandb_uri(s)
     api = wandb.Api()
-    # Resolve alias → immutable version.  wandb.Api() pulls defaults from
-    # env/workspace when entity/project are absent in our shorthand URIs.
-    art = api.artifact(parsed.for_api(default_entity=None, default_project=None))
+    # Resolve alias → immutable version.  Default entity/project come from
+    # env vars or the active wandb.run — NOT wandb's workspace default,
+    # which routes lookups to `uncategorized/` and silently misses our
+    # artifacts.
+    default_entity, default_project = _resolve_default_entity_project()
+    art = api.artifact(parsed.for_api(default_entity=default_entity,
+                                       default_project=default_project))
     version = art.version
 
     # Lineage edge: only if there's a live training run.
