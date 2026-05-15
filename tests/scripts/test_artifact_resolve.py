@@ -246,3 +246,74 @@ def test_resolve_falls_back_to_drone_quidditch_when_nothing_set(
         entity, project = _resolve_default_entity_project()
     assert entity is None
     assert project == "drone-quidditch"
+
+
+# ── _WandbURI.for_api — three qualification levels ───────────────────────────
+def test_for_api_full_qualification_when_entity_and_project_set() -> None:
+    from scripts._artifact_io import _WandbURI
+
+    uri = _WandbURI(entity=None, project=None, name="foo", alias="prod")
+    out = uri.for_api(default_entity="gridcom", default_project="drone-quidditch")
+    assert out == "gridcom/drone-quidditch/foo:prod"
+
+
+def test_for_api_project_only_when_no_entity_available() -> None:
+    """Regression: previously emitted bare `name:alias` when entity was None,
+    routing wandb's lookup to (workspace-default-entity, workspace-default-
+    project=uncategorized) — wrong cross product, missed our artifacts.  The
+    project-only form pins project; wandb still falls back to workspace-
+    default entity, which is what the user wants."""
+    from scripts._artifact_io import _WandbURI
+
+    uri = _WandbURI(entity=None, project=None, name="foo", alias="prod")
+    out = uri.for_api(default_entity=None, default_project="drone-quidditch")
+    assert out == "drone-quidditch/foo:prod"
+
+
+def test_for_api_bare_form_only_when_no_project_anywhere() -> None:
+    from scripts._artifact_io import _WandbURI
+
+    uri = _WandbURI(entity=None, project=None, name="foo", alias="prod")
+    out = uri.for_api(default_entity=None, default_project=None)
+    assert out == "foo:prod"
+
+
+def test_for_api_explicit_uri_qualifiers_override_defaults() -> None:
+    from scripts._artifact_io import _WandbURI
+
+    uri = _WandbURI(entity="me", project="proj", name="foo", alias="v3")
+    out = uri.for_api(default_entity="other", default_project="something")
+    assert out == "me/proj/foo:v3"
+
+
+def test_resolve_uses_project_only_form_when_entity_unset(
+    tmp_path: Path, monkeypatch,
+) -> None:
+    """End-to-end regression: with only WANDB_PROJECT (or its
+    drone-quidditch fallback) and no WANDB_ENTITY, the URI handed to
+    wandb.Api() must be `project/name:alias`, NOT the bare `name:alias`
+    that was hitting `uncategorized/`."""
+    from scripts._artifact_io import resolve_parent
+
+    monkeypatch.delenv("WANDB_ENTITY", raising=False)
+    monkeypatch.setenv("WANDB_PROJECT", "drone-quidditch")
+
+    art = MagicMock()
+    art.version = "v3"
+    art.name = "ppo_hoop_blue_4:v3"
+
+    def fake_download(root: str) -> str:
+        Path(root).mkdir(parents=True, exist_ok=True)
+        (Path(root) / "best_model.zip").write_bytes(b"")
+        return root
+
+    art.download.side_effect = fake_download
+    api = MagicMock()
+    api.artifact.return_value = art
+
+    with patch("wandb.Api", return_value=api):
+        with patch("wandb.run", None):
+            resolve_parent("wandb://ppo_hoop_blue_4:prod",
+                           models_root=tmp_path / "models")
+
+    api.artifact.assert_called_once_with("drone-quidditch/ppo_hoop_blue_4:prod")

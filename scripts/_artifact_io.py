@@ -63,13 +63,28 @@ class _WandbURI:
         return f"wandb://{self.name}:{self.alias}"
 
     def for_api(self, default_entity: str | None, default_project: str | None) -> str:
-        """The full entity/project/name:alias string the wandb API needs."""
+        """Build the wandb-API artifact path with the strongest qualification
+        the inputs allow.
+
+        wandb.Api().artifact accepts three positional forms:
+          - "entity/project/name:alias"   (fully qualified)
+          - "project/name:alias"          (entity falls back to workspace default)
+          - "name:alias"                  (entity AND project fall back to workspace defaults)
+        The two-arg form is critical here: when the user has only a workspace-
+        default entity set (no WANDB_ENTITY env), we still want to pin the
+        project so the lookup doesn't route to `uncategorized/`.  Emitting the
+        bare `name:alias` form whenever entity is None is the bug that caused
+        promote/lineage/resolve to all fail with "project 'uncategorized'
+        not found under entity 'X'" — workspace-default entity + workspace-
+        default project is the wrong cross product for our artifacts.
+        """
         ent = self.entity or default_entity
         proj = self.project or default_project
-        if ent is None or proj is None:
-            # Fall through; wandb.Api() will use defaults from env + workspace.
-            return f"{self.name}:{self.alias}"
-        return f"{ent}/{proj}/{self.name}:{self.alias}"
+        if ent and proj:
+            return f"{ent}/{proj}/{self.name}:{self.alias}"
+        if proj:
+            return f"{proj}/{self.name}:{self.alias}"
+        return f"{self.name}:{self.alias}"
 
 
 def _parse_wandb_uri(uri: str) -> _WandbURI:
