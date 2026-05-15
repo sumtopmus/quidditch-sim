@@ -107,16 +107,28 @@ def walk_chain_local(
 def walk_chain_wandb(uri: str) -> list[dict[str, Any]]:
     """Walk artifact lineage via the wandb API.  Returns oldest-first."""
     import wandb
+    from scripts._artifact_io import _parse_wandb_uri, _resolve_default_entity_project
+
     api = wandb.Api()
 
     chain: list[dict] = []
     seen: set[str] = set()
 
+    # Qualify the URI with entity/project before handing to api.artifact() —
+    # bare `wandb://name:alias` (or `wandb-artifact://e/p/name:alias`) is
+    # not a scheme wandb understands; without qualification it falls back
+    # to the workspace-default project (`uncategorized`) and silently
+    # misses our artifacts.
+    parsed = _parse_wandb_uri(uri)
+    default_entity, default_project = _resolve_default_entity_project()
+    qualified = parsed.for_api(default_entity=default_entity,
+                                default_project=default_project)
+
     # We hold artifact objects directly (not URIs) so once we resolve the
     # entry point we can hop via `run.used_artifacts()` without going back
     # to api.artifact() — which means the walker tolerates partial mocks
     # in tests and avoids a network round-trip per node.
-    initial = api.artifact(uri)
+    initial = api.artifact(qualified)
     queue: list = [initial]
 
     while queue:

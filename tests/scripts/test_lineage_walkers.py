@@ -102,6 +102,32 @@ def test_walker_b_falls_back_to_local_on_api_error(tmp_path: Path) -> None:
     assert chain[0]["name"] == "red_v1"
 
 
+def test_walker_b_qualifies_uri_with_env_project_and_entity(monkeypatch) -> None:
+    """Regression: walk_chain_wandb must qualify the URI with entity/project
+    before calling api.artifact, otherwise wandb's default project takes
+    over and lookups go to `uncategorized` instead of drone-quidditch."""
+    from scripts.lineage import walk_chain_wandb
+
+    monkeypatch.setenv("WANDB_ENTITY", "gridcom")
+    monkeypatch.setenv("WANDB_PROJECT", "drone-quidditch")
+
+    art = MagicMock()
+    art.name = "ppo_hoop_blue_4:v3"
+    art.version = "v3"
+    art.metadata = {"obs_spec": "AUGMENTED_OBS"}
+    art.logged_by.return_value = None        # leaf node, walk terminates
+
+    api = MagicMock()
+    api.artifact.return_value = art
+
+    with patch("wandb.Api", return_value=api):
+        with patch("wandb.run", None):       # offline / no live run
+            chain = walk_chain_wandb("wandb://ppo_hoop_blue_4:prod")
+
+    api.artifact.assert_called_once_with("gridcom/drone-quidditch/ppo_hoop_blue_4:prod")
+    assert len(chain) == 1
+
+
 # ── Resume collapse ──────────────────────────────────────────────────────────
 def test_resume_chain_collapses_in_render(tmp_path: Path) -> None:
     """`init.mode=resume` segments collapse into one line in the rendered output."""
