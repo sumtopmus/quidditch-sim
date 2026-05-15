@@ -65,11 +65,11 @@ test: ## ✅ Run all tests (unit + integration)
 	@$(PYTHON) -m pytest
 
 test-fast: ## ⚡ Unit tests only (skip slow integration canaries)
-	@$(PYTHON) -m pytest tests/unit
+	@$(PYTHON) -m pytest -m "not slow"
 
 test-warm: ## ✅ Warm-start preserves single-agent behavior  MODEL=<run-name>
 	@test -n "$(MODEL)" || { echo "ERROR: MODEL=<run-name> required (see 'make list-runs')"; exit 1; }; \
-	 MODEL="$(MODEL)" $(PYTHON) -m pytest tests/integration/test_warm_start.py
+	 MODEL="$(MODEL)" $(PYTHON) -m pytest tests/core/policies/test_warm_start.py
 
 CAM ?= grid
 camera-test: ## 🎥 Render hover flight as 2x2 grid → mp4 (CAM=grid|fixed|north|east|south|west|top|fpv|tpv|port|starboard)

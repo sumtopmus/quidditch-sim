@@ -11,6 +11,10 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pytest
+
+pytestmark = pytest.mark.slow
+
 
 def test_train_canary_team_2048_steps(tmp_path: Path) -> None:
     repo_root = Path(__file__).resolve().parent.parent.parent

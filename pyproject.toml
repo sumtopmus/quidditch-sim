@@ -3,5 +3,5 @@ pythonpath = ["."]
 testpaths = ["tests"]
 addopts = "-ra --strict-markers"
 markers = [
-    "slow: integration tests with real episode loops (full canaries, warm-start)",
+    "slow: integration tests — real episode loops, full canaries, warm-start. `make test-fast` skips these via -m 'not slow'.",
 ]
