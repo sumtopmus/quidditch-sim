@@ -1,0 +1,9 @@
+# W&B integration defaults.  Override per experiment via `defaults:` group
+# choice (none exist yet — this is the only entry) or by setting
+# `wandb.tags_extra=[...]` / `wandb.notes=...` in an experiment YAML.
+
+project: drone-quidditch
+entity_override: null
+tags_extra: []
+notes: ""
+log_gradients: false

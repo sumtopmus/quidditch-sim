@@ -39,6 +39,7 @@ from stable_baselines3 import PPO
 from config_schema import register_configs
 from envs.quidditch.obs_spec import SPEC_BY_NAME
 from envs.quidditch.team_env import TeamConfig
+from scripts._artifact_io import resolve_parent
 from scripts._train_common import (
     append_meta_yaml_final_stats,
     build_callbacks,
@@ -147,18 +148,17 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
         "clip_range":    cfg.trainer.clip_range,
         "ent_coef":      cfg.trainer.ent_coef,
     }
-    tb = str(run_dir)
     current_spec = SPEC_BY_NAME[cfg.obs.name]
     frame_stack = int(cfg.obs.n_stack)
 
     if cfg.init.mode == "scratch":
         return PPO(
             "MlpPolicy", vec_env,
-            tensorboard_log=tb, seed=seed, verbose=0, **ppo_kwargs,
+            tensorboard_log=None, seed=seed, verbose=0, **ppo_kwargs,
         ), 0
 
     if cfg.init.mode == "pretrain":
-        parent = Path(cfg.init.parent)
+        parent = resolve_parent(cfg.init.parent)
         parent_hydra = parent.parent / ".hydra"
         if not parent_hydra.exists() and (parent.parent.parent / ".hydra").exists():
             parent_hydra = parent.parent.parent / ".hydra"
@@ -177,7 +177,7 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
                 )
         else:
             _check_obs_compat_from_hydra(parent_hydra, current_spec, frame_stack)
-        model = PPO.load(str(parent), env=vec_env, tensorboard_log=tb, verbose=0, **ppo_kwargs)
+        model = PPO.load(str(parent), env=vec_env, tensorboard_log=None, verbose=0, **ppo_kwargs)
         chain_total = read_parent_chain_total_from_hydra(str(parent)) or int(model.num_timesteps)
         return model, chain_total
 
@@ -195,13 +195,13 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
         parent_hydra = latest_trial / ".hydra"
         if parent_hydra.exists():
             _check_obs_compat_from_hydra(parent_hydra, current_spec, frame_stack)
-        model = PPO.load(ckpt, env=vec_env, tensorboard_log=tb, verbose=0,
+        model = PPO.load(ckpt, env=vec_env, tensorboard_log=None, verbose=0,
                           learning_rate=cfg.trainer.lr)
         return model, 0
 
     if cfg.init.mode == "warm_start":
         from core.policies.warm_start import warm_start_ppo_by_spec
-        parent = Path(cfg.init.parent)
+        parent = resolve_parent(cfg.init.parent)
         parent_hydra = parent.parent / ".hydra"
         if not parent_hydra.exists() and (parent.parent.parent / ".hydra").exists():
             parent_hydra = parent.parent.parent / ".hydra"
@@ -215,7 +215,7 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
             current_spec=current_spec,
             current_n_stack=frame_stack,
             new_dim_init_scale=cfg.init.new_dim_init_scale,
-            tensorboard_log=tb, seed=seed, verbose=0, **ppo_kwargs,
+            tensorboard_log=None, seed=seed, verbose=0, **ppo_kwargs,
         )
         return model, 0
 
@@ -239,6 +239,10 @@ def main(cfg: DictConfig) -> None:
     # own stack from Python constants in Phase 4 (canary preservation).
     env_factory.reward_stack = reward_stack
     train_env = env_factory.build_train_env()
+
+    # 1.5) Initialize wandb run (after Hydra cfg is composed, before model build)
+    from scripts._wandb_init import init_wandb
+    wandb_run = init_wandb(cfg, run_dir=run_dir, role="train")
 
     # 2) Build / load model
     model, parent_chain_total = _build_or_load_model(cfg, train_env, run_dir, seed)
@@ -298,8 +302,21 @@ def main(cfg: DictConfig) -> None:
         frame_stack=frame_stack,
     )
 
+    # Wandb integration callback: hooks SB3's internal logger and forwards
+    # every recorded value to wandb.log.  log="gradients" emits weight+grad
+    # histograms; cfg-gated for cost.  In WANDB_MODE=disabled this is a no-op.
+    from wandb.integration.sb3 import WandbCallback as _WandbCallback
+    callbacks.append(
+        _WandbCallback(
+            verbose=0,
+            log="gradients" if cfg.wandb.log_gradients else None,
+            model_save_path=None,   # we handle artifact upload ourselves in Phase C
+        )
+    )
+
     # 5) Train
     started = datetime.now()
+    best_eval_reward: float | None = None
     try:
         model.learn(
             total_timesteps=cfg.trainer.total_timesteps,
@@ -311,11 +328,35 @@ def main(cfg: DictConfig) -> None:
         elapsed_s = (datetime.now() - started).total_seconds()
         completed_steps = int(model.num_timesteps)
         model.save(str(run_dir / "final_model"))
+
+        # EvalCallback tracks best_mean_reward on the callback instance.
+        # Reach in for the value if eval ran.
+        for cb in callbacks:
+            if hasattr(cb, "best_mean_reward"):
+                rwd = float(cb.best_mean_reward)
+                if rwd > -1e9:                                # SB3 sentinel default
+                    best_eval_reward = rwd
+                break
+
         append_meta_yaml_final_stats(
             run_dir,
             wall_time_s=elapsed_s,
             completed_steps=completed_steps,
+            best_eval_reward=best_eval_reward,
         )
+
+        # Log the best_model + .hydra/ as a wandb artifact (no-op in disabled).
+        from scripts._artifact_io import log_run_artifact
+        log_run_artifact(
+            run=wandb_run,
+            run_dir=run_dir,
+            cfg=cfg,
+            parent_chain_total=parent_chain_total,
+            best_eval_reward=best_eval_reward,
+        )
+
+        import wandb as _wandb
+        _wandb.finish()
 
 
 if __name__ == "__main__":

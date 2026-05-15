@@ -13,6 +13,7 @@ from typing import Protocol, runtime_checkable
 import gymnasium as gym
 import mujoco
 import numpy as np
+from stable_baselines3 import PPO
 
 from envs.quidditch import obs_spec
 from envs.quidditch.constants import HOOP_CENTER
@@ -156,7 +157,6 @@ class FrozenPolicyOpponent:
     """
     def __init__(self, model_path: str | None = None,
                  deterministic: bool = False) -> None:
-        from stable_baselines3 import PPO
         if model_path is None:
             raise ValueError("FrozenPolicyOpponent: model_path is required")
         self.model = PPO.load(model_path)
@@ -230,8 +230,10 @@ def from_spec(spec: str, *, deterministic: bool = False) -> Opponent:
         return MixtureOpponent(components)
 
     if spec.startswith("frozen:"):
+        from scripts._artifact_io import resolve_parent
+        raw_path = spec[len("frozen:"):]
         return FrozenPolicyOpponent(
-            model_path=spec[len("frozen:"):],
+            model_path=str(resolve_parent(raw_path)),
             deterministic=deterministic,
         )
 

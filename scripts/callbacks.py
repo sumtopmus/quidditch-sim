@@ -9,7 +9,6 @@ from typing import Callable
 import numpy as np
 
 from stable_baselines3.common.callbacks import BaseCallback
-from stable_baselines3.common.logger import Video
 
 
 class ResumeProgressCallback(BaseCallback):
@@ -65,13 +64,14 @@ class VideoRecorderCallback(BaseCallback):
     drone-start side, east frames the goal head-on from behind the hoop.
     north would mirror the hoop to the LEFT and is usually avoided.
 
-    Each recorded episode is also logged to TensorBoard.  In grid mode every
-    cell becomes its own video under ``eval/video/<cam>`` (so TB shows four
-    independent clips, easier to read than the stitched grid at TB's preview
-    size).  In single-cam mode there's one clip under ``eval/video``.  Either
-    way the on-disk mp4 still contains the stitched grid.  TB embedding needs
-    ``moviepy<2.0`` (torch's SummaryWriter.add_video imports moviepy.editor,
-    removed in 2.x); missing it disables TB videos but mp4 writes are unaffected.
+    Each recorded episode is also logged to W&B.  In grid mode every cell
+    becomes its own ``wandb.Video`` under ``eval/video/<cam>`` (the
+    dashboard renders four independent media panels).  In single-cam mode
+    there's one clip under ``eval/video``.  Either way the on-disk mp4
+    still contains the stitched grid.  wandb.Video encodes mp4 in-memory
+    via moviepy<2.0 (pinned because moviepy 2.x removed moviepy.editor);
+    missing moviepy disables wandb uploads but on-disk mp4 writes are
+    unaffected.
 
     Requires: pip install imageio imageio-ffmpeg "moviepy<2.0"
     """
@@ -110,8 +110,8 @@ class VideoRecorderCallback(BaseCallback):
         os.makedirs(video_dir, exist_ok=True)
 
         # Lazy imports so training still works if optional video deps are missing.
-        # imageio writes the on-disk mp4; moviepy is required by torch's
-        # SummaryWriter.add_video to embed the video in TB events.
+        # imageio writes the on-disk mp4; moviepy is required by wandb.Video to
+        # encode the in-memory mp4 it ships to the dashboard.
         try:
             import imageio  # noqa: F401
 
@@ -129,8 +129,8 @@ class VideoRecorderCallback(BaseCallback):
         except ImportError:
             self._moviepy_ok = False
             print(
-                f"{_ts()} ⚠️  [VideoRecorder] moviepy not found — TB video "
-                "logging disabled. Install with: pip install moviepy"
+                f"{_ts()} ⚠️  [VideoRecorder] moviepy not found — wandb video "
+                "logging disabled. Install with: pip install 'moviepy<2.0'"
             )
 
     def _capture_cells(self, env) -> list[np.ndarray] | None:
@@ -199,7 +199,7 @@ class VideoRecorderCallback(BaseCallback):
             for frame in mp4_frames:
                 writer.append_data(frame)  # type: ignore[attr-defined]
 
-        self._log_to_tensorboard(per_cam)
+        self._log_to_wandb(per_cam)
 
         if self.verbose:
             print(f"{_ts()} 🎬 [VideoRecorder] {n_frames} frames → {path}")
@@ -212,32 +212,26 @@ class VideoRecorderCallback(BaseCallback):
         bottom = np.hstack([cells[2], cells[3]])
         return np.vstack([top, bottom])
 
-    def _log_to_tensorboard(self, per_cam: dict[str, list[np.ndarray]]) -> None:
-        """Log each cam stream as a separate TB video.
+    def _log_to_wandb(self, per_cam: dict[str, list[np.ndarray]]) -> None:
+        """Log each cam stream as a separate wandb.Video.
 
-        Grid mode emits one ``Video`` per cam under ``eval/video/<cam>``
-        with the cam name lowercased (e.g. ``eval/video/east``) for tag
-        consistency with SB3's other lowercase eval/* keys.  Single-cam
-        mode emits one ``Video`` under ``eval/video``.  SB3's ``Video``
-        wraps a (N, T, C, H, W) uint8 tensor; the underlying torch
-        ``SummaryWriter.add_video`` swallows missing-moviepy as a print
-        and returns None, so we gate on the init-time probe.
+        Grid mode emits one entry per cam under ``eval/video/<cam>`` (with
+        the cam name lowercased for tag consistency); single-cam mode emits
+        one entry under ``eval/video``.  wandb.Video accepts ``(T, H, W, C)``
+        uint8 arrays and encodes the mp4 in-memory.
+
+        In WANDB_MODE=disabled, wandb.log is a no-op — this method runs but
+        nothing leaves the process.  We still gate on _moviepy_ok because
+        wandb.Video uses moviepy for the in-memory mp4 encode (same dep as
+        the on-disk grid writer; one probe suffices).
         """
         if not self._moviepy_ok:
             return
-        import torch
+        import wandb
 
+        payload: dict[str, "wandb.Video"] = {}
         for name, frames in per_cam.items():
-            # (T, H, W, 3) uint8  →  (1, T, 3, H, W) uint8
-            tensor = torch.from_numpy(
-                np.stack(frames).transpose(0, 3, 1, 2)[None].copy()
-            )
+            stack = np.stack(frames)  # (T, H, W, 3) uint8
             tag = f"eval/video/{name.lower()}" if self.grid else "eval/video"
-            self.logger.record(
-                tag,
-                Video(tensor, fps=self.fps),
-                exclude=("stdout", "log", "json", "csv"),
-            )
-        # Force-flush so videos show up at this exact timestep instead of
-        # waiting for the next rollout-end dump.
-        self.logger.dump(self.model.num_timesteps)
+            payload[tag] = wandb.Video(stack, fps=self.fps, format="mp4")
+        wandb.log(payload, step=int(self.model.num_timesteps))

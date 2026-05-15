@@ -12,6 +12,11 @@ import os
 # SubprocVecEnv children abort with OMP error #15 otherwise.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
+# Disable wandb network calls in tests.  wandb.init returns a no-op stub in
+# disabled mode; no files written, no auth required.  setdefault so a
+# debugger can flip it via `WANDB_MODE=offline python -m pytest ...`.
+os.environ.setdefault("WANDB_MODE", "disabled")
+
 import mujoco
 
 from core.drone.cf2x import cf2x_assets, cf2x_fragment
