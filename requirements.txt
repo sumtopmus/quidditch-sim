@@ -10,14 +10,14 @@ stable-baselines3
 tqdm
 rich
 
-# Monitoring / logging
-tensorboard
+# Experiment tracking, artifact registry, and sweep controller.
+# wandb's SB3 integration (wandb.integration.sb3.WandbCallback) reads from
+# SB3's internal logger and forwards metrics; system metrics (GPU/CPU/RAM)
+# are captured automatically by wandb.init.
+wandb>=0.16
 
 # Video recording (imageio writes mp4s on disk; moviepy is required by
-# torch.utils.tensorboard.SummaryWriter.add_video to embed videos in TB events).
-# moviepy is pinned <2.0 because torch's add_video imports `moviepy.editor`,
-# which was removed in moviepy 2.x — without the pin, TB videos silently
-# fail to encode (torch prints a warning to stdout and writes an empty image).
+# wandb.Video to encode in-memory and by the on-disk grid writer).
 imageio
 imageio-ffmpeg
 moviepy<2.0

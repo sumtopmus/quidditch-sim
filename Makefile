@@ -7,8 +7,7 @@
 # Hydra owns run-dir layout: runs/<run_name>/<YYYYMMDD_HHMMSS>/
 #   ├── .hydra/{config,overrides,hydra,meta}.yaml
 #   ├── best_model.zip
-#   ├── checkpoints/
-#   └── tb/
+#   └── checkpoints/
 
 CONDA_ENV  ?= uav
 RUN_NAME   ?=
@@ -47,7 +46,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless tensorboard lineage promote install clean list-runs eval-team
+.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless lineage promote install clean list-runs eval-team sweep sweep-agent sweep-agents
 
 .DEFAULT_GOAL := help
 
@@ -98,38 +97,19 @@ eval: ## 🎯 Evaluate best model visually  [RUN_NAME=...] [TRIAL=...] [EPISODES
 eval-headless: ## 📈 Evaluate best model headless  [RUN_NAME=...] [TRIAL=...] [EPISODES=50]
 	@$(PYTHON) scripts/eval_ppo.py --model $(_TRIAL_DIR)/best_model --no-render --episodes $(or $(EPISODES),50)
 
-tensorboard: ## 📊 Launch TensorBoard — all runs, or [RUN_NAME=...] for one config
-	@PYTHONWARNINGS=ignore $(CONDA_RUN) tensorboard \
-	  --logdir $(if $(filter command line,$(origin RUN_NAME)),$(RUNS_DIR)/$(RUN_NAME),$(RUNS_DIR)) \
-	  2>&1 | grep --line-buffered -v "pkg_resources\|TensorFlow installation not found\|experimental fast data\|--load_fast\|issues on GitHub\|tensorflow/tensorboard\|^[[:space:]]*$$"
-
-lineage: ## ⛓  Walk pretrain ancestry of a trial  [RUN_NAME=...] [TRIAL=...]
-	@dir="$(_TRIAL_DIR)"; \
-	 test -n "$$dir" || { echo "ERROR: no trials found in $(RUNS_DIR)/"; exit 1; }; \
-	 $(PYTHON) scripts/lineage.py "$$dir"
+lineage: ## ⛓  Walk pretrain ancestry  [RUN_NAME=...] [TRIAL=...] [TARGET=<path-or-uri>] [LOCAL=1] [BOTH=1]
+	@target="$(or $(TARGET),$(_TRIAL_DIR))"; \
+	 test -n "$$target" || { echo "ERROR: pass TARGET=<path-or-uri> or RUN_NAME=..."; exit 1; }; \
+	 $(PYTHON) -m scripts.lineage "$$target" \
+	   $(if $(LOCAL),--local) $(if $(BOTH),--both)
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-promote: ## 🏆 Promote best model to models/  [RUN_NAME=...] [TRIAL=...]
+promote: ## 🏆 Promote best model — alias on wandb + copy to models/  [RUN_NAME=...] [TRIAL=...]
 	@dir="$(_TRIAL_DIR)"; \
 	 [ -n "$$dir" ] || { echo "ERROR: no trials found in $(RUNS_DIR)/"; exit 1; }; \
-	 src="$$dir/best_model.zip"; \
-	 test -f "$$src" || { echo "ERROR: $$src not found — run 'make train EXP=...' first"; exit 1; }; \
-	 label=$$(echo "$$dir" | sed 's|$(RUNS_DIR)/||'); \
-	 dest="$(MODELS_DIR)/$$(echo $$label | tr '/' '_')"; \
-	 mkdir -p "$$dest"; \
-	 cp "$$src"                   "$$dest/best_model.zip"; \
-	 [ -d "$$dir/.hydra" ]        && cp -r "$$dir/.hydra"        "$$dest/.hydra" || true; \
-	 echo ""; \
-	 echo "  Trial:    $$dir"; \
-	 echo "  Promoted  →  $$dest/"; \
-	 echo ""; \
-	 echo "  To use as a pretrain parent in a new experiment YAML:"; \
-	 echo "    init:"; \
-	 echo "      parent: $$dest/best_model"; \
-	 echo ""; \
-	 echo "  To commit:"; \
-	 echo "    git add $$dest && git commit -m 'model: promote $$label best model'"
+	 test -f "$$dir/best_model.zip" || { echo "ERROR: $$dir/best_model.zip not found — run 'make train EXP=...' first"; exit 1; }; \
+	 $(PYTHON) -m scripts.promote "$$dir" --models-root "$(MODELS_DIR)"
 
 # ──────────────────────────────────────────────────────────────────────────────
 
@@ -166,6 +146,27 @@ eval-team: ## 🎯 Head-to-head eval  RED=<spec>  BLUE=<spec>  [EPISODES=N] [GUI
 	   $(if $(LEARNER),--learner $(LEARNER)) \
 	   $(if $(LEARNER_FRAME_STACK),--learner-frame-stack $(LEARNER_FRAME_STACK)) \
 	   $(if $(RANDOMISE_START),--randomise-start)
+
+# ── Sweeps ───────────────────────────────────────────────────────────────────
+
+WANDB_PROJECT ?= drone-quidditch
+SWEEP ?=
+ID    ?=
+N     ?= 1
+
+sweep: ## 🔁 Create a wandb sweep controller  SWEEP=<name> (file under sweeps/)
+	@test -n "$(SWEEP)" || { echo "ERROR: SWEEP=<name> required (see sweeps/)"; exit 1; }
+	@test -f "sweeps/$(SWEEP).yaml" || { echo "ERROR: sweeps/$(SWEEP).yaml not found"; exit 1; }
+	$(CONDA_RUN) wandb sweep --project $(WANDB_PROJECT) sweeps/$(SWEEP).yaml
+
+sweep-agent: ## 🤖 Run one sweep agent  ID=<sweep_id>
+	@test -n "$(ID)" || { echo "ERROR: ID=<sweep_id> required (copy from 'make sweep' output)"; exit 1; }
+	$(CONDA_RUN) wandb agent $(ID)
+
+sweep-agents: ## 🤖🤖 Run N parallel sweep agents  ID=<sweep_id> N=<n>
+	@test -n "$(ID)" || { echo "ERROR: ID=<sweep_id> required"; exit 1; }
+	@echo "Spawning $(N) agents.  Single-machine: N=1 is the sane default for CPU laptop trainings."
+	@for i in $$(seq 1 $(N)); do $(CONDA_RUN) wandb agent $(ID) & done; wait
 
 clean: ## 🧹 Remove __pycache__ and .pyc files
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
