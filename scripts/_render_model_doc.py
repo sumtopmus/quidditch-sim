@@ -81,3 +81,69 @@ def _section_header(ctx: dict[str, Any]) -> str:
         aliases = ", ".join(wandb_meta.get("aliases", []))
         lines.append(f"**W&B:** `wandb://{name}:prod` ({version}, aliases: {aliases})")
     return "\n".join(lines)
+
+
+def _section_summary(ctx: dict[str, Any]) -> str:
+    cfg = ctx["cfg"]
+    hydra_yaml = ctx["hydra_yaml"]
+
+    description = ""
+    if hasattr(cfg, "get"):
+        description = (cfg.get("description") or "").strip()
+    elif hasattr(cfg, "description"):
+        description = (cfg.description or "").strip()
+    if description:
+        return "## Summary\n\n" + description
+
+    # Auto-template path.
+    learner_id = "drone_0"
+    if hasattr(cfg, "env") and cfg.env is not None and hasattr(cfg.env, "get"):
+        learner_id = cfg.env.get("learner_id", "drone_0")
+
+    init_mode = "scratch"
+    parent = None
+    if hasattr(cfg, "init") and cfg.init is not None:
+        init_mode = cfg.init.mode
+        if hasattr(cfg.init, "get"):
+            parent = cfg.init.get("parent", None)
+
+    obs_name = cfg.obs.name
+    n_stack = cfg.obs.n_stack
+    total_steps = int(cfg.trainer.total_timesteps)
+    lr = cfg.trainer.lr
+    curriculum = "(unknown)"
+    if hasattr(cfg, "curriculum") and cfg.curriculum is not None and hasattr(cfg.curriculum, "get"):
+        curriculum = cfg.curriculum.get("name", "(unknown)")
+
+    # Opponent shorthand: read `spec` field if present, else _target_ class name.
+    opp_short = None
+    opp = cfg.get("opponent", None) if hasattr(cfg, "get") else None
+    if opp is not None:
+        if hasattr(opp, "get"):
+            opp_short = opp.get("spec", None) or opp.get("_target_", "").rsplit(".", 1)[-1]
+        else:
+            opp_short = str(opp)
+
+    # Reward group choice from hydra.yaml; fall back if absent.
+    reward_choice = "(unknown)"
+    if hydra_yaml:
+        reward_choice = (
+            hydra_yaml.get("hydra", {})
+            .get("runtime", {})
+            .get("choices", {})
+            .get("reward", "(unknown)")
+        )
+
+    parts = [f"{learner_id} learner trained from {init_mode}"]
+    if parent:
+        parts.append(f"(parent: {parent})")
+    if opp_short:
+        parts.append(f"against {opp_short}")
+    parts.append(f"on {obs_name} × n_stack={n_stack}")
+    parts.append(f"reward stack {reward_choice}")
+    parts.append(f"lr={lr}")
+    parts.append(curriculum)
+    parts.append(f"{total_steps:,} steps.")
+
+    body = ", ".join(parts)
+    return "## Summary\n\n" + body

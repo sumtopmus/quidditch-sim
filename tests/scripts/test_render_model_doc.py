@@ -127,3 +127,29 @@ def test_section_header_run_only_when_wandb_meta_absent():
     assert "run-only" in out
     assert "wandb://" not in out
     assert "**W&B:**" not in out
+
+
+from scripts._render_model_doc import _section_summary
+
+
+def test_section_summary_uses_description_override_when_present():
+    """If cfg.description is non-empty, it replaces the auto-template verbatim."""
+    custom = "Curriculum step 1: pretrain from blue_v4 onto random_start."
+    ctx = _ctx_for_section()
+    ctx["cfg"].description = custom
+    out = _section_summary(ctx)
+    assert custom in out
+    # auto-template hallmarks must NOT appear
+    assert "learner trained from" not in out
+
+
+def test_section_summary_auto_templates_when_description_empty():
+    """Empty description → auto-template from cfg fields."""
+    out = _section_summary(_ctx_for_section())
+    # Spot-check the auto-template's content
+    assert "blue_0" in out  # learner_id
+    assert "scratch" in out  # init.mode
+    assert "DUEL_V2_WORLD" in out  # obs.name
+    assert "n_stack=3" in out
+    assert "team_v2" in out  # reward group choice
+    assert "10,000,000" in out or "10_000_000" in out  # total_timesteps formatted
