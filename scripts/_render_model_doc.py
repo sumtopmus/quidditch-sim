@@ -50,3 +50,34 @@ def _load_run_context(run_dir: Path) -> dict[str, Any]:
         "wandb_meta": wandb_meta,
         "run_dir": run_dir,
     }
+
+
+def _section_header(ctx: dict[str, Any]) -> str:
+    cfg = ctx["cfg"]
+    meta = ctx["meta"] or {}
+    wandb_meta = ctx["wandb_meta"]
+    run_dir = ctx["run_dir"]
+
+    # run_dir basename is <timestamp> (under runs/<name>/<ts>/) or <name>
+    # (under models/<name>/).  Join with run_name unless the basename already
+    # IS the run_name (e.g., the vendored models/<name>/ layout).
+    timestamp = run_dir.name
+    title = (
+        f"# MODEL: {cfg.run_name}_{timestamp}"
+        if timestamp != cfg.run_name else f"# MODEL: {cfg.run_name}"
+    )
+
+    status = "promoted" if wandb_meta else "run-only"
+    git = meta.get("git_hash", "(unknown)") if meta else "(unknown)"
+
+    lines = [
+        title,
+        "",
+        f"**Status:** {status}  ·  **Git:** `{git}`",
+    ]
+    if wandb_meta:
+        name = wandb_meta["name"]
+        version = wandb_meta["version"]
+        aliases = ", ".join(wandb_meta.get("aliases", []))
+        lines.append(f"**W&B:** `wandb://{name}:prod` ({version}, aliases: {aliases})")
+    return "\n".join(lines)

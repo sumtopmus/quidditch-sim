@@ -66,3 +66,64 @@ def test_load_run_context_tolerates_missing_optional_inputs(tmp_path: Path):
     assert ctx["meta"] is None
     assert ctx["hydra_yaml"] is None
     assert ctx["wandb_meta"] is None
+
+
+from scripts._render_model_doc import _section_header
+
+
+def _ctx_for_section(**overrides) -> dict:
+    """Build a baseline ctx covering the union of fields all sections need.
+    Tests override just what they care about.
+    """
+    cfg = OmegaConf.create({
+        "run_name": "ppo_hoop_test",
+        "description": "",
+        "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3},
+        "init": {"mode": "scratch", "parent": None},
+        "trainer": {"lr": 3e-4, "total_timesteps": 10_000_000,
+                     "n_envs": 8, "batch_size": 256, "n_epochs": 10,
+                     "gamma": 0.99, "gae_lambda": 0.95, "ent_coef": 0.0,
+                     "clip_range": 0.2},
+        "env": {"learner_id": "blue_0",
+                 "team_cfg": {"episode_seconds": 30.0, "tag_radius": 0.3,
+                              "crash_vel_thr": 1.0, "midpoint_alpha": 0.5,
+                              "crash_aftermath_seconds": 0.0}},
+        "opponent": {"_target_": "envs.quidditch.opponents.BeelineRed"},
+        "curriculum": {"name": "fixed_start"},
+        "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
+                    "terms": []},  # empty terms ok for non-reward sections
+    })
+    ctx = {
+        "cfg": cfg,
+        "meta": {"git_hash": "abc1234", "final_stats": {
+            "best_eval_reward": 7.91, "best_step": 9_500_000,
+            "completed_steps": 10_000_000, "wall_clock_seconds": 1923.0,
+            "model_kind": "best"}},
+        "hydra_yaml": {"hydra": {"runtime": {"choices": {"reward": "team_v2"}}}},
+        "wandb_meta": {"name": "ppo_hoop_test", "version": "v0",
+                        "aliases": ["latest", "prod", "ppo_hoop_test"],
+                        "entity": "gridcom", "project": "drone-quidditch"},
+        "run_dir": Path("runs/ppo_hoop_test/20260516_120000"),
+    }
+    ctx.update(overrides)
+    return ctx
+
+
+def test_section_header_promoted_run():
+    """When _wandb_metadata.json is present, status is 'promoted' and the W&B
+    line renders below the header."""
+    out = _section_header(_ctx_for_section())
+    assert "# MODEL: ppo_hoop_test_20260516_120000" in out
+    assert "promoted" in out
+    assert "abc1234" in out
+    assert "wandb://ppo_hoop_test:prod" in out
+    assert "v0" in out
+
+
+def test_section_header_run_only_when_wandb_meta_absent():
+    """When _wandb_metadata.json is None, status is 'run-only' and the W&B
+    line is omitted entirely."""
+    out = _section_header(_ctx_for_section(wandb_meta=None))
+    assert "run-only" in out
+    assert "wandb://" not in out
+    assert "**W&B:**" not in out
