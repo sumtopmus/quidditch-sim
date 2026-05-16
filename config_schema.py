@@ -110,6 +110,29 @@ class WandbConfig:
     log_gradients: bool = False
 
 
+@dataclass
+class Config:
+    """Top-level Hydra config schema.
+
+    Data-only groups reference their respective schemas above.  Instantiated
+    groups (env, reward, opponent) carry `Any` since they're target-instantiated
+    and lack static schemas.  `description` is the optional free-text override
+    for the MODEL.md Summary section; empty string falls back to auto-template.
+    """
+    run_name: str = "_adhoc"
+    seed: int = 42
+    description: str = ""
+    trainer: TrainerConfig = field(default_factory=TrainerConfig)
+    eval: EvalConfig = field(default_factory=EvalConfig)
+    init: InitConfig = field(default_factory=InitConfig)
+    curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
+    obs: ObsConfig = field(default_factory=ObsConfig)
+    wandb: WandbConfig = field(default_factory=WandbConfig)
+    env: Any = None
+    reward: Any = None
+    opponent: Any = None
+
+
 def register_configs() -> None:
     """Register schemas with Hydra's ConfigStore.
 
