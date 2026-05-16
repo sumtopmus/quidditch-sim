@@ -39,6 +39,12 @@ def test_train_canary_team_2048_steps(tmp_path: Path) -> None:
     assert (tmp_path / "smoke_run" / "final_model.zip").exists()
     assert (tmp_path / "smoke_run" / ".hydra" / "config.yaml").exists()
     assert (tmp_path / "smoke_run" / ".hydra" / "meta.yaml").exists()
+    # MODEL.md is auto-generated at train end (best-effort).
+    model_md = tmp_path / "smoke_run" / "MODEL.md"
+    assert model_md.exists(), "MODEL.md should be auto-generated at train end"
+    text = model_md.read_text()
+    assert "# MODEL:" in text
+    assert "## Summary" in text
     # Confirm no events.out.tfevents.* files (TB output retired).
     tb_files = list((tmp_path / "smoke_run").rglob("events.out.tfevents.*"))
     assert tb_files == [], f"unexpected TB event files: {tb_files}"
