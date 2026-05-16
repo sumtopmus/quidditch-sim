@@ -235,17 +235,78 @@ def test_resolve_env_overrides_live_run(monkeypatch) -> None:
     assert project == "env-project"
 
 
-def test_resolve_falls_back_to_drone_quidditch_when_nothing_set(
+def test_resolve_falls_back_to_yaml_project_when_nothing_set(
     monkeypatch,
 ) -> None:
-    from scripts._artifact_io import _resolve_default_entity_project
+    """With no env vars and no live wandb.run, project comes from
+    conf/wandb/default.yaml — the project's source of truth."""
+    from scripts._artifact_io import _resolve_default_entity_project, _project_from_conf
 
+    _project_from_conf.cache_clear()
     monkeypatch.delenv("WANDB_ENTITY", raising=False)
     monkeypatch.delenv("WANDB_PROJECT", raising=False)
     with patch("wandb.run", None):
         entity, project = _resolve_default_entity_project()
     assert entity is None
+    # The actual value committed to conf/wandb/default.yaml.
     assert project == "drone-quidditch"
+
+
+# ── _project_from_conf — YAML-driven project resolution ──────────────────────
+def test_project_from_conf_reads_yaml_value(monkeypatch, tmp_path: Path) -> None:
+    """Patch the conf path to a fake YAML; helper returns its `project` value."""
+    from scripts import _artifact_io
+
+    fake_conf = tmp_path / "conf" / "wandb" / "default.yaml"
+    fake_conf.parent.mkdir(parents=True)
+    fake_conf.write_text("project: my-renamed-project\nentity_override: null\n")
+
+    _artifact_io._project_from_conf.cache_clear()
+    real_path_cls = _artifact_io.Path
+
+    def fake_resolve(self):
+        # Override the specific lookup the helper does: __file__/.. /.. → repo root.
+        return tmp_path / "scripts" / "_artifact_io.py"
+
+    # Monkeypatch Path(__file__).resolve() to point at the tmp_path layout.
+    monkeypatch.setattr(_artifact_io, "__file__",
+                        str(tmp_path / "scripts" / "_artifact_io.py"))
+
+    out = _artifact_io._project_from_conf()
+    assert out == "my-renamed-project"
+    _artifact_io._project_from_conf.cache_clear()
+
+
+def test_project_from_conf_falls_back_when_yaml_missing(monkeypatch, tmp_path: Path) -> None:
+    """If conf/wandb/default.yaml is missing entirely, the final hardcoded
+    fallback fires so callers still get a usable string."""
+    from scripts import _artifact_io
+
+    _artifact_io._project_from_conf.cache_clear()
+    monkeypatch.setattr(_artifact_io, "__file__",
+                        str(tmp_path / "scripts" / "_artifact_io.py"))
+
+    out = _artifact_io._project_from_conf()
+    assert out == "drone-quidditch"        # _FALLBACK_PROJECT
+    _artifact_io._project_from_conf.cache_clear()
+
+
+def test_project_from_conf_falls_back_when_yaml_has_no_project_key(
+    monkeypatch, tmp_path: Path,
+) -> None:
+    from scripts import _artifact_io
+
+    fake_conf = tmp_path / "conf" / "wandb" / "default.yaml"
+    fake_conf.parent.mkdir(parents=True)
+    fake_conf.write_text("entity_override: null\ntags_extra: []\n")  # no project
+
+    _artifact_io._project_from_conf.cache_clear()
+    monkeypatch.setattr(_artifact_io, "__file__",
+                        str(tmp_path / "scripts" / "_artifact_io.py"))
+
+    out = _artifact_io._project_from_conf()
+    assert out == "drone-quidditch"
+    _artifact_io._project_from_conf.cache_clear()
 
 
 # ── _WandbURI.for_api — three qualification levels ───────────────────────────

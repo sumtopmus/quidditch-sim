@@ -23,10 +23,38 @@ from __future__ import annotations
 import json
 import os
 from dataclasses import dataclass
+from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
 import wandb
+import yaml
+
+
+# Final-resort project name if conf/wandb/default.yaml is missing or unparseable.
+# Used only when every other source has failed; in practice the YAML read should
+# always succeed for this repo.
+_FALLBACK_PROJECT = "drone-quidditch"
+
+
+@lru_cache(maxsize=1)
+def _project_from_conf() -> str:
+    """Read cfg.wandb.project from conf/wandb/default.yaml (the project's
+    single source of truth for which wandb workspace it logs to).
+
+    Cached: the YAML doesn't change between calls within a process.  Tests
+    that monkeypatch this path should call `_project_from_conf.cache_clear()`.
+    """
+    conf_path = (
+        Path(__file__).resolve().parent.parent
+        / "conf" / "wandb" / "default.yaml"
+    )
+    try:
+        data = yaml.safe_load(conf_path.read_text()) or {}
+    except (FileNotFoundError, OSError, yaml.YAMLError):
+        return _FALLBACK_PROJECT
+    project = data.get("project")
+    return str(project) if project else _FALLBACK_PROJECT
 
 
 def _resolve_default_entity_project() -> tuple[str | None, str]:
@@ -37,7 +65,8 @@ def _resolve_default_entity_project() -> tuple[str | None, str]:
          touching code or config).
       2. The live wandb.run (when resolve_parent fires inside a training
          run, the run's entity/project is the right default).
-      3. Hardcoded fallback: project=drone-quidditch, entity=None.
+      3. cfg.wandb.project from conf/wandb/default.yaml (the project's
+         single source of truth for which wandb workspace it logs to).
 
     Without explicit qualification, wandb.Api() looks up the user's
     *workspace default* project — often `uncategorized` — which never
@@ -48,7 +77,7 @@ def _resolve_default_entity_project() -> tuple[str | None, str]:
     if wandb.run is not None:
         entity = entity or wandb.run.entity
         project = project or wandb.run.project
-    return entity, project or "drone-quidditch"
+    return entity, project or _project_from_conf()
 
 
 @dataclass(frozen=True)
