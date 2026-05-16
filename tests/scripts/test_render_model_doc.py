@@ -402,3 +402,37 @@ def test_render_model_doc_omits_wandb_section_when_absent(tmp_path: Path):
     out = render_model_doc(run_dir)
     assert "## W&B" not in out
     assert "run-only" in out  # status reflects absence
+
+
+import os
+import subprocess
+import sys
+
+
+def test_cli_writes_model_doc_to_run_dir(tmp_path: Path):
+    """`python -m scripts.render_model_doc --run-dir <path>` writes MODEL.md."""
+    run_dir = _write_run_fixture(
+        tmp_path / "runs" / "ppo_hoop_test" / "20260516_120000",
+        config={
+            "run_name": "ppo_hoop_test",
+            "description": "",
+            "obs": {"name": "SIMPLE_ENV_OBS", "n_stack": 1},
+            "init": {"mode": "scratch"},
+            "trainer": {"lr": 1e-3, "total_timesteps": 1000},
+            "env": {"learner_id": "drone_0"},
+            "curriculum": {"name": "fixed_start"},
+            "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
+                        "terms": []},
+        },
+    )
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    env = {**os.environ, "KMP_DUPLICATE_LIB_OK": "TRUE", "WANDB_MODE": "disabled"}
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.render_model_doc", "--run-dir", str(run_dir)],
+        cwd=repo_root, capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    md = run_dir / "MODEL.md"
+    assert md.exists()
+    text = md.read_text()
+    assert "# MODEL: ppo_hoop_test_20260516_120000" in text
