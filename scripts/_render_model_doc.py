@@ -147,3 +147,27 @@ def _section_summary(ctx: dict[str, Any]) -> str:
 
     body = ", ".join(parts)
     return "## Summary\n\n" + body
+
+
+def _section_lineage(ctx: dict[str, Any]) -> str:
+    cfg = ctx["cfg"]
+    meta = ctx["meta"] or {}
+    init_mode = cfg.init.mode if hasattr(cfg, "init") and cfg.init is not None else "scratch"
+    if init_mode == "scratch":
+        return "## Lineage\n\n- **init mode:** `scratch` — no parent"
+
+    parent = None
+    if hasattr(cfg.init, "get"):
+        parent = cfg.init.get("parent", None)
+    chain_total = meta.get("parent_chain_total", None) if meta else None
+    this_total = int(cfg.trainer.total_timesteps)
+
+    lines = ["## Lineage", "", f"- **init mode:** `{init_mode}`"]
+    if parent:
+        lines.append(f"- **parent:** `{parent}`")
+    if chain_total is not None:
+        lines.append(
+            f"- **parent chain total:** {chain_total:,} steps "
+            f"(this run is {this_total:,} of that)"
+        )
+    return "\n".join(lines)

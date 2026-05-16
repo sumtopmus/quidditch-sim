@@ -153,3 +153,29 @@ def test_section_summary_auto_templates_when_description_empty():
     assert "n_stack=3" in out
     assert "team_v2" in out  # reward group choice
     assert "10,000,000" in out or "10_000_000" in out  # total_timesteps formatted
+
+
+from scripts._render_model_doc import _section_lineage
+
+
+def test_section_lineage_scratch_renders_minimally():
+    """init.mode == scratch → just the one-liner, no parent fields."""
+    out = _section_lineage(_ctx_for_section())  # default cfg.init.mode = scratch
+    assert "## Lineage" in out
+    assert "scratch" in out
+    assert "no parent" in out
+    # Don't render the parent / chain-total fields
+    assert "**parent:**" not in out
+
+
+def test_section_lineage_pretrain_renders_parent_and_chain_total():
+    ctx = _ctx_for_section()
+    ctx["cfg"].init.mode = "pretrain"
+    ctx["cfg"].init.parent = "models/ppo_hoop_blue_4_20260511_202612/best_model"
+    ctx["meta"]["parent_chain_total"] = 20_000_000
+    ctx["cfg"].trainer.total_timesteps = 10_000_000
+    out = _section_lineage(ctx)
+    assert "pretrain" in out
+    assert "models/ppo_hoop_blue_4_20260511_202612/best_model" in out
+    assert "20,000,000" in out or "20000000" in out  # parent chain total formatted
+    assert "10,000,000" in out or "10000000" in out  # this run's contribution
