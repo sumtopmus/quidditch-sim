@@ -171,3 +171,33 @@ def _section_lineage(ctx: dict[str, Any]) -> str:
             f"(this run is {this_total:,} of that)"
         )
     return "\n".join(lines)
+
+
+def _section_obs_spec(ctx: dict[str, Any]) -> str:
+    cfg = ctx["cfg"]
+    from envs.quidditch.obs_spec import SPEC_BY_NAME
+
+    name = cfg.obs.name
+    n_stack = int(cfg.obs.n_stack)
+    spec = SPEC_BY_NAME.get(name)
+    if spec is None:
+        return (
+            "## Obs spec\n\n"
+            f"> ⚠ unknown obs spec name `{name}` — not in SPEC_BY_NAME registry. "
+            "See `.hydra/config.yaml:obs` for the recorded name."
+        )
+
+    header = (
+        "## Obs spec\n\n"
+        f"**Name:** `{name}` ({spec.dim}-d)  ·  **n_stack:** {n_stack}  ·  "
+        f"**Input dim:** {spec.dim * n_stack}"
+    )
+    rows = [
+        "| Slot | Block | Dim | Frame | Notes |",
+        "|------|-------|-----|-------|-------|",
+    ]
+    for block, sl in spec.offsets():
+        notes = block.notes or ""
+        frame = block.frame or ""
+        rows.append(f"| {sl.start}:{sl.stop} | {block.name} | {block.dim} | {frame} | {notes} |")
+    return header + "\n\n" + "\n".join(rows)

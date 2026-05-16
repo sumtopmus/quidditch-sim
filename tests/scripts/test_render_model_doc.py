@@ -179,3 +179,27 @@ def test_section_lineage_pretrain_renders_parent_and_chain_total():
     assert "models/ppo_hoop_blue_4_20260511_202612/best_model" in out
     assert "20,000,000" in out or "20000000" in out  # parent chain total formatted
     assert "10,000,000" in out or "10000000" in out  # this run's contribution
+
+
+from scripts._render_model_doc import _section_obs_spec
+
+
+def test_section_obs_spec_renders_table_for_known_spec():
+    out = _section_obs_spec(_ctx_for_section())  # default cfg.obs.name = DUEL_V2_WORLD
+    assert "## Obs spec" in out
+    assert "DUEL_V2_WORLD" in out
+    assert "25-d" in out  # the spec's total dim
+    assert "n_stack:** 3" in out
+    # Table header
+    assert "| Slot | Block | Dim | Frame | Notes |" in out
+    # A canonical block from DUEL_V2_WORLD
+    assert "ang_vel" in out
+    assert "closing_rate" in out
+
+
+def test_section_obs_spec_renders_error_blockquote_for_unknown_spec():
+    ctx = _ctx_for_section()
+    ctx["cfg"].obs.name = "FAKE_NEVER_REGISTERED_OBS"
+    out = _section_obs_spec(ctx)
+    assert "⚠" in out or "(unknown obs spec" in out
+    assert "FAKE_NEVER_REGISTERED_OBS" in out
