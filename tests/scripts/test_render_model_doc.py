@@ -203,3 +203,43 @@ def test_section_obs_spec_renders_error_blockquote_for_unknown_spec():
     out = _section_obs_spec(ctx)
     assert "⚠" in out or "(unknown obs spec" in out
     assert "FAKE_NEVER_REGISTERED_OBS" in out
+
+
+from scripts._render_model_doc import _section_reward_stack
+
+
+def test_section_reward_stack_renders_terms_from_team_v2():
+    """Pass a cfg.reward pointing at the real team_v2 YAML structure; the
+    renderer instantiates it and walks the terms via dataclasses.fields."""
+    ctx = _ctx_for_section()
+    # Build a real team_v2-shaped reward block (top-level _target_ + terms list)
+    ctx["cfg"].reward = OmegaConf.create({
+        "_target_": "envs.quidditch.rewards.stack.RewardStack",
+        "terms": [
+            {"_target_": "envs.quidditch.rewards.terms.TagEntryPulse",
+             "magnitude": 5.0, "gainer": "blue_0", "loser": "red_0"},
+            {"_target_": "envs.quidditch.rewards.terms.ScoreEvent",
+             "magnitude": 10.0, "scorer": "red_0", "zero_sum_opponent": "blue_0"},
+        ],
+    })
+    out = _section_reward_stack(ctx)
+    assert "## Reward stack" in out
+    assert "team_v2" in out  # source line via hydra.runtime.choices.reward
+    assert "TagEntryPulse" in out
+    assert "magnitude=5.0" in out
+    assert "blue_0" in out
+    assert "ScoreEvent" in out
+    assert "magnitude=10.0" in out
+
+
+def test_section_reward_stack_falls_back_when_hydra_yaml_absent():
+    ctx = _ctx_for_section(hydra_yaml=None)
+    ctx["cfg"].reward = OmegaConf.create({
+        "_target_": "envs.quidditch.rewards.stack.RewardStack",
+        "terms": [{"_target_": "envs.quidditch.rewards.terms.TagEntryPulse",
+                    "magnitude": 5.0, "gainer": "blue_0", "loser": "red_0"}],
+    })
+    out = _section_reward_stack(ctx)
+    assert "## Reward stack" in out
+    assert "in-line override" in out or "unknown source" in out
+    assert "TagEntryPulse" in out  # the table itself still renders

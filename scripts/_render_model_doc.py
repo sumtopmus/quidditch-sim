@@ -7,6 +7,7 @@ See docs/superpowers/specs/2026-05-16-model-doc-generator-design.md.
 """
 from __future__ import annotations
 
+import dataclasses
 import json
 from pathlib import Path
 from typing import Any
@@ -201,3 +202,68 @@ def _section_obs_spec(ctx: dict[str, Any]) -> str:
         frame = block.frame or ""
         rows.append(f"| {sl.start}:{sl.stop} | {block.name} | {block.dim} | {frame} | {notes} |")
     return header + "\n\n" + "\n".join(rows)
+
+
+def _term_coefficient_summary(term: Any) -> str:
+    """Render a term's numeric / dict fields as `name=value` joined by commas."""
+    parts: list[str] = []
+    for f in dataclasses.fields(term):
+        val = getattr(term, f.name)
+        if isinstance(val, bool):
+            # bool is a subclass of int — surface it as-is rather than 0/1.
+            parts.append(f"{f.name}={val}")
+        elif isinstance(val, (int, float)):
+            parts.append(f"{f.name}={val}")
+        elif isinstance(val, dict):
+            parts.append(f"{f.name}={dict(val)}")
+    return ", ".join(parts)
+
+
+def _term_agents_summary(term: Any) -> str:
+    """Render the term's agent-identifying fields as human shorthand."""
+    out: list[str] = []
+    for f in dataclasses.fields(term):
+        val = getattr(term, f.name)
+        if f.name in ("gainer", "loser", "scorer", "zero_sum_opponent",
+                       "aggressor", "victim"):
+            if val:
+                out.append(f"{val} ({f.name})")
+        elif f.name == "agents":
+            if val:
+                out.append(", ".join(val))
+        elif f.name in ("agent_to_target", "agent_to_crash_flags"):
+            if val:
+                out.append(", ".join(f"{k}→{v}" for k, v in val.items()))
+    return "; ".join(out)
+
+
+def _section_reward_stack(ctx: dict[str, Any]) -> str:
+    cfg = ctx["cfg"]
+    hydra_yaml = ctx["hydra_yaml"]
+    from hydra.utils import instantiate
+
+    # Source line: reward group choice from hydra.yaml, or fallback.
+    if hydra_yaml:
+        choice = (
+            hydra_yaml.get("hydra", {})
+            .get("runtime", {})
+            .get("choices", {})
+            .get("reward", None)
+        )
+        source = f"`conf/reward/{choice}.yaml`" if choice else "(in-line override / unknown source)"
+    else:
+        source = "(in-line override / unknown source)"
+
+    stack = instantiate(cfg.reward, _convert_="all")
+
+    rows = [
+        "| # | Term | Key coefficients | Agents |",
+        "|---|------|------------------|--------|",
+    ]
+    for i, term in enumerate(stack.terms, start=1):
+        cls = type(term).__name__
+        coeffs = _term_coefficient_summary(term)
+        agents = _term_agents_summary(term)
+        rows.append(f"| {i} | {cls} | {coeffs} | {agents} |")
+
+    return f"## Reward stack\n\n**Source:** {source}\n\n" + "\n".join(rows)
