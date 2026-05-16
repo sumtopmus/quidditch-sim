@@ -233,44 +233,21 @@ def test_take_down_silent_otherwise():
     assert term.compute(_make_state(drone_drone_crash=False)) == {"red_0": 0.0, "blue_0": 0.0}
 
 
-def test_team_v2_stack_matches_current_constants():
-    """The full team_v2 stack with current constants from rewards.py must produce
-    the exact rewards team_env.step() would have produced for a sample state.
-    Locks term composition during the Phase 2.12–2.13 env refactor.
+def test_team_v2_stack_produces_expected_rewards():
+    """`default_team_stack()` (loaded from conf/reward/team_v2.yaml) must produce
+    the exact rewards team_env.step() does for a known StepState.  Locks YAML
+    magnitudes + term composition against silent drift.
     """
-    from envs.quidditch.rewards import (
-        SCORE_REWARD, CRASH_PENALTY, DIST_REWARD_SCALE, HOOP_ANCHOR_SCALE,
-        TAG_ENTRY_REWARD, TAG_DURATION_REWARD_MAX, CLOSING_VEL_REWARD_SCALE,
-        TAKE_DOWN_REWARD, TAKE_DOWN_PENALTY,
-    )
-    from envs.quidditch.rewards.terms import (
-        HoopDistancePenalty, HoopAnchor, ZeroSumDistMirror,
-        TagEntryPulse, ProximityGradedTag, ClosingVelInTagZone,
-        ScoreEvent, CrashEvent, TakeDown,
-    )
+    from envs.quidditch.rewards import default_team_stack
 
-    stack = RewardStack(terms=[
-        TagEntryPulse(magnitude=TAG_ENTRY_REWARD,
-                       gainer="blue_0", loser="red_0"),
-        ProximityGradedTag(max_reward=TAG_DURATION_REWARD_MAX,
-                            gainer="blue_0", loser="red_0"),
-        ClosingVelInTagZone(scale=CLOSING_VEL_REWARD_SCALE,
-                             gainer="blue_0", loser="red_0"),
-        HoopDistancePenalty(scale=DIST_REWARD_SCALE,
-                             agent_to_target={"red_0": "hoop", "blue_0": "midpoint"}),
-        ZeroSumDistMirror(scale=DIST_REWARD_SCALE, agents=("blue_0",)),
-        HoopAnchor(scale=HOOP_ANCHOR_SCALE, agents=("blue_0",)),
-        ScoreEvent(magnitude=SCORE_REWARD, scorer="red_0",
-                    zero_sum_opponent="blue_0"),
-        TakeDown(aggressor_reward=TAKE_DOWN_REWARD,
-                  victim_penalty=TAKE_DOWN_PENALTY,
-                  aggressor="blue_0", victim="red_0"),
-        CrashEvent(magnitude=CRASH_PENALTY,
-                    agent_to_crash_flags={
-                        "red_0":  ("red_floor",  "red_wall_crash",  "red_oob"),
-                        "blue_0": ("blue_floor", "blue_wall_crash", "blue_oob"),
-                    }),
-    ])
+    # Literals match conf/reward/team_v2.yaml — kept in sync by this test.
+    TAG_ENTRY_REWARD = 5.0
+    TAG_DURATION_REWARD_MAX = 0.05
+    CLOSING_VEL_REWARD_SCALE = 0.05
+    DIST_REWARD_SCALE = 0.01
+    HOOP_ANCHOR_SCALE = 0.005
+
+    stack = default_team_stack()
 
     state = _make_state(
         tag_entry=True, tag_during=True,

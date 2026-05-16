@@ -17,8 +17,11 @@ import mujoco
 import numpy as np
 import pytest
 
-from envs.quidditch.rewards import TAKE_DOWN_REWARD, TAKE_DOWN_PENALTY
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
+
+# Literals match conf/reward/team_v2.yaml's TakeDown term.
+TAKE_DOWN_REWARD = 20.0
+TAKE_DOWN_PENALTY = -20.0
 from tests.conftest import set_body_state
 
 pytestmark = pytest.mark.slow

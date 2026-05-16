@@ -52,24 +52,8 @@ from envs.quidditch.constants import (
     TAG_COOLDOWN_SECONDS,
     CRASH_VEL_THR,
 )
-from envs.quidditch.rewards import (
-    SCORE_REWARD,
-    CRASH_PENALTY,
-    DIST_REWARD_SCALE,
-    HOOP_ANCHOR_SCALE,
-    TAG_ENTRY_REWARD,
-    TAG_DURATION_REWARD_MAX,
-    CLOSING_VEL_REWARD_SCALE,
-    TAKE_DOWN_REWARD,
-    TAKE_DOWN_PENALTY,
-    DEFAULT_MIDPOINT_ALPHA,
-)
+from envs.quidditch.rewards import DEFAULT_MIDPOINT_ALPHA, default_team_stack
 from envs.quidditch.rewards.stack import RewardStack, StepState
-from envs.quidditch.rewards.terms import (
-    HoopDistancePenalty, HoopAnchor, ZeroSumDistMirror,
-    TagEntryPulse, ProximityGradedTag, ClosingVelInTagZone,
-    ScoreEvent, CrashEvent, TakeDown,
-)
 
 
 EPISODE_SECONDS_DEFAULT: float = 30.0
@@ -119,6 +103,7 @@ class QuidditchTeamEnv(ParallelEnv):
         *,
         cfg: TeamConfig | None = None,
         render_mode: str | None = None,
+        reward_stack: RewardStack | None = None,
     ) -> None:
         super().__init__()
         self.cfg = cfg if cfg is not None else TeamConfig()
@@ -170,31 +155,19 @@ class QuidditchTeamEnv(ParallelEnv):
 
         self._np_random: np.random.Generator = np.random.default_rng()
 
-        self._reward_stack = RewardStack(terms=[
-            TagEntryPulse(magnitude=TAG_ENTRY_REWARD,
-                           gainer=self._blue_id, loser=self._red_id),
-            ProximityGradedTag(max_reward=TAG_DURATION_REWARD_MAX,
-                                gainer=self._blue_id, loser=self._red_id),
-            ClosingVelInTagZone(scale=CLOSING_VEL_REWARD_SCALE,
-                                 gainer=self._blue_id, loser=self._red_id),
-            HoopDistancePenalty(scale=DIST_REWARD_SCALE,
-                                 agent_to_target={
-                                     self._red_id:  "hoop",
-                                     self._blue_id: "midpoint",
-                                 }),
-            ZeroSumDistMirror(scale=DIST_REWARD_SCALE, agents=(self._blue_id,)),
-            HoopAnchor(scale=HOOP_ANCHOR_SCALE, agents=(self._blue_id,)),
-            ScoreEvent(magnitude=SCORE_REWARD, scorer=self._red_id,
-                        zero_sum_opponent=self._blue_id),
-            TakeDown(aggressor_reward=TAKE_DOWN_REWARD,
-                      victim_penalty=TAKE_DOWN_PENALTY,
-                      aggressor=self._blue_id, victim=self._red_id),
-            CrashEvent(magnitude=CRASH_PENALTY,
-                        agent_to_crash_flags={
-                            self._red_id:  ("red_floor",  "red_wall_crash",  "red_oob"),
-                            self._blue_id: ("blue_floor", "blue_wall_crash", "blue_oob"),
-                        }),
-        ])
+        # YAML team_v2.yaml hardcodes agent IDs as "red_0"/"blue_0".  If cfg
+        # overrides those prefixes, the canonical stack would mislabel agents
+        # silently — assert match here so the failure is loud.
+        if reward_stack is None:
+            if self._red_id != "red_0" or self._blue_id != "blue_0":
+                raise ValueError(
+                    f"team_env: cfg prefixes are red={self._red_id!r}, blue={self._blue_id!r} "
+                    "but default_team_stack() (loaded from team_v2.yaml) hardcodes "
+                    "agent IDs 'red_0'/'blue_0'.  Build a custom RewardStack with "
+                    "matching IDs and pass it via `reward_stack=`."
+                )
+            reward_stack = default_team_stack()
+        self._reward_stack = reward_stack
 
     def observation_space(self, agent: str) -> spaces.Box:
         return self.observation_spaces[agent]

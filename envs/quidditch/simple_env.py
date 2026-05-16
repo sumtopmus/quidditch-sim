@@ -60,15 +60,8 @@ from envs.quidditch.constants import (
     HOOP_OUTWARD_NORMAL,
     HOOP_RADIUS,
 )
-from envs.quidditch.rewards import (
-    SCORE_REWARD,
-    CRASH_PENALTY,
-    DIST_REWARD_SCALE,
-)
+from envs.quidditch.rewards import default_simple_stack
 from envs.quidditch.rewards.stack import RewardStack, StepState
-from envs.quidditch.rewards.terms import (
-    HoopDistancePenalty, ScoreEvent, CrashEvent,
-)
 
 
 # ---------------------------------------------------------------------------
@@ -90,7 +83,6 @@ START_SAMPLE_RADIUS: float = ARENA_RADIUS - 0.1
 EPISODE_SECONDS: float = 120.0
 ACTION_SCALE = np.array([0.2, 0.2, 0.5, 0.1], dtype=np.float32)
 
-# Reward magnitudes are imported from envs.quidditch.rewards.
 TAKEOFF_GRACE_STEPS: int = 30
 
 # Camera / video parameters (used by VideoRecorderCallback)
@@ -113,6 +105,7 @@ class QuidditchSimpleEnv(gym.Env):
         render_mode: str | None = None,
         randomise_start: bool = True,
         episode_seconds: float = EPISODE_SECONDS,
+        reward_stack: RewardStack | None = None,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
@@ -137,14 +130,7 @@ class QuidditchSimpleEnv(gym.Env):
         self._enter_signed_dist: float = 0.0  # signed_dist when drone entered the score volume
         self._takeoff_grace: int = 0
 
-        self._reward_stack = RewardStack(terms=[
-            HoopDistancePenalty(scale=DIST_REWARD_SCALE,
-                                  agent_to_target={"drone_0": "drone_hoop"}),
-            ScoreEvent(magnitude=SCORE_REWARD, scorer="drone_0",
-                        zero_sum_opponent=None),
-            CrashEvent(magnitude=CRASH_PENALTY,
-                        agent_to_crash_flags={"drone_0": ("drone_crash",)}),
-        ])
+        self._reward_stack = reward_stack if reward_stack is not None else default_simple_stack()
 
     # -----------------------------------------------------------------------
     # Gymnasium API
