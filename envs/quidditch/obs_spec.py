@@ -127,3 +127,22 @@ SPEC_BY_NAME: dict[str, ObsSpec] = {
     "DUEL_V1_BODY":   DUEL_V1_BODY,
     "DUEL_V2_WORLD":  DUEL_V2_WORLD,
 }
+
+
+def describe(spec: ObsSpec, name: str | None = None) -> str:
+    """Render a human-readable block-by-block layout of one ObsSpec."""
+    header = f"{name} ({spec.dim}-d):" if name else f"({spec.dim}-d):"
+    lines = [header]
+    for block, sl in spec.offsets():
+        frame = block.frame or ""
+        notes = f"  {block.notes}" if block.notes else ""
+        lines.append(
+            f"  [{sl.start:>2}:{sl.stop:<2}]  {block.name:<18} {block.dim}-d  {frame:<11}{notes}"
+        )
+    return "\n".join(lines)
+
+
+if __name__ == "__main__":
+    for n, s in SPEC_BY_NAME.items():
+        print(describe(s, n))
+        print()
