@@ -9,10 +9,13 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import logging
 from pathlib import Path
 from typing import Any
 
 from omegaconf import OmegaConf
+
+log = logging.getLogger(__name__)
 
 
 def _load_run_context(run_dir: Path) -> dict[str, Any]:
@@ -380,3 +383,36 @@ def _section_wandb(ctx: dict[str, Any]) -> str:
         f"- **Run id:** `{run_id}`",
         f"- **Artifact:** `{name}:{version}`  (aliases: {aliases})",
     ])
+
+
+_SECTION_FUNCTIONS = [
+    ("header",       _section_header),
+    ("summary",      _section_summary),
+    ("lineage",      _section_lineage),
+    ("obs_spec",     _section_obs_spec),
+    ("reward_stack", _section_reward_stack),
+    ("env_config",   _section_env_config),
+    ("hyperparams",  _section_hyperparams),
+    ("eval_results", _section_eval_results),
+    ("wandb",        _section_wandb),
+]
+
+
+def render_model_doc(run_dir: Path) -> str:
+    """Render a per-model MODEL.md spec sheet for one run dir.
+
+    Pure: reads inputs from `run_dir`, returns a Markdown string.  No
+    filesystem writes, no wandb network calls.  Per-section try/except so
+    a bad section doesn't kill the whole doc.
+    """
+    ctx = _load_run_context(run_dir)
+    parts: list[str] = []
+    for name, fn in _SECTION_FUNCTIONS:
+        try:
+            out = fn(ctx)
+        except Exception as e:  # noqa: BLE001
+            log.warning("section %s render failed: %s", name, e)
+            out = f"## (Section `{name}` failed to render)\n\n> ⚠ {type(e).__name__}: {e}"
+        if out:  # _section_wandb returns "" when meta absent
+            parts.append(out)
+    return "\n\n".join(parts) + "\n"

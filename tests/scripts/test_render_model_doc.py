@@ -312,3 +312,93 @@ def test_section_wandb_returns_empty_when_metadata_absent():
     entirely (empty string)."""
     out = _section_wandb(_ctx_for_section(wandb_meta=None))
     assert out == ""
+
+
+from scripts._render_model_doc import render_model_doc
+
+
+def test_render_model_doc_end_to_end(tmp_path: Path):
+    """Full doc renders against a complete run-dir fixture."""
+    run_dir = _write_run_fixture(
+        tmp_path / "runs" / "ppo_hoop_test" / "20260516_120000",
+        config={
+            "run_name": "ppo_hoop_test",
+            "description": "",
+            "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3},
+            "init": {"mode": "scratch", "parent": None},
+            "trainer": {"lr": 3e-4, "total_timesteps": 10_000_000,
+                         "n_envs": 8, "batch_size": 256, "n_epochs": 10,
+                         "gamma": 0.99, "gae_lambda": 0.95, "ent_coef": 0.0,
+                         "clip_range": 0.2},
+            "env": {"learner_id": "blue_0",
+                     "team_cfg": {"episode_seconds": 30.0, "tag_radius": 0.3,
+                                  "crash_vel_thr": 1.0, "midpoint_alpha": 0.5,
+                                  "crash_aftermath_seconds": 0.0}},
+            "opponent": {"_target_": "envs.quidditch.opponents.BeelineRed"},
+            "curriculum": {"name": "fixed_start"},
+            "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
+                        "terms": [{"_target_": "envs.quidditch.rewards.terms.ScoreEvent",
+                                    "magnitude": 10.0, "scorer": "red_0",
+                                    "zero_sum_opponent": "blue_0"}]},
+        },
+        meta={"git_hash": "abc1234", "final_stats": {
+            "best_eval_reward": 7.91, "best_step": 9_500_000,
+            "completed_steps": 10_000_000, "wall_clock_seconds": 1923.0,
+            "model_kind": "best"}},
+        hydra_yaml={"hydra": {"runtime": {"choices": {"reward": "team_v2"}}}},
+        wandb_meta={"name": "ppo_hoop_test", "version": "v0",
+                     "aliases": ["latest", "prod"],
+                     "entity": "gridcom", "project": "drone-quidditch"},
+    )
+    out = render_model_doc(run_dir)
+    # All section headers present
+    for header in ["# MODEL:", "## Summary", "## Lineage", "## Obs spec",
+                    "## Reward stack", "## Env config", "## Training hyperparams",
+                    "## Eval results", "## W&B"]:
+        assert header in out, f"missing section: {header}"
+
+
+def test_render_model_doc_isolates_per_section_failures(tmp_path: Path):
+    """A bad obs spec name causes the obs section to flag itself but other
+    sections still render."""
+    run_dir = _write_run_fixture(
+        tmp_path / "runs" / "ppo_hoop_test" / "20260516_120000",
+        config={
+            "run_name": "ppo_hoop_test",
+            "description": "",
+            "obs": {"name": "NEVER_REGISTERED", "n_stack": 1},
+            "init": {"mode": "scratch"},
+            "trainer": {"lr": 1e-3, "total_timesteps": 1000},
+            "env": {"learner_id": "drone_0"},
+            "curriculum": {"name": "fixed_start"},
+            "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
+                        "terms": []},
+        },
+    )
+    out = render_model_doc(run_dir)
+    # Obs section flags itself
+    assert "## Obs spec" in out
+    assert "NEVER_REGISTERED" in out
+    # Other sections still render
+    assert "## Summary" in out
+    assert "## Lineage" in out
+
+
+def test_render_model_doc_omits_wandb_section_when_absent(tmp_path: Path):
+    run_dir = _write_run_fixture(
+        tmp_path / "runs" / "ppo_hoop_test" / "20260516_120000",
+        config={
+            "run_name": "ppo_hoop_test",
+            "description": "",
+            "obs": {"name": "SIMPLE_ENV_OBS", "n_stack": 1},
+            "init": {"mode": "scratch"},
+            "trainer": {"lr": 1e-3, "total_timesteps": 1000},
+            "env": {"learner_id": "drone_0"},
+            "curriculum": {"name": "fixed_start"},
+            "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
+                        "terms": []},
+        },
+    )
+    out = render_model_doc(run_dir)
+    assert "## W&B" not in out
+    assert "run-only" in out  # status reflects absence
