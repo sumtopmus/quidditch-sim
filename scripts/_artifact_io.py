@@ -261,4 +261,7 @@ def log_run_artifact(
     art.add_file(str(model_path), name="best_model.zip")
     if hydra_dir.exists():
         art.add_dir(str(hydra_dir), name=".hydra")
+    model_doc = run_dir / "MODEL.md"
+    if model_doc.exists():
+        art.add_file(str(model_doc), name="MODEL.md")
     run.log_artifact(art, aliases=["latest"])
