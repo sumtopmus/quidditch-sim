@@ -43,9 +43,9 @@ LEGACY_SPECS: dict[str, str] = {
     "ppo_hoop_fixed_start_20260504_023051":     "SIMPLE_ENV_OBS",
     "ppo_hoop_rand_start_20260430_234354":      "SIMPLE_ENV_OBS",
     "ppo_hoop_rand_start_20260505_174509":      "SIMPLE_ENV_OBS",
-    "ppo_hoop_red_1_20260506_103058":           "TEAM_ENV_OBS",
-    "ppo_hoop_blue_1_20260507_194423":          "TEAM_ENV_OBS",
-    "ppo_hoop_blue_4_20260511_202612":          "AUGMENTED_OBS",
+    "ppo_hoop_red_1_20260506_103058":           "DUEL_V1_BODY",
+    "ppo_hoop_blue_1_20260507_194423":          "DUEL_V1_BODY",
+    "ppo_hoop_blue_4_20260511_202612":          "DUEL_V2_WORLD",
 }
 
 

@@ -67,10 +67,10 @@ def test_job_type_eval_when_role_eval() -> None:
 def test_tags_include_obs_name_init_mode_learner() -> None:
     kw = _call_init("train")
     tags = set(kw["tags"])
-    # canary_team.yaml: env.learner_id=blue_0, obs=AUGMENTED_OBS,
+    # canary_team.yaml: env.learner_id=blue_0, obs=DUEL_V2_WORLD,
     # init=scratch, opponent=beeline_red.
     assert "blue_0" in tags
-    assert "AUGMENTED_OBS" in tags
+    assert "DUEL_V2_WORLD" in tags
     assert "scratch" in tags
     assert "beeline_red" in tags
 

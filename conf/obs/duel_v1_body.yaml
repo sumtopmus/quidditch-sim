@@ -1,0 +1,4 @@
+# Resolves at runtime to envs.quidditch.obs_spec.DUEL_V1_BODY (22-d, body-mixed opp_vel_rel).
+# Used for legacy team runs (pre-2026-05-12 augmentation).
+name: DUEL_V1_BODY
+n_stack: 1

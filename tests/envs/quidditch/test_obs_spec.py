@@ -89,17 +89,17 @@ def test_simple_env_obs_dim_is_16():
 
 
 def test_team_env_obs_dim_is_22():
-    assert obs_spec.TEAM_ENV_OBS.dim == 22
+    assert obs_spec.DUEL_V1_BODY.dim == 22
 
 
 def test_augmented_obs_dim_is_25():
-    assert obs_spec.AUGMENTED_OBS.dim == 25
+    assert obs_spec.DUEL_V2_WORLD.dim == 25
 
 
 def test_simple_env_obs_is_prefix_of_team_env_obs():
     # warm_start_ppo (16->22) depends on this prefix relationship.
     n = len(obs_spec.SIMPLE_ENV_OBS.blocks)
-    assert obs_spec.TEAM_ENV_OBS.blocks[:n] == obs_spec.SIMPLE_ENV_OBS.blocks
+    assert obs_spec.DUEL_V1_BODY.blocks[:n] == obs_spec.SIMPLE_ENV_OBS.blocks
 
 
 def test_opp_vel_rel_body_and_world_are_distinct():
@@ -113,16 +113,16 @@ def test_opp_vel_rel_body_and_world_are_distinct():
 
 def test_team_env_obs_uses_body_mixed_opp_vel_rel():
     # The 22-d legacy team obs is body_mixed; the augmented 25-d uses world.
-    assert obs_spec.OPP_VEL_REL_BODY in obs_spec.TEAM_ENV_OBS.blocks
-    assert obs_spec.OPP_VEL_REL_BODY not in obs_spec.AUGMENTED_OBS.blocks
-    assert obs_spec.OPP_VEL_REL_WORLD in obs_spec.AUGMENTED_OBS.blocks
+    assert obs_spec.OPP_VEL_REL_BODY in obs_spec.DUEL_V1_BODY.blocks
+    assert obs_spec.OPP_VEL_REL_BODY not in obs_spec.DUEL_V2_WORLD.blocks
+    assert obs_spec.OPP_VEL_REL_WORLD in obs_spec.DUEL_V2_WORLD.blocks
 
 
 def test_spec_by_name_maps_canonical_specs():
     from envs.quidditch.obs_spec import (
-        SPEC_BY_NAME, SIMPLE_ENV_OBS, TEAM_ENV_OBS, AUGMENTED_OBS,
+        SPEC_BY_NAME, SIMPLE_ENV_OBS, DUEL_V1_BODY, DUEL_V2_WORLD,
     )
     assert SPEC_BY_NAME["SIMPLE_ENV_OBS"] is SIMPLE_ENV_OBS
-    assert SPEC_BY_NAME["TEAM_ENV_OBS"]   is TEAM_ENV_OBS
-    assert SPEC_BY_NAME["AUGMENTED_OBS"]  is AUGMENTED_OBS
-    assert set(SPEC_BY_NAME) == {"SIMPLE_ENV_OBS", "TEAM_ENV_OBS", "AUGMENTED_OBS"}
+    assert SPEC_BY_NAME["DUEL_V1_BODY"]   is DUEL_V1_BODY
+    assert SPEC_BY_NAME["DUEL_V2_WORLD"]  is DUEL_V2_WORLD
+    assert set(SPEC_BY_NAME) == {"SIMPLE_ENV_OBS", "DUEL_V1_BODY", "DUEL_V2_WORLD"}

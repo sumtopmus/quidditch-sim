@@ -66,7 +66,7 @@ def test_walker_b_walks_artifact_dag() -> None:
     art_red = MagicMock()
     art_red.name = "red_v1:v0"
     art_red.version = "v0"
-    art_red.metadata = {"obs_spec": "TEAM_ENV_OBS", "parent_chain_total": 30_000_000}
+    art_red.metadata = {"obs_spec": "DUEL_V1_BODY", "parent_chain_total": 30_000_000}
     red_run = MagicMock()
     red_run.used_artifacts.return_value = [art_rand]
     art_red.logged_by.return_value = red_run
@@ -114,7 +114,7 @@ def test_walker_b_qualifies_uri_with_env_project_and_entity(monkeypatch) -> None
     art = MagicMock()
     art.name = "ppo_hoop_blue_4:v3"
     art.version = "v3"
-    art.metadata = {"obs_spec": "AUGMENTED_OBS"}
+    art.metadata = {"obs_spec": "DUEL_V2_WORLD"}
     art.logged_by.return_value = None        # leaf node, walk terminates
 
     api = MagicMock()
@@ -135,9 +135,9 @@ def test_resume_chain_collapses_in_render(tmp_path: Path) -> None:
 
     chain = [
         {"name": "red_v1", "version": "v0", "init_mode": "scratch",
-         "steps": 10_000_000, "obs_spec": "TEAM_ENV_OBS"},
+         "steps": 10_000_000, "obs_spec": "DUEL_V1_BODY"},
         {"name": "red_v1", "version": "v1", "init_mode": "resume",
-         "steps": 5_000_000, "obs_spec": "TEAM_ENV_OBS"},
+         "steps": 5_000_000, "obs_spec": "DUEL_V1_BODY"},
     ]
 
     out = render(chain)

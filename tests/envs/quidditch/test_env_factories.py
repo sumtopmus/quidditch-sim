@@ -38,7 +38,7 @@ def test_team_env_factory_builds_75d_train_env_with_frame_stack():
         team_cfg=TeamConfig(),
         learner_id="blue_0",
         opponent_spec="beeline_red",
-        obs_spec_name="AUGMENTED_OBS",
+        obs_spec_name="DUEL_V2_WORLD",
         frame_stack=3,
         seed=42,
     )
@@ -52,7 +52,7 @@ def test_team_env_factory_builds_75d_train_env_with_frame_stack():
 
 def test_team_env_factory_team_obs_unstacked():
     """frame_stack=1 means no VecFrameStack wrap; obs shape == 25-d
-    AUGMENTED_OBS (OpponentControlledEnv always augments)."""
+    DUEL_V2_WORLD (OpponentControlledEnv always augments)."""
     from envs.quidditch.env_factories import TeamEnvFactory
     from envs.quidditch.team_env import TeamConfig
     factory = TeamEnvFactory(
@@ -60,7 +60,7 @@ def test_team_env_factory_team_obs_unstacked():
         team_cfg=TeamConfig(),
         learner_id="red_0",
         opponent_spec="beeline_blue",
-        obs_spec_name="AUGMENTED_OBS",
+        obs_spec_name="DUEL_V2_WORLD",
         frame_stack=1,
         seed=42,
     )

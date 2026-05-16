@@ -91,7 +91,7 @@ class CurriculumConfig:
 @dataclass
 class ObsConfig:
     """Names a canonical ObsSpec from envs.quidditch.obs_spec.SPEC_BY_NAME."""
-    name: str = "AUGMENTED_OBS"
+    name: str = "DUEL_V2_WORLD"
     n_stack: int = 3
 
 

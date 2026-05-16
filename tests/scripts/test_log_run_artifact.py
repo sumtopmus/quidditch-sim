@@ -20,7 +20,7 @@ from omegaconf import OmegaConf
 def _make_cfg() -> "OmegaConf":
     return OmegaConf.create({
         "run_name": "ppo_hoop_blue_5",
-        "obs": {"name": "AUGMENTED_OBS", "n_stack": 3},
+        "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3},
         "env": {"learner_id": "blue_0"},
         "init": {"mode": "pretrain", "parent": "wandb://ppo_hoop_blue_4:prod"},
     })

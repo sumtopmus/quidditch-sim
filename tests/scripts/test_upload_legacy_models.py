@@ -7,7 +7,7 @@ from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 
-def _make_legacy_dir(tmp_path: Path, name: str, obs_spec: str = "AUGMENTED_OBS") -> Path:
+def _make_legacy_dir(tmp_path: Path, name: str, obs_spec: str = "DUEL_V2_WORLD") -> Path:
     d = tmp_path / "models" / name
     d.mkdir(parents=True)
     (d / "best_model.zip").write_bytes(b"model-bytes")
@@ -28,7 +28,7 @@ def _make_legacy_dir(tmp_path: Path, name: str, obs_spec: str = "AUGMENTED_OBS")
 def test_upload_creates_artifact_with_prod_and_run_name_aliases(tmp_path: Path) -> None:
     from scripts.upload_legacy_models import upload_one
 
-    d = _make_legacy_dir(tmp_path, "ppo_hoop_red_1", obs_spec="TEAM_ENV_OBS")
+    d = _make_legacy_dir(tmp_path, "ppo_hoop_red_1", obs_spec="DUEL_V1_BODY")
 
     art = MagicMock()
     art.version = "v0"
@@ -52,7 +52,7 @@ def test_upload_creates_artifact_with_prod_and_run_name_aliases(tmp_path: Path) 
 def test_upload_writes_pinned_metadata_in_place(tmp_path: Path) -> None:
     from scripts.upload_legacy_models import upload_one
 
-    d = _make_legacy_dir(tmp_path, "ppo_hoop_blue_4", obs_spec="AUGMENTED_OBS")
+    d = _make_legacy_dir(tmp_path, "ppo_hoop_blue_4", obs_spec="DUEL_V2_WORLD")
 
     art = MagicMock()
     art.version = "v0"
@@ -72,7 +72,7 @@ def test_upload_writes_pinned_metadata_in_place(tmp_path: Path) -> None:
 def test_upload_idempotent_skips_if_metadata_present(tmp_path: Path) -> None:
     from scripts.upload_legacy_models import upload_one
 
-    d = _make_legacy_dir(tmp_path, "ppo_hoop_red_1", obs_spec="TEAM_ENV_OBS")
+    d = _make_legacy_dir(tmp_path, "ppo_hoop_red_1", obs_spec="DUEL_V1_BODY")
     (d / "_wandb_metadata.json").write_text(json.dumps({"name": "ppo_hoop_red_1", "version": "v0"}))
 
     with patch("wandb.init") as mock_init:

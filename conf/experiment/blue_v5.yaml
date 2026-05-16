@@ -5,7 +5,7 @@ run_name: ppo_hoop_blue_5
 
 defaults:
   - override /env: team
-  - override /obs: augmented
+  - override /obs: duel_v2_world
   - override /reward: team_v2
   - override /opponent: beeline_red
   - override /init: pretrain

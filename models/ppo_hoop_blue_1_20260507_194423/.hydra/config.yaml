@@ -1,7 +1,7 @@
 run_name: ppo_hoop_blue_1
 seed: 42
 obs:
-  name: TEAM_ENV_OBS
+  name: DUEL_V1_BODY
   n_stack: 1
 init:
   mode: scratch

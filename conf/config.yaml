@@ -4,7 +4,7 @@
 defaults:
   - trainer: ppo
   - env: team
-  - obs: augmented
+  - obs: duel_v2_world
   - reward: team_v2
   - opponent: beeline_red
   - eval: default

@@ -1,0 +1,4 @@
+# Resolves at runtime to envs.quidditch.obs_spec.DUEL_V2_WORLD (25-d, world-frame opp_vel_rel + closing_rate + vec_to_hoop).
+# Current team-play obs.
+name: DUEL_V2_WORLD
+n_stack: 3

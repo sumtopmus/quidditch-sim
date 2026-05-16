@@ -1,7 +1,7 @@
 run_name: ppo_hoop_blue_4
 seed: 42
 obs:
-  name: AUGMENTED_OBS
+  name: DUEL_V2_WORLD
   n_stack: 3
 init:
   mode: scratch

@@ -15,7 +15,7 @@ def test_pretrain_branch_calls_resolve_parent(tmp_path: Path) -> None:
         "trainer": {"n_steps": 1, "batch_size": 1, "n_epochs": 1, "lr": 1e-4,
                     "gamma": 0.99, "gae_lambda": 0.95, "clip_range": 0.2,
                     "ent_coef": 0.01},
-        "obs": {"name": "AUGMENTED_OBS", "n_stack": 3},
+        "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3},
         "init": {"mode": "pretrain", "parent": "wandb://ppo_hoop_blue_4:prod",
                  "new_dim_init_scale": 0.01},
     })
@@ -27,7 +27,7 @@ def test_pretrain_branch_calls_resolve_parent(tmp_path: Path) -> None:
     fake_hydra = tmp_path / "models" / "ppo_hoop_blue_4" / ".hydra"
     fake_hydra.mkdir()
     (fake_hydra / "config.yaml").write_text(
-        "obs:\n  name: AUGMENTED_OBS\n  n_stack: 3\n"
+        "obs:\n  name: DUEL_V2_WORLD\n  n_stack: 3\n"
     )
 
     vec_env = MagicMock()

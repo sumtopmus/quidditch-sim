@@ -35,7 +35,7 @@ from core.world import World
 from core.quadrotor import Quadrotor
 from core.drone.cf2x import cf2x_assets, cf2x_fragment
 from envs.quidditch import obs_spec
-from envs.quidditch.obs_spec import TEAM_ENV_OBS
+from envs.quidditch.obs_spec import DUEL_V1_BODY
 from envs.quidditch.scene import arena_wall_fragment, hoop_fragment
 from envs.quidditch.scoring import GeomDistanceScorer
 from envs.quidditch.tagging import TagDistanceScorer
@@ -129,7 +129,7 @@ class QuidditchTeamEnv(ParallelEnv):
         self.possible_agents = [self._red_id, self._blue_id]
         self.agents: list[str] = list(self.possible_agents)
 
-        obs_box = spaces.Box(low=-np.inf, high=np.inf, shape=(TEAM_ENV_OBS.dim,),
+        obs_box = spaces.Box(low=-np.inf, high=np.inf, shape=(DUEL_V1_BODY.dim,),
                              dtype=np.float32)
         act_box = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
         self.observation_spaces: dict[str, spaces.Box] = {
@@ -562,12 +562,12 @@ class QuidditchTeamEnv(ParallelEnv):
         signed_dist_norm = self._signed_dist_to_hoop_plane(lin_pos) / ARENA_RADIUS
 
         # OPP_VEL_REL_BODY (legacy body_mixed): each velocity is in its own body
-        # frame.  This is contractually frozen for TEAM_ENV_OBS so frozen-Red
-        # checkpoints keep working.  The world-frame variant lives in AUGMENTED_OBS.
+        # frame.  This is contractually frozen for DUEL_V1_BODY so frozen-Red
+        # checkpoints keep working.  The world-frame variant lives in DUEL_V2_WORLD.
         opp_pos_rel = opp_pos     - lin_pos
         opp_vel_rel = opp_lin_vel - lin_vel_b
 
-        return obs_spec.pack(TEAM_ENV_OBS, {
+        return obs_spec.pack(DUEL_V1_BODY, {
             "ang_vel":          ang_vel,
             "ang_pos":          ang_pos,
             "lin_vel":          lin_vel_b,

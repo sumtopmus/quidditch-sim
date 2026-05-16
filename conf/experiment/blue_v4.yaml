@@ -1,12 +1,12 @@
 # @package _global_
 # Already-trained: current best Blue.  Trained against beeline_red with
-# randomise_start=false, 25-d AUGMENTED_OBS, frame_stack=3.
+# randomise_start=false, 25-d DUEL_V2_WORLD, frame_stack=3.
 
 run_name: ppo_hoop_blue_4
 
 defaults:
   - override /env: team
-  - override /obs: augmented
+  - override /obs: duel_v2_world
   - override /reward: team_v2
   - override /opponent: beeline_red
   - override /init: scratch

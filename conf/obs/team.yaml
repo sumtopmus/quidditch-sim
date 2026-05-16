@@ -1,4 +1,0 @@
-# Resolves at runtime to envs.quidditch.obs_spec.TEAM_ENV_OBS (22-d, body-mixed).
-# Used for legacy team runs (pre-2026-05-12 augmentation).
-name: TEAM_ENV_OBS
-n_stack: 1

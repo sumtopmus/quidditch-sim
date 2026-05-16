@@ -64,7 +64,7 @@ def test_migrate_obs_name_resolved_from_dim(tmp_path: Path):
     _make_fake_promoted_model(model)
     migrate_one(model)
     cfg = yaml.safe_load((model / ".hydra" / "config.yaml").read_text())
-    assert cfg["obs"]["name"] == "AUGMENTED_OBS"
+    assert cfg["obs"]["name"] == "DUEL_V2_WORLD"
     assert cfg["obs"]["n_stack"] == 3
 
 

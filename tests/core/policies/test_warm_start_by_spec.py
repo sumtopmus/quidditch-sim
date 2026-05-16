@@ -8,7 +8,7 @@ import gymnasium as gym
 
 from envs.quidditch import obs_spec
 from envs.quidditch.obs_spec import (
-    SIMPLE_ENV_OBS, TEAM_ENV_OBS, AUGMENTED_OBS, ObsSpec, ObsBlock,
+    SIMPLE_ENV_OBS, DUEL_V1_BODY, DUEL_V2_WORLD, ObsSpec, ObsBlock,
 )
 from core.policies.warm_start import warm_start_ppo_by_spec
 
@@ -48,15 +48,15 @@ def test_simple_to_team_copies_first_16_columns(tmp_path):
     parent = PPO.load(parent_ckpt)
     old_w = _input_layer_weight(parent).detach().clone()
 
-    new_env = _make_dummy_vec_env(TEAM_ENV_OBS.dim)
+    new_env = _make_dummy_vec_env(DUEL_V1_BODY.dim)
     fresh = warm_start_ppo_by_spec(
         old_checkpoint=parent_ckpt,
         new_env=new_env,
         parent_spec=SIMPLE_ENV_OBS, parent_n_stack=1,
-        current_spec=TEAM_ENV_OBS,  current_n_stack=1,
+        current_spec=DUEL_V1_BODY,  current_n_stack=1,
     )
     new_w = _input_layer_weight(fresh)
-    # SIMPLE_ENV_OBS is a prefix of TEAM_ENV_OBS, so columns 0:16 must be copied
+    # SIMPLE_ENV_OBS is a prefix of DUEL_V1_BODY, so columns 0:16 must be copied
     # byte-for-byte.
     assert torch.allclose(new_w[:, :16], old_w)
     # The added columns 16:22 must be small (σ=0.01 init).
@@ -65,16 +65,16 @@ def test_simple_to_team_copies_first_16_columns(tmp_path):
 
 
 def test_team_to_augmented_handles_offset_shift(tmp_path):
-    parent_ckpt = _make_and_save_dummy_ppo(tmp_path, obs_dim=TEAM_ENV_OBS.dim)
+    parent_ckpt = _make_and_save_dummy_ppo(tmp_path, obs_dim=DUEL_V1_BODY.dim)
     parent = PPO.load(parent_ckpt)
     old_w = _input_layer_weight(parent).detach().clone()
 
-    new_env = _make_dummy_vec_env(AUGMENTED_OBS.dim)
+    new_env = _make_dummy_vec_env(DUEL_V2_WORLD.dim)
     fresh = warm_start_ppo_by_spec(
         old_checkpoint=parent_ckpt,
         new_env=new_env,
-        parent_spec=TEAM_ENV_OBS, parent_n_stack=1,
-        current_spec=AUGMENTED_OBS, current_n_stack=1,
+        parent_spec=DUEL_V1_BODY, parent_n_stack=1,
+        current_spec=DUEL_V2_WORLD, current_n_stack=1,
     )
     new_w = _input_layer_weight(fresh)
     # Blocks shared by (name, dim, frame): ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS,
@@ -109,7 +109,7 @@ def test_n_stack_repeat_when_parent_1_current_3(tmp_path):
 def test_frame_change_does_not_copy_columns(tmp_path):
     # Parent uses body_mixed opp_vel_rel; current uses world.  Same name, same
     # dim, different frame → must be small-init, not copied.
-    parent_ckpt = _make_and_save_dummy_ppo(tmp_path, obs_dim=TEAM_ENV_OBS.dim)
+    parent_ckpt = _make_and_save_dummy_ppo(tmp_path, obs_dim=DUEL_V1_BODY.dim)
     parent = PPO.load(parent_ckpt)
     old_w = _input_layer_weight(parent).detach().clone()
 
@@ -122,7 +122,7 @@ def test_frame_change_does_not_copy_columns(tmp_path):
     new_env = _make_dummy_vec_env(current.dim)
     fresh = warm_start_ppo_by_spec(
         old_checkpoint=parent_ckpt, new_env=new_env,
-        parent_spec=TEAM_ENV_OBS, parent_n_stack=1,
+        parent_spec=DUEL_V1_BODY, parent_n_stack=1,
         current_spec=current,     current_n_stack=1,
     )
     new_w = _input_layer_weight(fresh)

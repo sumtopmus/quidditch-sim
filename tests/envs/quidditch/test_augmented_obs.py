@@ -15,7 +15,7 @@ import mujoco
 import numpy as np
 
 from envs.quidditch.constants import HOOP_CENTER
-from envs.quidditch.obs_spec import AUGMENTED_OBS
+from envs.quidditch.obs_spec import DUEL_V2_WORLD
 from envs.quidditch.opponents import (
     FrameStackWrapper,
     OpponentControlledEnv,
@@ -25,7 +25,7 @@ from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 from tests.conftest import set_body_state
 
 
-AUGMENTED_OBS_DIM = AUGMENTED_OBS.dim
+DUEL_V2_WORLD_DIM = DUEL_V2_WORLD.dim
 
 
 def _make_blue_env() -> OpponentControlledEnv:
@@ -39,8 +39,8 @@ def test_augmented_obs_shape_is_25_dim() -> None:
     env = _make_blue_env()
     try:
         obs, _ = env.reset(seed=0)
-        assert env.observation_space.shape == (AUGMENTED_OBS_DIM,)
-        assert obs.shape == (AUGMENTED_OBS_DIM,)
+        assert env.observation_space.shape == (DUEL_V2_WORLD_DIM,)
+        assert obs.shape == (DUEL_V2_WORLD_DIM,)
         assert obs.dtype == np.float32
     finally:
         env.close()
@@ -158,20 +158,20 @@ def test_frame_stack_wrapper_doubles_obs_dim() -> None:
     env = FrameStackWrapper(_make_blue_env(), n_stack=2)
     try:
         obs, _ = env.reset(seed=0)
-        assert env.observation_space.shape == (AUGMENTED_OBS_DIM * 2,)
-        assert obs.shape == (AUGMENTED_OBS_DIM * 2,)
+        assert env.observation_space.shape == (DUEL_V2_WORLD_DIM * 2,)
+        assert obs.shape == (DUEL_V2_WORLD_DIM * 2,)
         # At reset, every slot is the current obs — so the two halves match.
         np.testing.assert_array_equal(
-            obs[:AUGMENTED_OBS_DIM], obs[AUGMENTED_OBS_DIM:],
+            obs[:DUEL_V2_WORLD_DIM], obs[DUEL_V2_WORLD_DIM:],
         )
         # After one step, the older half (start) should equal the prior obs;
         # the newer half (end) should be the new step's obs.
-        prev_new = obs[AUGMENTED_OBS_DIM:].copy()
+        prev_new = obs[DUEL_V2_WORLD_DIM:].copy()
         obs2, _, _, _, _ = env.step(np.zeros(4, dtype=np.float32))
-        np.testing.assert_array_equal(obs2[:AUGMENTED_OBS_DIM], prev_new)
+        np.testing.assert_array_equal(obs2[:DUEL_V2_WORLD_DIM], prev_new)
         # The new tail is the new obs — generally different from prev_new
         # because the env stepped (drone physics moved).  Permit equality
         # too (highly unlikely) but assert at minimum the shape is right.
-        assert obs2.shape == (AUGMENTED_OBS_DIM * 2,)
+        assert obs2.shape == (DUEL_V2_WORLD_DIM * 2,)
     finally:
         env.close()

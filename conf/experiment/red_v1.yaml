@@ -6,7 +6,7 @@ run_name: ppo_hoop_red_1
 
 defaults:
   - override /env: team
-  - override /obs: team               # 22-d, body-mixed (pre-2026-05-12)
+  - override /obs: duel_v1_body       # 22-d, body-mixed opp_vel_rel (pre-2026-05-12)
   - override /reward: team_v2         # closest current stack
   - override /opponent: beeline_blue
   - override /init: warm_start

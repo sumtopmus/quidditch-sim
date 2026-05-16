@@ -15,7 +15,7 @@ from stable_baselines3 import PPO
 from stable_baselines3.common.vec_env import DummyVecEnv
 
 from core.policies.warm_start import warm_start_ppo_by_spec
-from envs.quidditch.obs_spec import AUGMENTED_OBS, SIMPLE_ENV_OBS
+from envs.quidditch.obs_spec import DUEL_V2_WORLD, SIMPLE_ENV_OBS
 from envs.quidditch.opponents import BeelineBlue, OpponentControlledEnv
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 
@@ -48,7 +48,7 @@ def test_warm_started_policy_matches_old_on_obs_prefix() -> None:
             old_checkpoint=old_path,
             new_env=new_env,
             parent_spec=SIMPLE_ENV_OBS, parent_n_stack=1,
-            current_spec=AUGMENTED_OBS, current_n_stack=1,
+            current_spec=DUEL_V2_WORLD, current_n_stack=1,
             new_dim_init_scale=0.01,
         )
 

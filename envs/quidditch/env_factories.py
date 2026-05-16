@@ -73,7 +73,7 @@ class TeamEnvFactory:
     team_cfg: Any
     learner_id: str
     opponent_spec: str
-    obs_spec_name: str = "AUGMENTED_OBS"
+    obs_spec_name: str = "DUEL_V2_WORLD"
     frame_stack: int = 3
     seed: int = 42
     # See SimpleEnvFactory.reward_stack — same semantics.

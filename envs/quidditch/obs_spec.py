@@ -108,11 +108,11 @@ SIMPLE_ENV_OBS: ObsSpec = ObsSpec((
     ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS, UNIT_TO_GOAL, SIGNED_DIST_NORM,
 ))
 
-TEAM_ENV_OBS: ObsSpec = ObsSpec(
+DUEL_V1_BODY: ObsSpec = ObsSpec(
     SIMPLE_ENV_OBS.blocks + (OPP_POS_REL, OPP_VEL_REL_BODY),
 )
 
-AUGMENTED_OBS: ObsSpec = ObsSpec((
+DUEL_V2_WORLD: ObsSpec = ObsSpec((
     ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS, UNIT_TO_GOAL,
     VEC_TO_HOOP, OPP_POS_REL, OPP_VEL_REL_WORLD, CLOSING_RATE,
 ))
@@ -124,6 +124,6 @@ AUGMENTED_OBS: ObsSpec = ObsSpec((
 # requires adding it here as well so `cfg.obs.name` lookups can resolve it.
 SPEC_BY_NAME: dict[str, ObsSpec] = {
     "SIMPLE_ENV_OBS": SIMPLE_ENV_OBS,
-    "TEAM_ENV_OBS":   TEAM_ENV_OBS,
-    "AUGMENTED_OBS":  AUGMENTED_OBS,
+    "DUEL_V1_BODY":   DUEL_V1_BODY,
+    "DUEL_V2_WORLD":  DUEL_V2_WORLD,
 }

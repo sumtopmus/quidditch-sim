@@ -6,7 +6,7 @@ run_name: _canary_team
 
 defaults:
   - override /env: team
-  - override /obs: augmented
+  - override /obs: duel_v2_world
   - override /reward: team_v2
   - override /opponent: beeline_red
   - override /eval: default

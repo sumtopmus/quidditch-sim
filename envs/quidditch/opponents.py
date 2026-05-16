@@ -17,14 +17,14 @@ from stable_baselines3 import PPO
 
 from envs.quidditch import obs_spec
 from envs.quidditch.constants import HOOP_CENTER
-from envs.quidditch.obs_spec import AUGMENTED_OBS
+from envs.quidditch.obs_spec import DUEL_V2_WORLD
 from envs.quidditch.team_env import QuidditchTeamEnv
 
 
 # ── Learner-obs augmentation ─────────────────────────────────────────────────
 # OpponentControlledEnv hands the learner a 25-d obs derived from team_env's
 # raw 22-d per-agent obs.  The transformation is wrapper-local: team_env and
-# the frozen-opponent path see the original 22-d shape.  See AUGMENTED_OBS in
+# the frozen-opponent path see the original 22-d shape.  See DUEL_V2_WORLD in
 # envs.quidditch.obs_spec for the canonical slot layout.
 
 
@@ -284,7 +284,7 @@ class OpponentControlledEnv(gym.Env):
         # self._last_opp_obs) still receives team_env's raw 22-d obs because
         # that's what frozen-opponent checkpoints were trained on.
         self.observation_space = gym.spaces.Box(
-            low=-np.inf, high=np.inf, shape=(AUGMENTED_OBS.dim,), dtype=np.float32,
+            low=-np.inf, high=np.inf, shape=(DUEL_V2_WORLD.dim,), dtype=np.float32,
         )
         self.action_space      = team_env.action_space(learner_id)
         self.render_mode = team_env.render_mode
@@ -312,9 +312,9 @@ class OpponentControlledEnv(gym.Env):
             setattr(self, attr, int(model.jnt_dofadr[jnt]))
 
     def _augment_learner_obs(self, raw_obs: np.ndarray) -> np.ndarray:
-        """Map team_env's 22-d learner obs to the 25-d AUGMENTED_OBS layout.
+        """Map team_env's 22-d learner obs to the 25-d DUEL_V2_WORLD layout.
 
-        The raw 22-d obs is TEAM_ENV_OBS (body-mixed opp_vel_rel + signed-distance
+        The raw 22-d obs is DUEL_V1_BODY (body-mixed opp_vel_rel + signed-distance
         scalar).  Here we replace slot 15 with vec_to_hoop (world), slots 19:22
         with world-frame opp_vel_rel, and append closing_rate.  See the [obs]
         section of the design spec for the contract.
@@ -342,7 +342,7 @@ class OpponentControlledEnv(gym.Env):
         )
         self._prev_dist_to_opp = dist_to_opp
 
-        return obs_spec.pack(AUGMENTED_OBS, {
+        return obs_spec.pack(DUEL_V2_WORLD, {
             "ang_vel":      raw_obs[0:3],
             "ang_pos":      raw_obs[3:6],
             "lin_vel":      raw_obs[6:9],
