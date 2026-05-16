@@ -358,3 +358,25 @@ def _section_eval_results(ctx: dict[str, Any]) -> str:
     lines.append(f"- **completed_steps:** {completed_str}  ·  **wall_clock:** {wall_str}")
     lines.append(f"- **model_kind:** `{model_kind}`")
     return "\n".join(lines)
+
+
+def _section_wandb(ctx: dict[str, Any]) -> str:
+    wandb_meta = ctx["wandb_meta"]
+    if not wandb_meta:
+        return ""
+
+    cfg = ctx["cfg"]
+    entity = wandb_meta.get("entity", "(unknown)")
+    project = wandb_meta.get("project", "(unknown)")
+    name = wandb_meta.get("name", "(unknown)")
+    version = wandb_meta.get("version", "(unknown)")
+    aliases = ", ".join(wandb_meta.get("aliases", []))
+    run_id = f"{cfg.run_name}_{ctx['run_dir'].name}" if hasattr(cfg, "run_name") else "(unknown)"
+
+    return "\n".join([
+        "## W&B",
+        "",
+        f"- **Project:** `{entity}/{project}`",
+        f"- **Run id:** `{run_id}`",
+        f"- **Artifact:** `{name}:{version}`  (aliases: {aliases})",
+    ])

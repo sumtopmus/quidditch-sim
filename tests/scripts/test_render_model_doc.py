@@ -293,3 +293,22 @@ def test_section_eval_results_omits_best_lines_for_final_kind():
     out = _section_eval_results(ctx)
     assert "model_kind" in out and "final" in out
     assert "best_eval_reward" not in out
+
+
+from scripts._render_model_doc import _section_wandb
+
+
+def test_section_wandb_renders_when_metadata_present():
+    out = _section_wandb(_ctx_for_section())
+    assert "## W&B" in out
+    assert "gridcom/drone-quidditch" in out
+    assert "ppo_hoop_test" in out
+    assert "v0" in out
+    assert "prod" in out
+
+
+def test_section_wandb_returns_empty_when_metadata_absent():
+    """When _wandb_metadata.json is absent, the W&B section is omitted
+    entirely (empty string)."""
+    out = _section_wandb(_ctx_for_section(wandb_meta=None))
+    assert out == ""
