@@ -46,7 +46,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless lineage promote install clean list-runs obs-specs eval-team sweep sweep-agent sweep-agents
+.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless lineage promote install clean list-runs obs-specs describe-run eval-team sweep sweep-agent sweep-agents
 
 .DEFAULT_GOAL := help
 
@@ -119,6 +119,12 @@ install: ## 📦 Create/update the $(CONDA_ENV) conda env
 
 obs-specs: ## 🔭 Print block-by-block layout of every canonical ObsSpec
 	@$(PYTHON) -m envs.quidditch.obs_spec
+
+describe-run: ## 📝 Render MODEL.md for a run  RUN_NAME=<name> [TRIAL=<ts>]
+	@if [ -z "$(RUN_NAME)" ]; then echo "ERROR: RUN_NAME=<name> required"; exit 1; fi; \
+	 if [ -n "$(TRIAL)" ]; then RUN_DIR="$(RUNS_DIR)/$(RUN_NAME)/$(TRIAL)"; \
+	 else RUN_DIR="$(RUNS_DIR)/$(RUN_NAME)/$$(ls -1t $(RUNS_DIR)/$(RUN_NAME) | head -1)"; fi; \
+	 $(PYTHON) -m scripts.render_model_doc --run-dir "$$RUN_DIR"
 
 list-runs: ## 🗂️  List training runs grouped by config name
 	@echo "=== $(RUNS_DIR)/ ==="; \

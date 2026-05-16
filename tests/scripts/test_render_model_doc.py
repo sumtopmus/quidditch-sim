@@ -1,0 +1,438 @@
+"""Tests for scripts/_render_model_doc.py."""
+from __future__ import annotations
+
+import json
+from pathlib import Path
+
+import pytest
+from omegaconf import OmegaConf
+
+from scripts._render_model_doc import _load_run_context
+
+
+def _write_run_fixture(
+    run_dir: Path,
+    *,
+    config: dict,
+    meta: dict | None = None,
+    hydra_yaml: dict | None = None,
+    wandb_meta: dict | None = None,
+) -> Path:
+    """Write a minimal run-dir fixture under `run_dir/.hydra/`."""
+    hdir = run_dir / ".hydra"
+    hdir.mkdir(parents=True, exist_ok=True)
+    (hdir / "config.yaml").write_text(OmegaConf.to_yaml(OmegaConf.create(config)))
+    if meta is not None:
+        (hdir / "meta.yaml").write_text(OmegaConf.to_yaml(OmegaConf.create(meta)))
+    if hydra_yaml is not None:
+        (hdir / "hydra.yaml").write_text(OmegaConf.to_yaml(OmegaConf.create(hydra_yaml)))
+    if wandb_meta is not None:
+        (run_dir / "_wandb_metadata.json").write_text(json.dumps(wandb_meta))
+    return run_dir
+
+
+def test_load_run_context_reads_all_inputs(tmp_path: Path):
+    run_dir = _write_run_fixture(
+        tmp_path / "runs" / "ppo_hoop_test" / "20260516_120000",
+        config={"run_name": "ppo_hoop_test", "obs": {"name": "SIMPLE_ENV_OBS", "n_stack": 1}},
+        meta={"git_hash": "abc123", "final_stats": {"best_eval_reward": 7.91}},
+        hydra_yaml={"hydra": {"runtime": {"choices": {"reward": "team_v2"}}}},
+        wandb_meta={"name": "ppo_hoop_test", "version": "v0", "aliases": ["prod"]},
+    )
+    ctx = _load_run_context(run_dir)
+    assert ctx["cfg"].run_name == "ppo_hoop_test"
+    assert ctx["meta"]["git_hash"] == "abc123"
+    assert ctx["hydra_yaml"]["hydra"]["runtime"]["choices"]["reward"] == "team_v2"
+    assert ctx["wandb_meta"]["name"] == "ppo_hoop_test"
+    assert ctx["run_dir"] == run_dir
+
+
+def test_load_run_context_raises_when_config_missing(tmp_path: Path):
+    """config.yaml is the required input — everything depends on it."""
+    run_dir = tmp_path / "empty_run"
+    run_dir.mkdir()
+    with pytest.raises(FileNotFoundError):
+        _load_run_context(run_dir)
+
+
+def test_load_run_context_tolerates_missing_optional_inputs(tmp_path: Path):
+    """meta.yaml, hydra.yaml, _wandb_metadata.json are all optional."""
+    run_dir = _write_run_fixture(
+        tmp_path / "runs" / "ppo_hoop_test" / "20260516_120000",
+        config={"run_name": "ppo_hoop_test", "obs": {"name": "SIMPLE_ENV_OBS", "n_stack": 1}},
+    )
+    ctx = _load_run_context(run_dir)
+    assert ctx["cfg"].run_name == "ppo_hoop_test"
+    assert ctx["meta"] is None
+    assert ctx["hydra_yaml"] is None
+    assert ctx["wandb_meta"] is None
+
+
+from scripts._render_model_doc import _section_header
+
+
+def _ctx_for_section(**overrides) -> dict:
+    """Build a baseline ctx covering the union of fields all sections need.
+    Tests override just what they care about.
+    """
+    cfg = OmegaConf.create({
+        "run_name": "ppo_hoop_test",
+        "description": "",
+        "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3},
+        "init": {"mode": "scratch", "parent": None},
+        "trainer": {"lr": 3e-4, "total_timesteps": 10_000_000,
+                     "n_envs": 8, "batch_size": 256, "n_epochs": 10,
+                     "gamma": 0.99, "gae_lambda": 0.95, "ent_coef": 0.0,
+                     "clip_range": 0.2},
+        "env": {"learner_id": "blue_0",
+                 "team_cfg": {"episode_seconds": 30.0, "tag_radius": 0.3,
+                              "crash_vel_thr": 1.0, "midpoint_alpha": 0.5,
+                              "crash_aftermath_seconds": 0.0}},
+        "opponent": {"_target_": "envs.quidditch.opponents.BeelineRed"},
+        "curriculum": {"name": "fixed_start"},
+        "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
+                    "terms": []},  # empty terms ok for non-reward sections
+    })
+    ctx = {
+        "cfg": cfg,
+        "meta": {"git_hash": "abc1234", "final_stats": {
+            "best_eval_reward": 7.91, "best_step": 9_500_000,
+            "completed_steps": 10_000_000, "wall_clock_seconds": 1923.0,
+            "model_kind": "best"}},
+        "hydra_yaml": {"hydra": {"runtime": {"choices": {"reward": "team_v2"}}}},
+        "wandb_meta": {"name": "ppo_hoop_test", "version": "v0",
+                        "aliases": ["latest", "prod", "ppo_hoop_test"],
+                        "entity": "gridcom", "project": "drone-quidditch"},
+        "run_dir": Path("runs/ppo_hoop_test/20260516_120000"),
+    }
+    ctx.update(overrides)
+    return ctx
+
+
+def test_section_header_promoted_run():
+    """When _wandb_metadata.json is present, status is 'promoted' and the W&B
+    line renders below the header."""
+    out = _section_header(_ctx_for_section())
+    assert "# MODEL: ppo_hoop_test_20260516_120000" in out
+    assert "promoted" in out
+    assert "abc1234" in out
+    assert "wandb://ppo_hoop_test:prod" in out
+    assert "v0" in out
+
+
+def test_section_header_run_only_when_wandb_meta_absent():
+    """When _wandb_metadata.json is None, status is 'run-only' and the W&B
+    line is omitted entirely."""
+    out = _section_header(_ctx_for_section(wandb_meta=None))
+    assert "run-only" in out
+    assert "wandb://" not in out
+    assert "**W&B:**" not in out
+
+
+from scripts._render_model_doc import _section_summary
+
+
+def test_section_summary_uses_description_override_when_present():
+    """If cfg.description is non-empty, it replaces the auto-template verbatim."""
+    custom = "Curriculum step 1: pretrain from blue_v4 onto random_start."
+    ctx = _ctx_for_section()
+    ctx["cfg"].description = custom
+    out = _section_summary(ctx)
+    assert custom in out
+    # auto-template hallmarks must NOT appear
+    assert "learner trained from" not in out
+
+
+def test_section_summary_auto_templates_when_description_empty():
+    """Empty description → auto-template from cfg fields."""
+    out = _section_summary(_ctx_for_section())
+    # Spot-check the auto-template's content
+    assert "blue_0" in out  # learner_id
+    assert "scratch" in out  # init.mode
+    assert "DUEL_V2_WORLD" in out  # obs.name
+    assert "n_stack=3" in out
+    assert "team_v2" in out  # reward group choice
+    assert "10,000,000" in out or "10_000_000" in out  # total_timesteps formatted
+
+
+from scripts._render_model_doc import _section_lineage
+
+
+def test_section_lineage_scratch_renders_minimally():
+    """init.mode == scratch → just the one-liner, no parent fields."""
+    out = _section_lineage(_ctx_for_section())  # default cfg.init.mode = scratch
+    assert "## Lineage" in out
+    assert "scratch" in out
+    assert "no parent" in out
+    # Don't render the parent / chain-total fields
+    assert "**parent:**" not in out
+
+
+def test_section_lineage_pretrain_renders_parent_and_chain_total():
+    ctx = _ctx_for_section()
+    ctx["cfg"].init.mode = "pretrain"
+    ctx["cfg"].init.parent = "models/ppo_hoop_blue_4_20260511_202612/best_model"
+    ctx["meta"]["parent_chain_total"] = 20_000_000
+    ctx["cfg"].trainer.total_timesteps = 10_000_000
+    out = _section_lineage(ctx)
+    assert "pretrain" in out
+    assert "models/ppo_hoop_blue_4_20260511_202612/best_model" in out
+    assert "20,000,000" in out or "20000000" in out  # parent chain total formatted
+    assert "10,000,000" in out or "10000000" in out  # this run's contribution
+
+
+from scripts._render_model_doc import _section_obs_spec
+
+
+def test_section_obs_spec_renders_table_for_known_spec():
+    out = _section_obs_spec(_ctx_for_section())  # default cfg.obs.name = DUEL_V2_WORLD
+    assert "## Obs spec" in out
+    assert "DUEL_V2_WORLD" in out
+    assert "25-d" in out  # the spec's total dim
+    assert "n_stack:** 3" in out
+    # Table header
+    assert "| Slot | Block | Dim | Frame | Notes |" in out
+    # A canonical block from DUEL_V2_WORLD
+    assert "ang_vel" in out
+    assert "closing_rate" in out
+
+
+def test_section_obs_spec_renders_error_blockquote_for_unknown_spec():
+    ctx = _ctx_for_section()
+    ctx["cfg"].obs.name = "FAKE_NEVER_REGISTERED_OBS"
+    out = _section_obs_spec(ctx)
+    assert "⚠" in out or "(unknown obs spec" in out
+    assert "FAKE_NEVER_REGISTERED_OBS" in out
+
+
+from scripts._render_model_doc import _section_reward_stack
+
+
+def test_section_reward_stack_renders_terms_from_team_v2():
+    """Pass a cfg.reward pointing at the real team_v2 YAML structure; the
+    renderer instantiates it and walks the terms via dataclasses.fields."""
+    ctx = _ctx_for_section()
+    # Build a real team_v2-shaped reward block (top-level _target_ + terms list)
+    ctx["cfg"].reward = OmegaConf.create({
+        "_target_": "envs.quidditch.rewards.stack.RewardStack",
+        "terms": [
+            {"_target_": "envs.quidditch.rewards.terms.TagEntryPulse",
+             "magnitude": 5.0, "gainer": "blue_0", "loser": "red_0"},
+            {"_target_": "envs.quidditch.rewards.terms.ScoreEvent",
+             "magnitude": 10.0, "scorer": "red_0", "zero_sum_opponent": "blue_0"},
+        ],
+    })
+    out = _section_reward_stack(ctx)
+    assert "## Reward stack" in out
+    assert "team_v2" in out  # source line via hydra.runtime.choices.reward
+    assert "TagEntryPulse" in out
+    assert "magnitude=5.0" in out
+    assert "blue_0" in out
+    assert "ScoreEvent" in out
+    assert "magnitude=10.0" in out
+
+
+def test_section_reward_stack_falls_back_when_hydra_yaml_absent():
+    ctx = _ctx_for_section(hydra_yaml=None)
+    ctx["cfg"].reward = OmegaConf.create({
+        "_target_": "envs.quidditch.rewards.stack.RewardStack",
+        "terms": [{"_target_": "envs.quidditch.rewards.terms.TagEntryPulse",
+                    "magnitude": 5.0, "gainer": "blue_0", "loser": "red_0"}],
+    })
+    out = _section_reward_stack(ctx)
+    assert "## Reward stack" in out
+    assert "in-line override" in out or "unknown source" in out
+    assert "TagEntryPulse" in out  # the table itself still renders
+
+
+from scripts._render_model_doc import (
+    _section_env_config, _section_hyperparams, _section_eval_results,
+)
+
+
+def test_section_env_config_renders_team_fields():
+    out = _section_env_config(_ctx_for_section())
+    assert "## Env config" in out
+    assert "BeelineRed" in out  # opponent short name
+    assert "blue_0" in out  # learner_id
+    assert "30.0 s" in out  # episode_seconds
+    assert "fixed_start" in out  # curriculum
+    assert "0.3 m" in out  # tag_radius
+    assert "1.0 m/s" in out  # crash_vel_thr
+
+
+def test_section_hyperparams_renders_trainer_fields():
+    out = _section_hyperparams(_ctx_for_section())
+    assert "## Training hyperparams" in out
+    assert "PPO" in out
+    assert "lr:** 0.0003" in out or "lr:** 3e-4" in out
+    assert "10,000,000" in out
+    assert "n_envs:** 8" in out
+    assert "batch_size:** 256" in out
+
+
+def test_section_eval_results_renders_best_kind():
+    out = _section_eval_results(_ctx_for_section())
+    assert "## Eval results" in out
+    assert "7.91" in out
+    assert "9,500,000" in out
+    assert "10,000,000" in out
+    assert "best" in out
+
+
+def test_section_eval_results_handles_missing_meta():
+    out = _section_eval_results(_ctx_for_section(meta=None))
+    assert "## Eval results" in out
+    assert "meta.yaml absent" in out
+
+
+def test_section_eval_results_omits_best_lines_for_final_kind():
+    ctx = _ctx_for_section()
+    ctx["meta"]["final_stats"] = {"completed_steps": 200, "wall_clock_seconds": 5.0,
+                                    "model_kind": "final"}
+    out = _section_eval_results(ctx)
+    assert "model_kind" in out and "final" in out
+    assert "best_eval_reward" not in out
+
+
+from scripts._render_model_doc import _section_wandb
+
+
+def test_section_wandb_renders_when_metadata_present():
+    out = _section_wandb(_ctx_for_section())
+    assert "## W&B" in out
+    assert "gridcom/drone-quidditch" in out
+    assert "ppo_hoop_test" in out
+    assert "v0" in out
+    assert "prod" in out
+
+
+def test_section_wandb_returns_empty_when_metadata_absent():
+    """When _wandb_metadata.json is absent, the W&B section is omitted
+    entirely (empty string)."""
+    out = _section_wandb(_ctx_for_section(wandb_meta=None))
+    assert out == ""
+
+
+from scripts._render_model_doc import render_model_doc
+
+
+def test_render_model_doc_end_to_end(tmp_path: Path):
+    """Full doc renders against a complete run-dir fixture."""
+    run_dir = _write_run_fixture(
+        tmp_path / "runs" / "ppo_hoop_test" / "20260516_120000",
+        config={
+            "run_name": "ppo_hoop_test",
+            "description": "",
+            "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3},
+            "init": {"mode": "scratch", "parent": None},
+            "trainer": {"lr": 3e-4, "total_timesteps": 10_000_000,
+                         "n_envs": 8, "batch_size": 256, "n_epochs": 10,
+                         "gamma": 0.99, "gae_lambda": 0.95, "ent_coef": 0.0,
+                         "clip_range": 0.2},
+            "env": {"learner_id": "blue_0",
+                     "team_cfg": {"episode_seconds": 30.0, "tag_radius": 0.3,
+                                  "crash_vel_thr": 1.0, "midpoint_alpha": 0.5,
+                                  "crash_aftermath_seconds": 0.0}},
+            "opponent": {"_target_": "envs.quidditch.opponents.BeelineRed"},
+            "curriculum": {"name": "fixed_start"},
+            "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
+                        "terms": [{"_target_": "envs.quidditch.rewards.terms.ScoreEvent",
+                                    "magnitude": 10.0, "scorer": "red_0",
+                                    "zero_sum_opponent": "blue_0"}]},
+        },
+        meta={"git_hash": "abc1234", "final_stats": {
+            "best_eval_reward": 7.91, "best_step": 9_500_000,
+            "completed_steps": 10_000_000, "wall_clock_seconds": 1923.0,
+            "model_kind": "best"}},
+        hydra_yaml={"hydra": {"runtime": {"choices": {"reward": "team_v2"}}}},
+        wandb_meta={"name": "ppo_hoop_test", "version": "v0",
+                     "aliases": ["latest", "prod"],
+                     "entity": "gridcom", "project": "drone-quidditch"},
+    )
+    out = render_model_doc(run_dir)
+    # All section headers present
+    for header in ["# MODEL:", "## Summary", "## Lineage", "## Obs spec",
+                    "## Reward stack", "## Env config", "## Training hyperparams",
+                    "## Eval results", "## W&B"]:
+        assert header in out, f"missing section: {header}"
+
+
+def test_render_model_doc_isolates_per_section_failures(tmp_path: Path):
+    """A bad obs spec name causes the obs section to flag itself but other
+    sections still render."""
+    run_dir = _write_run_fixture(
+        tmp_path / "runs" / "ppo_hoop_test" / "20260516_120000",
+        config={
+            "run_name": "ppo_hoop_test",
+            "description": "",
+            "obs": {"name": "NEVER_REGISTERED", "n_stack": 1},
+            "init": {"mode": "scratch"},
+            "trainer": {"lr": 1e-3, "total_timesteps": 1000},
+            "env": {"learner_id": "drone_0"},
+            "curriculum": {"name": "fixed_start"},
+            "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
+                        "terms": []},
+        },
+    )
+    out = render_model_doc(run_dir)
+    # Obs section flags itself
+    assert "## Obs spec" in out
+    assert "NEVER_REGISTERED" in out
+    # Other sections still render
+    assert "## Summary" in out
+    assert "## Lineage" in out
+
+
+def test_render_model_doc_omits_wandb_section_when_absent(tmp_path: Path):
+    run_dir = _write_run_fixture(
+        tmp_path / "runs" / "ppo_hoop_test" / "20260516_120000",
+        config={
+            "run_name": "ppo_hoop_test",
+            "description": "",
+            "obs": {"name": "SIMPLE_ENV_OBS", "n_stack": 1},
+            "init": {"mode": "scratch"},
+            "trainer": {"lr": 1e-3, "total_timesteps": 1000},
+            "env": {"learner_id": "drone_0"},
+            "curriculum": {"name": "fixed_start"},
+            "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
+                        "terms": []},
+        },
+    )
+    out = render_model_doc(run_dir)
+    assert "## W&B" not in out
+    assert "run-only" in out  # status reflects absence
+
+
+import os
+import subprocess
+import sys
+
+
+def test_cli_writes_model_doc_to_run_dir(tmp_path: Path):
+    """`python -m scripts.render_model_doc --run-dir <path>` writes MODEL.md."""
+    run_dir = _write_run_fixture(
+        tmp_path / "runs" / "ppo_hoop_test" / "20260516_120000",
+        config={
+            "run_name": "ppo_hoop_test",
+            "description": "",
+            "obs": {"name": "SIMPLE_ENV_OBS", "n_stack": 1},
+            "init": {"mode": "scratch"},
+            "trainer": {"lr": 1e-3, "total_timesteps": 1000},
+            "env": {"learner_id": "drone_0"},
+            "curriculum": {"name": "fixed_start"},
+            "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
+                        "terms": []},
+        },
+    )
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    env = {**os.environ, "KMP_DUPLICATE_LIB_OK": "TRUE", "WANDB_MODE": "disabled"}
+    result = subprocess.run(
+        [sys.executable, "-m", "scripts.render_model_doc", "--run-dir", str(run_dir)],
+        cwd=repo_root, capture_output=True, text=True, env=env,
+    )
+    assert result.returncode == 0, result.stderr
+    md = run_dir / "MODEL.md"
+    assert md.exists()
+    text = md.read_text()
+    assert "# MODEL: ppo_hoop_test_20260516_120000" in text
