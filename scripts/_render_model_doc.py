@@ -267,3 +267,94 @@ def _section_reward_stack(ctx: dict[str, Any]) -> str:
         rows.append(f"| {i} | {cls} | {coeffs} | {agents} |")
 
     return f"## Reward stack\n\n**Source:** {source}\n\n" + "\n".join(rows)
+
+
+def _opponent_short(cfg) -> str:
+    opp = cfg.get("opponent", None) if hasattr(cfg, "get") else None
+    if opp is None:
+        return "(none)"
+    if hasattr(opp, "get") and opp.get("spec"):
+        return opp.get("spec")
+    target = opp.get("_target_", "") if hasattr(opp, "get") else ""
+    return target.rsplit(".", 1)[-1] if target else "(unknown)"
+
+
+def _section_env_config(ctx: dict[str, Any]) -> str:
+    cfg = ctx["cfg"]
+    learner = "drone_0"
+    if hasattr(cfg, "env") and cfg.env is not None and hasattr(cfg.env, "get"):
+        learner = cfg.env.get("learner_id", "drone_0")
+    team_cfg = None
+    if hasattr(cfg, "env") and cfg.env is not None and hasattr(cfg.env, "get"):
+        team_cfg = cfg.env.get("team_cfg", None)
+    curriculum = "(unknown)"
+    if hasattr(cfg, "curriculum") and cfg.curriculum is not None and hasattr(cfg.curriculum, "get"):
+        curriculum = cfg.curriculum.get("name", "(unknown)")
+    opp = _opponent_short(cfg)
+
+    lines = ["## Env config", ""]
+    lines.append(f"- **Opponent:** `{opp}`  ·  **Learner:** `{learner}`")
+    if team_cfg:
+        episode = team_cfg.get("episode_seconds", "(unknown)")
+        lines.append(f"- **Episode:** {episode} s  ·  **Curriculum:** `{curriculum}`")
+        tag_r = team_cfg.get("tag_radius", None)
+        crash_thr = team_cfg.get("crash_vel_thr", None)
+        if tag_r is not None and crash_thr is not None:
+            lines.append(f"- **Tag radius:** {tag_r} m  ·  **Crash velocity threshold:** {crash_thr} m/s")
+        midpoint = team_cfg.get("midpoint_alpha", None)
+        aftermath = team_cfg.get("crash_aftermath_seconds", None)
+        if midpoint is not None or aftermath is not None:
+            lines.append(f"- **Midpoint α:** {midpoint}  ·  **Crash aftermath:** {aftermath} s")
+    else:
+        lines.append(f"- **Curriculum:** `{curriculum}`")
+    return "\n".join(lines)
+
+
+def _section_hyperparams(ctx: dict[str, Any]) -> str:
+    t = ctx["cfg"].trainer
+    total = int(t.total_timesteps)
+    return "\n".join([
+        "## Training hyperparams",
+        "",
+        f"- **Algorithm:** PPO  ·  **lr:** {t.lr}  ·  **total_timesteps:** {total:,}",
+        f"- **n_envs:** {t.get('n_envs', '(unknown)')}  ·  "
+        f"**batch_size:** {t.get('batch_size', '(unknown)')}  ·  "
+        f"**n_epochs:** {t.get('n_epochs', '(unknown)')}",
+        f"- **gamma:** {t.get('gamma', '(unknown)')}  ·  "
+        f"**gae_lambda:** {t.get('gae_lambda', '(unknown)')}  ·  "
+        f"**ent_coef:** {t.get('ent_coef', '(unknown)')}  ·  "
+        f"**clip_range:** {t.get('clip_range', '(unknown)')}",
+    ])
+
+
+def _format_wall_clock(seconds: float | int) -> str:
+    s = int(seconds)
+    h, rem = divmod(s, 3600)
+    m, s_ = divmod(rem, 60)
+    if h > 0:
+        return f"{h}h {m:02d}m {s_:02d}s"
+    return f"{m}m {s_:02d}s"
+
+
+def _section_eval_results(ctx: dict[str, Any]) -> str:
+    meta = ctx["meta"]
+    if meta is None or "final_stats" not in meta:
+        return "## Eval results\n\n(meta.yaml absent — eval section unavailable)"
+
+    fs = meta["final_stats"]
+    model_kind = fs.get("model_kind", "(unknown)")
+    lines = ["## Eval results", ""]
+    if model_kind == "best":
+        reward = fs.get("best_eval_reward", "(unknown)")
+        best_step = fs.get("best_step", None)
+        if isinstance(best_step, int):
+            lines.append(f"- **best_eval_reward:** {reward} @ step {best_step:,}")
+        else:
+            lines.append(f"- **best_eval_reward:** {reward}")
+    completed = fs.get("completed_steps", "(unknown)")
+    wall = fs.get("wall_clock_seconds", None)
+    wall_str = _format_wall_clock(wall) if isinstance(wall, (int, float)) else "(unknown)"
+    completed_str = f"{completed:,}" if isinstance(completed, int) else str(completed)
+    lines.append(f"- **completed_steps:** {completed_str}  ·  **wall_clock:** {wall_str}")
+    lines.append(f"- **model_kind:** `{model_kind}`")
+    return "\n".join(lines)

@@ -243,3 +243,53 @@ def test_section_reward_stack_falls_back_when_hydra_yaml_absent():
     assert "## Reward stack" in out
     assert "in-line override" in out or "unknown source" in out
     assert "TagEntryPulse" in out  # the table itself still renders
+
+
+from scripts._render_model_doc import (
+    _section_env_config, _section_hyperparams, _section_eval_results,
+)
+
+
+def test_section_env_config_renders_team_fields():
+    out = _section_env_config(_ctx_for_section())
+    assert "## Env config" in out
+    assert "BeelineRed" in out  # opponent short name
+    assert "blue_0" in out  # learner_id
+    assert "30.0 s" in out  # episode_seconds
+    assert "fixed_start" in out  # curriculum
+    assert "0.3 m" in out  # tag_radius
+    assert "1.0 m/s" in out  # crash_vel_thr
+
+
+def test_section_hyperparams_renders_trainer_fields():
+    out = _section_hyperparams(_ctx_for_section())
+    assert "## Training hyperparams" in out
+    assert "PPO" in out
+    assert "lr:** 0.0003" in out or "lr:** 3e-4" in out
+    assert "10,000,000" in out
+    assert "n_envs:** 8" in out
+    assert "batch_size:** 256" in out
+
+
+def test_section_eval_results_renders_best_kind():
+    out = _section_eval_results(_ctx_for_section())
+    assert "## Eval results" in out
+    assert "7.91" in out
+    assert "9,500,000" in out
+    assert "10,000,000" in out
+    assert "best" in out
+
+
+def test_section_eval_results_handles_missing_meta():
+    out = _section_eval_results(_ctx_for_section(meta=None))
+    assert "## Eval results" in out
+    assert "meta.yaml absent" in out
+
+
+def test_section_eval_results_omits_best_lines_for_final_kind():
+    ctx = _ctx_for_section()
+    ctx["meta"]["final_stats"] = {"completed_steps": 200, "wall_clock_seconds": 5.0,
+                                    "model_kind": "final"}
+    out = _section_eval_results(ctx)
+    assert "model_kind" in out and "final" in out
+    assert "best_eval_reward" not in out
