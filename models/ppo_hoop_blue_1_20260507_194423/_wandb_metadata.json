@@ -1,0 +1,13 @@
+{
+  "name": "ppo_hoop_blue_1",
+  "version": "v0",
+  "entity": "gridcom",
+  "project": "drone-quidditch",
+  "aliases": [
+    "latest",
+    "prod",
+    "ppo_hoop_blue_1",
+    "v0"
+  ],
+  "logged_by_run_id": "upload_legacy_ppo_hoop_blue_1"
+}

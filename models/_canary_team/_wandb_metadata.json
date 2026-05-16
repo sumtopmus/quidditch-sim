@@ -1,0 +1,12 @@
+{
+  "name": "_canary_team",
+  "version": "v1",
+  "entity": "gridcom",
+  "project": "drone-quidditch",
+  "aliases": [
+    "latest",
+    "_canary_team",
+    "prod"
+  ],
+  "logged_by_run_id": "_canary_team_20260515_192756"
+}
