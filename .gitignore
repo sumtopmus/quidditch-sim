@@ -6,7 +6,17 @@ __pycache__
 # Dev/training artifacts (ephemeral — use `make promote` to save good models)
 runs/
 
+# Wandb client-side state cache (debug logs, offline-sync staging, per-run
+# scratch).  Created at cwd by any wandb.init()/wandb-CLI call; regenerated
+# on demand; never commit.  In-training runs land under runs/<run>/<ts>/wandb/
+# (via init_wandb's `dir=` arg); this top-level wandb/ catches everything
+# else — `wandb sweep`, `wandb login`, scripts that init without dir=, etc.
+wandb/
+
 # models/ IS tracked; individual zips committed via `make promote`
+#   - .cache/: gitignored landing area for `wandb.use_artifact(...).download()`.
+#     Never committed; safe to wipe.
+models/.cache/
 
 # Hydra local overrides live under conf/local/ — see conf/local/.gitignore
 # for the per-file allowlist.
