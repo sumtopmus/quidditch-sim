@@ -68,6 +68,33 @@ def test_load_run_context_tolerates_missing_optional_inputs(tmp_path: Path):
     assert ctx["wandb_meta"] is None
 
 
+def test_load_run_context_handles_hydra_yaml_with_unresolvable_interpolations(tmp_path: Path):
+    """Real-world hydra.yaml has interpolations like `${run_name}` in
+    hydra.sweep.dir that reference the parent config's scope and fail to
+    resolve when hydra.yaml is loaded standalone.  `_load_run_context` must
+    load it without resolving (the renderer only reads literal fields like
+    hydra.runtime.choices.reward).  Regression test for the bug found by
+    the canary_team smoke run.
+    """
+    run_dir = tmp_path / "runs" / "ppo_hoop_test" / "20260517_120000"
+    hdir = run_dir / ".hydra"
+    hdir.mkdir(parents=True)
+    (hdir / "config.yaml").write_text(OmegaConf.to_yaml(OmegaConf.create({
+        "run_name": "ppo_hoop_test",
+        "obs": {"name": "SIMPLE_ENV_OBS", "n_stack": 1},
+    })))
+    (hdir / "hydra.yaml").write_text(
+        "hydra:\n"
+        "  sweep:\n"
+        "    dir: multirun/${run_name}/${now:%Y%m%d_%H%M%S}\n"
+        "  runtime:\n"
+        "    choices:\n"
+        "      reward: team_v2\n"
+    )
+    ctx = _load_run_context(run_dir)
+    assert ctx["hydra_yaml"]["hydra"]["runtime"]["choices"]["reward"] == "team_v2"
+
+
 from scripts._render_model_doc import _section_header
 
 

@@ -37,8 +37,12 @@ def _load_run_context(run_dir: Path) -> dict[str, Any]:
     )
 
     hydra_yaml_path = hdir / "hydra.yaml"
+    # resolve=False: hydra.yaml carries interpolations like `${run_name}` in
+    # hydra.sweep.dir that reference the parent config's scope and fail to
+    # resolve standalone.  The renderer only reads literal fields
+    # (hydra.runtime.choices.*), so no resolution is needed.
     hydra_yaml = (
-        OmegaConf.to_container(OmegaConf.load(hydra_yaml_path), resolve=True)
+        OmegaConf.to_container(OmegaConf.load(hydra_yaml_path), resolve=False)
         if hydra_yaml_path.exists() else None
     )
 
