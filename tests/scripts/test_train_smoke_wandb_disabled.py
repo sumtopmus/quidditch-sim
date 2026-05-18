@@ -75,3 +75,30 @@ def test_train_smoke_calls_log_run_artifact(tmp_path: Path) -> None:
     if out.returncode != 0:
         sys.stderr.write(out.stdout); sys.stderr.write(out.stderr)
     assert out.returncode == 0
+
+
+def test_train_blue_v7_smoke(tmp_path: Path) -> None:
+    """Smoke: blue_v7 experiment (DUEL_V3_BODY_EGO + InterceptShaping)
+    composes via Hydra and runs a tiny PPO loop end-to-end."""
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    env = {**os.environ, "WANDB_MODE": "disabled"}
+    out = subprocess.run(
+        [
+            sys.executable, "-m", "scripts.train",
+            "+experiment=blue_v7",
+            "trainer.total_timesteps=512",
+            "trainer.n_steps=64",
+            "trainer.batch_size=64",
+            "env.n_envs=1",
+            "eval.eval_freq_steps=999999999",
+            "eval.checkpoint_freq_steps=999999999",
+            "eval.video.enabled=false",
+            f"hydra.run.dir={tmp_path}/blue_v7_smoke",
+        ],
+        cwd=repo_root, env=env, capture_output=True, text=True, timeout=300,
+    )
+    if out.returncode != 0:
+        sys.stderr.write(out.stdout); sys.stderr.write(out.stderr)
+    assert out.returncode == 0, "scripts.train blue_v7 exited non-zero"
+    assert (tmp_path / "blue_v7_smoke" / "final_model.zip").exists()
+    assert (tmp_path / "blue_v7_smoke" / ".hydra" / "config.yaml").exists()
