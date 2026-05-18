@@ -82,11 +82,21 @@ def init_wandb(cfg: DictConfig, run_dir: Path, role: str) -> Any:
     if cfg.wandb.get("entity_override"):
         entity = str(cfg.wandb.entity_override)
 
-    # `quiet=True` suppresses non-essential progress chatter — most importantly
-    # the "Encoding video..." spinner that wandb.Video.encode emits on every
+    # Suppress non-essential progress chatter — most importantly the
+    # "Encoding video..." spinner that wandb.Video.encode fires on every
     # frame batch (per-cam × per-eval = dozens of repeats per training run).
     # The init banner + "View run at..." link still print.
-    settings = wandb.Settings(quiet=bool(cfg.wandb.get("quiet", True)))
+    #
+    # Wandb's `_should_print_spinner` reads from `wandb.env.is_quiet()`
+    # (the WANDB_QUIET env var) and from the GLOBAL setup-singleton's
+    # settings — NOT from the per-run `settings=` kwarg below.  Setting
+    # the env var here is the path that actually reaches the spinner gate.
+    # The `settings=` kwarg is kept as belt-and-suspenders so future wandb
+    # versions that DO propagate per-run settings still work.
+    quiet = bool(cfg.wandb.get("quiet", True))
+    if quiet and not os.environ.get("WANDB_QUIET"):
+        os.environ["WANDB_QUIET"] = "true"
+    settings = wandb.Settings(quiet=quiet)
 
     return wandb.init(
         project=os.environ.get("WANDB_PROJECT", cfg.wandb.project),

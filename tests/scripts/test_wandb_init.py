@@ -133,3 +133,58 @@ def test_entity_from_env_default_none() -> None:
 def test_entity_override_from_cfg() -> None:
     kw = _call_init("train", cfg_overrides=["wandb.entity_override=team-quidditch"])
     assert kw["entity"] == "team-quidditch"
+
+
+def _call_init_capturing_env(role: str, cfg_overrides: list[str] | None = None,
+                              env: dict | None = None):
+    """Same as _call_init but ALSO captures os.environ AT init time so a
+    test can assert what init_wandb wrote to it.  Used by the quiet
+    suppression tests below.
+    """
+    from scripts._wandb_init import init_wandb
+    captured_env: dict[str, str] = {}
+
+    def _capture_env_then_return(*args, **kwargs):
+        captured_env.update(dict(os.environ))
+        return MagicMock()
+
+    with hydra_compose(experiment="canary_team", overrides=cfg_overrides or []) as cfg:
+        with patch("wandb.init", side_effect=_capture_env_then_return):
+            saved_env = dict(os.environ)
+            try:
+                if env:
+                    os.environ.update(env)
+                # Remove WANDB_QUIET so we observe what init_wandb writes
+                # without inheriting it from the parent process.
+                if env is None or "WANDB_QUIET" not in env:
+                    os.environ.pop("WANDB_QUIET", None)
+                init_wandb(cfg, run_dir=Path("runs/ppo_hoop_blue_5/20260514_120000"),
+                           role=role)
+            finally:
+                os.environ.clear()
+                os.environ.update(saved_env)
+    return captured_env
+
+
+def test_wandb_quiet_env_var_set_when_cfg_quiet_true() -> None:
+    """Regression: WANDB_QUIET env var must be set before wandb.init so
+    wandb's global `_should_print_spinner` (which reads from env, not from
+    the per-run `settings=` kwarg) suppresses the 'Encoding video...'
+    spinner.  Discovered 2026-05-18 after a first `settings=`-only fix
+    failed to silence the spam.
+    """
+    captured = _call_init_capturing_env("train")
+    assert captured.get("WANDB_QUIET") == "true"
+
+
+def test_wandb_quiet_env_not_overwritten_when_already_set() -> None:
+    """If the user has set WANDB_QUIET=false explicitly (e.g. debugging),
+    init_wandb must not overwrite it back to true."""
+    captured = _call_init_capturing_env("train", env={"WANDB_QUIET": "false"})
+    assert captured.get("WANDB_QUIET") == "false"
+
+
+def test_wandb_quiet_env_not_set_when_cfg_quiet_false() -> None:
+    """`wandb.quiet=false` on the CLI restores the verbose spinner."""
+    captured = _call_init_capturing_env("train", cfg_overrides=["wandb.quiet=false"])
+    assert "WANDB_QUIET" not in captured
