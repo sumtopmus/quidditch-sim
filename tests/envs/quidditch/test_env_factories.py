@@ -69,3 +69,27 @@ def test_team_env_factory_team_obs_unstacked():
         assert env.observation_space.shape == (25,)
     finally:
         env.close()
+
+
+def test_team_factory_threads_learner_id_and_spec_into_team_env():
+    """TeamEnvFactory must resolve cfg.obs.name → ObsSpec and pass it as
+    learner_spec to QuidditchTeamEnv, so the learner sees the right shape."""
+    from envs.quidditch.env_factories import TeamEnvFactory
+    from envs.quidditch.obs_spec import DUEL_V3_BODY_EGO
+    from envs.quidditch.team_env import TeamConfig
+
+    factory = TeamEnvFactory(
+        n_envs=1,
+        team_cfg=TeamConfig(randomise_red_start=False),
+        learner_id="blue_0",
+        opponent_spec="zero",
+        obs_spec_name="DUEL_V3_BODY_EGO",
+        frame_stack=1,
+        seed=42,
+    )
+    vec_env = factory.build_train_env()
+    try:
+        # SB3 vec_envs expose .observation_space.shape on the wrapped single env.
+        assert vec_env.observation_space.shape == (DUEL_V3_BODY_EGO.dim,)
+    finally:
+        vec_env.close()
