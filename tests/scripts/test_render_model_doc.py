@@ -463,3 +463,91 @@ def test_cli_writes_model_doc_to_run_dir(tmp_path: Path):
     assert md.exists()
     text = md.read_text()
     assert "# MODEL: ppo_hoop_test_20260516_120000" in text
+
+
+# ─── Graceful degradation for legacy migrated configs ────────────────────────
+# `scripts/migrate_legacy_models.py` produced minimal `.hydra/config.yaml` for
+# the 7 legacy promoted models — only {run_name, seed, obs, init}.  The
+# renderer must not raise when trainer/reward/env/opponent/curriculum are
+# absent; it must render a clear "legacy migrated config — X not recorded"
+# note instead.
+
+def _legacy_ctx() -> dict:
+    """A ctx mirroring the shape of legacy migrated configs (just obs + init)."""
+    cfg = OmegaConf.create({
+        "run_name": "ppo_hoop_legacy_test",
+        "seed": 42,
+        "obs": {"name": "DUEL_V1_BODY", "n_stack": 1},
+        "init": {"mode": "scratch", "parent": None,
+                  "parent_run": None, "parent_checkpoint": None,
+                  "obs_surgery": False},
+    })
+    return {
+        "cfg": cfg, "meta": None, "hydra_yaml": None, "wandb_meta": None,
+        "run_dir": Path("models/ppo_hoop_legacy_test"),
+    }
+
+
+def test_section_summary_handles_missing_trainer_gracefully():
+    out = _section_summary(_legacy_ctx())
+    assert "## Summary" in out
+    assert "legacy" in out.lower()  # explicit "legacy" mention so reader understands
+    # Must not have raised + must not contain blockquote-failure marker
+    assert "failed to render" not in out
+    assert "⚠" not in out
+
+
+def test_section_lineage_handles_missing_trainer_gracefully():
+    ctx = _legacy_ctx()
+    # init.mode == scratch returns early without touching trainer; switch to
+    # pretrain to exercise the path that previously accessed cfg.trainer.
+    ctx["cfg"].init.mode = "pretrain"
+    ctx["cfg"].init.parent = "models/some_parent/best_model"
+    out = _section_lineage(ctx)
+    assert "## Lineage" in out
+    assert "pretrain" in out
+    assert "models/some_parent/best_model" in out
+    assert "failed to render" not in out
+    # chain-total contribution line is allowed to be absent or marked unknown
+    # — what matters is it doesn't raise.
+
+
+def test_section_reward_stack_handles_missing_reward_gracefully():
+    out = _section_reward_stack(_legacy_ctx())
+    assert "## Reward stack" in out
+    assert "legacy" in out.lower() or "not recorded" in out.lower()
+    assert "failed to render" not in out
+    assert "⚠" not in out
+
+
+def test_section_hyperparams_handles_missing_trainer_gracefully():
+    out = _section_hyperparams(_legacy_ctx())
+    assert "## Training hyperparams" in out
+    assert "legacy" in out.lower() or "not recorded" in out.lower()
+    assert "failed to render" not in out
+    assert "⚠" not in out
+
+
+def test_render_model_doc_against_legacy_config_shape(tmp_path: Path):
+    """End-to-end: render a model dir with a legacy-shape config.yaml.
+    No section should produce a 'failed to render' blockquote.
+    """
+    run_dir = _write_run_fixture(
+        tmp_path / "models" / "ppo_hoop_legacy_test",
+        config={
+            "run_name": "ppo_hoop_legacy_test",
+            "seed": 42,
+            "obs": {"name": "DUEL_V1_BODY", "n_stack": 1},
+            "init": {"mode": "scratch", "parent": None,
+                      "parent_run": None, "parent_checkpoint": None,
+                      "obs_surgery": False},
+        },
+    )
+    out = render_model_doc(run_dir)
+    # Every expected section header is present
+    for header in ["# MODEL:", "## Summary", "## Lineage", "## Obs spec",
+                    "## Reward stack", "## Training hyperparams", "## Eval results"]:
+        assert header in out, f"missing section: {header}"
+    # No section degraded into the loud blockquote-failure pattern
+    assert "failed to render" not in out
+    assert "## (Section" not in out

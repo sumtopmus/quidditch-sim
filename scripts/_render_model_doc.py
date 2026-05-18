@@ -117,8 +117,28 @@ def _section_summary(ctx: dict[str, Any]) -> str:
 
     obs_name = cfg.obs.name
     n_stack = cfg.obs.n_stack
-    total_steps = int(cfg.trainer.total_timesteps)
-    lr = cfg.trainer.lr
+
+    # Legacy migrated configs (pre-2026-05-13 Hydra migration) carry only
+    # {run_name, seed, obs, init}; trainer/reward/curriculum/env/opponent
+    # weren't recorded.  Render a concise summary with what's available
+    # and a "(legacy …)" note pointing the reader at run_info.toml.
+    trainer = cfg.get("trainer", None) if hasattr(cfg, "get") else None
+    if trainer is None:
+        parts = [f"{learner_id} learner, init={init_mode}"]
+        if parent:
+            parts.append(f"(parent: {parent})")
+        parts.append(f"obs {obs_name} × n_stack={n_stack}")
+        body = ", ".join(parts) + "."
+        return (
+            "## Summary\n\n"
+            + body
+            + "\n\n_(legacy migrated config — trainer / reward / opponent / "
+            "curriculum not recorded in .hydra/config.yaml; see run_info.toml "
+            "for legacy training metadata.)_"
+        )
+
+    total_steps = int(trainer.total_timesteps)
+    lr = trainer.lr
     curriculum = "(unknown)"
     if hasattr(cfg, "curriculum") and cfg.curriculum is not None and hasattr(cfg.curriculum, "get"):
         curriculum = cfg.curriculum.get("name", "(unknown)")
@@ -168,16 +188,21 @@ def _section_lineage(ctx: dict[str, Any]) -> str:
     if hasattr(cfg.init, "get"):
         parent = cfg.init.get("parent", None)
     chain_total = meta.get("parent_chain_total", None) if meta else None
-    this_total = int(cfg.trainer.total_timesteps)
+    # Legacy migrated configs don't record trainer.total_timesteps — fall back
+    # to omitting the "this run is N of that" line rather than raising.
+    trainer = cfg.get("trainer", None) if hasattr(cfg, "get") else None
+    this_total = int(trainer.total_timesteps) if trainer is not None else None
 
     lines = ["## Lineage", "", f"- **init mode:** `{init_mode}`"]
     if parent:
         lines.append(f"- **parent:** `{parent}`")
-    if chain_total is not None:
+    if chain_total is not None and this_total is not None:
         lines.append(
             f"- **parent chain total:** {chain_total:,} steps "
             f"(this run is {this_total:,} of that)"
         )
+    elif chain_total is not None:
+        lines.append(f"- **parent chain total:** {chain_total:,} steps")
     return "\n".join(lines)
 
 
@@ -249,6 +274,17 @@ def _section_reward_stack(ctx: dict[str, Any]) -> str:
     hydra_yaml = ctx["hydra_yaml"]
     from hydra.utils import instantiate
 
+    # Legacy migrated configs don't carry `reward` — render an explanatory
+    # note rather than raising.
+    reward_cfg = cfg.get("reward", None) if hasattr(cfg, "get") else None
+    if reward_cfg is None:
+        return (
+            "## Reward stack\n\n"
+            "_(legacy migrated config — reward stack composition not recorded "
+            "in .hydra/config.yaml; see run_info.toml for legacy reward "
+            "magnitudes / Phase-2 narrative.)_"
+        )
+
     # Source line: reward group choice from hydra.yaml, or fallback.
     if hydra_yaml:
         choice = (
@@ -261,7 +297,7 @@ def _section_reward_stack(ctx: dict[str, Any]) -> str:
     else:
         source = "(in-line override / unknown source)"
 
-    stack = instantiate(cfg.reward, _convert_="all")
+    stack = instantiate(reward_cfg, _convert_="all")
 
     rows = [
         "| # | Term | Key coefficients | Agents |",
@@ -318,7 +354,17 @@ def _section_env_config(ctx: dict[str, Any]) -> str:
 
 
 def _section_hyperparams(ctx: dict[str, Any]) -> str:
-    t = ctx["cfg"].trainer
+    cfg = ctx["cfg"]
+    # Legacy migrated configs don't carry `trainer` — render an explanatory
+    # note rather than raising.
+    t = cfg.get("trainer", None) if hasattr(cfg, "get") else None
+    if t is None:
+        return (
+            "## Training hyperparams\n\n"
+            "_(legacy migrated config — trainer hyperparams not recorded in "
+            ".hydra/config.yaml; see run_info.toml for legacy `[training].*` "
+            "fields.)_"
+        )
     total = int(t.total_timesteps)
     return "\n".join([
         "## Training hyperparams",
