@@ -47,6 +47,16 @@ class ObsSpec:
         return out
 
 
+def world_to_body(vec_world: np.ndarray, R_wb: np.ndarray) -> np.ndarray:
+    """Rotate a 3-vector from world frame into a body frame defined by R_wb.
+
+    `R_wb` is body→world (MuJoCo `data.xmat[body_id].reshape(3, 3)`
+    convention — columns are body axes expressed in world coords).  The
+    inverse rotation (world→body) is R_wb.T, applied here.
+    """
+    return (R_wb.T @ vec_world).astype(np.float32)
+
+
 def pack(spec: ObsSpec, values: dict[str, ArrayLike]) -> np.ndarray:
     """Concatenate per-block values into a flat float32 obs vector in spec order.
 

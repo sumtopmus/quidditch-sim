@@ -193,3 +193,41 @@ def test_spec_by_name_set_is_exact():
     assert set(SPEC_BY_NAME) == {
         "SIMPLE_ENV_OBS", "DUEL_V1_BODY", "DUEL_V2_WORLD", "DUEL_V3_BODY_EGO",
     }
+
+
+def test_world_to_body_identity_rotation_passes_vec_through():
+    R_wb = np.eye(3, dtype=np.float64)
+    v_world = np.array([1.0, 2.0, 3.0], dtype=np.float64)
+    v_body = obs_spec.world_to_body(v_world, R_wb)
+    np.testing.assert_array_almost_equal(v_body, v_world)
+    assert v_body.dtype == np.float32
+
+
+def test_world_to_body_90deg_yaw():
+    """Body yawed +90° about world z: world +x axis becomes body +y axis.
+
+    R_wb (body→world) for a +90° yaw rotates body-x to world-y, so
+    its transpose (world→body) maps world-x → body -y.
+    """
+    # +90° about z: world-x → world-y for any vector expressed in the body frame.
+    c, s = 0.0, 1.0
+    R_wb = np.array([
+        [ c, -s, 0.0],
+        [ s,  c, 0.0],
+        [0.0, 0.0, 1.0],
+    ], dtype=np.float64)
+    v_world = np.array([1.0, 0.0, 0.0], dtype=np.float64)
+    v_body = obs_spec.world_to_body(v_world, R_wb)
+    # world-x viewed from a body rotated +90° about z lies along body -y.
+    np.testing.assert_array_almost_equal(v_body, np.array([0.0, -1.0, 0.0]))
+
+
+def test_world_to_body_preserves_norm():
+    R_wb = np.array([
+        [ 0.6, -0.8, 0.0],
+        [ 0.8,  0.6, 0.0],
+        [ 0.0,  0.0, 1.0],
+    ], dtype=np.float64)
+    v_world = np.array([3.0, 4.0, 0.0], dtype=np.float64)
+    v_body = obs_spec.world_to_body(v_world, R_wb)
+    assert abs(np.linalg.norm(v_body) - np.linalg.norm(v_world)) < 1e-6
