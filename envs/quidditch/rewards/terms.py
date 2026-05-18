@@ -213,3 +213,39 @@ class TakeDown:
             out[self.aggressor] += self.aggressor_reward
             out[self.victim]    += self.victim_penalty
         return out
+
+
+@dataclass
+class InterceptShaping:
+    """Closing-velocity reward on Red's short-horizon predicted position,
+    active only when Red is within `activation_dist` of the hoop.
+
+    Inputs (`dist_def_to_future_red`, `dist_def_to_future_red_prev`) are
+    populated each step by team_env from the world-frame Red velocity:
+        future_red = red_pos + lookahead_s · red_vel_world
+        dist_def_to_future_red = ‖defender_pos - future_red‖
+
+    Mirrors ClosingVelInTagZone in structure (zero-floored closing rate
+    weighted by `scale`), but gated by dist_red_to_hoop instead of
+    tag_during.  Non-zero-sum: only the defender is rewarded — Red is
+    not penalised on this signal (Red already has its own
+    HoopDistancePenalty pulling it toward the hoop).
+
+    `lookahead_s` is informational here (the env consumed it when
+    populating the future-red distances); kept in the dataclass so the
+    YAML stays self-documenting next to `scale` and `activation_dist`.
+    """
+    scale: float
+    lookahead_s: float
+    activation_dist: float
+    defender: str
+
+    def compute(self, state: StepState) -> dict[str, float]:
+        out: dict[str, float] = {a: 0.0 for a in state.agent_ids}
+        if state.dist_red_to_hoop >= self.activation_dist:
+            return out
+        closing = (
+            state.dist_def_to_future_red_prev - state.dist_def_to_future_red
+        ) / state.step_period
+        out[self.defender] += self.scale * max(0.0, closing)
+        return out

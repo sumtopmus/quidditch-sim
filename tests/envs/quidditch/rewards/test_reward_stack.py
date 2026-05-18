@@ -295,3 +295,68 @@ def test_reward_lookahead_constant_exists():
     InterceptShaping lookahead_s param) read from the same source."""
     from envs.quidditch.constants import REWARD_LOOKAHEAD_S
     assert REWARD_LOOKAHEAD_S == 0.5
+
+
+from envs.quidditch.rewards.terms import InterceptShaping
+
+
+def test_intercept_shaping_zero_when_red_far_from_hoop():
+    """Activation gate: dist_red_to_hoop >= activation_dist → zero reward."""
+    term = InterceptShaping(scale=0.05, lookahead_s=0.5, activation_dist=1.5,
+                             defender="blue_0")
+    state = _make_state(
+        dist_red_to_hoop=2.0,                  # >= 1.5, gate misses
+        dist_def_to_future_red=0.3,
+        dist_def_to_future_red_prev=0.5,       # blue closing on future-red
+        step_period=1 / 240.0,
+    )
+    out = term.compute(state)
+    assert out == {"red_0": 0.0, "blue_0": 0.0}
+
+
+def test_intercept_shaping_positive_when_red_near_and_blue_closing():
+    term = InterceptShaping(scale=0.05, lookahead_s=0.5, activation_dist=1.5,
+                             defender="blue_0")
+    state = _make_state(
+        dist_red_to_hoop=1.0,                  # < 1.5, gate fires
+        dist_def_to_future_red=0.3,
+        dist_def_to_future_red_prev=0.5,
+        step_period=1 / 240.0,
+    )
+    out = term.compute(state)
+    # closing = (0.5 - 0.3) / (1/240) = 48 m/s
+    # bonus = 0.05 * 48 = 2.4
+    assert out["blue_0"] == 0.05 * (0.5 - 0.3) / (1 / 240.0)
+    # Term is non-zero-sum: Red is NOT penalised.
+    assert out["red_0"] == 0.0
+
+
+def test_intercept_shaping_zero_when_blue_separating_from_future_red():
+    """max(0, closing) floors at 0 when defender is moving away from
+    future-red — no negative reward for retreating."""
+    term = InterceptShaping(scale=0.05, lookahead_s=0.5, activation_dist=1.5,
+                             defender="blue_0")
+    state = _make_state(
+        dist_red_to_hoop=1.0,
+        dist_def_to_future_red=0.7,
+        dist_def_to_future_red_prev=0.5,       # blue retreating
+        step_period=1 / 240.0,
+    )
+    out = term.compute(state)
+    assert out == {"red_0": 0.0, "blue_0": 0.0}
+
+
+def test_intercept_shaping_uses_only_defender_field():
+    """Even with all other state inputs non-zero, only `defender` is rewarded."""
+    term = InterceptShaping(scale=0.05, lookahead_s=0.5, activation_dist=1.5,
+                             defender="blue_0")
+    state = _make_state(
+        dist_red_to_hoop=0.5,
+        dist_def_to_future_red=0.0, dist_def_to_future_red_prev=1.0,
+        step_period=1 / 240.0,
+        # Distract: set other things that might leak into reward.
+        tag_during=True, tag_entry=True, scored=True, drone_drone_crash=True,
+    )
+    out = term.compute(state)
+    assert out["red_0"] == 0.0
+    assert out["blue_0"] > 0.0
