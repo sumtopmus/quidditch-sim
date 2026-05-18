@@ -108,6 +108,10 @@ class WandbConfig:
     tags_extra: list[str] = field(default_factory=list)
     notes: str = ""
     log_gradients: bool = False
+    # Suppress non-essential console chatter (the "Encoding video..." spinner
+    # that fires on every wandb.Video.encode, repeated per-cam per-eval).  Run
+    # banner + "View run at..." links are kept.  Set to False for debugging.
+    quiet: bool = True
 
 
 @dataclass

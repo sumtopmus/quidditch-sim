@@ -82,6 +82,12 @@ def init_wandb(cfg: DictConfig, run_dir: Path, role: str) -> Any:
     if cfg.wandb.get("entity_override"):
         entity = str(cfg.wandb.entity_override)
 
+    # `quiet=True` suppresses non-essential progress chatter — most importantly
+    # the "Encoding video..." spinner that wandb.Video.encode emits on every
+    # frame batch (per-cam × per-eval = dozens of repeats per training run).
+    # The init banner + "View run at..." link still print.
+    settings = wandb.Settings(quiet=bool(cfg.wandb.get("quiet", True)))
+
     return wandb.init(
         project=os.environ.get("WANDB_PROJECT", cfg.wandb.project),
         entity=entity,
@@ -95,4 +101,5 @@ def init_wandb(cfg: DictConfig, run_dir: Path, role: str) -> Any:
         mode=os.environ.get("WANDB_MODE", "online"),
         resume="allow",
         notes=str(cfg.wandb.get("notes", "")),
+        settings=settings,
     )

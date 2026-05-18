@@ -7,3 +7,6 @@ entity_override: null
 tags_extra: []
 notes: ""
 log_gradients: false
+# Suppresses the "Encoding video..." spinner spam (fires per-cam per-eval).
+# Keeps the init banner + "View run at..." link.  Set to false for debugging.
+quiet: true
