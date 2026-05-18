@@ -360,3 +360,29 @@ def test_intercept_shaping_uses_only_defender_field():
     out = term.compute(state)
     assert out["red_0"] == 0.0
     assert out["blue_0"] > 0.0
+
+
+def test_team_v3_intercept_stack_composition():
+    """conf/reward/team_v3_intercept.yaml: 10 terms in the expected order,
+    Blue removed from HoopDistancePenalty, InterceptShaping inserted
+    between HoopAnchor and ScoreEvent."""
+    from envs.quidditch.rewards import load_reward_stack
+    stack = load_reward_stack("team_v3_intercept")
+    expected = [
+        "TagEntryPulse", "ProximityGradedTag", "ClosingVelInTagZone",
+        "HoopDistancePenalty", "ZeroSumDistMirror", "HoopAnchor",
+        "InterceptShaping",
+        "ScoreEvent", "TakeDown", "CrashEvent",
+    ]
+    assert [type(t).__name__ for t in stack.terms] == expected
+
+    # HoopDistancePenalty in v3 is Red-only (no blue→midpoint entry).
+    hdp = next(t for t in stack.terms if type(t).__name__ == "HoopDistancePenalty")
+    assert dict(hdp.agent_to_target) == {"red_0": "hoop"}
+
+    # InterceptShaping carries the spec'd starting values.
+    isp = next(t for t in stack.terms if type(t).__name__ == "InterceptShaping")
+    assert isp.scale == 0.05
+    assert isp.lookahead_s == 0.5
+    assert isp.activation_dist == 1.5
+    assert isp.defender == "blue_0"

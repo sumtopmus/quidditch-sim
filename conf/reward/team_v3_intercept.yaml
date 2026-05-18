@@ -1,0 +1,60 @@
+# Reward stack for blue_v7: drops HoopDistancePenalty for blue_0 (midpoint
+# shaping), keeps HoopAnchor + ZeroSumDistMirror (Blue still defends near
+# hoop and benefits from Red being far), adds InterceptShaping for
+# proactive closing on Red's predicted trajectory when Red is near hoop.
+
+_target_: envs.quidditch.rewards.stack.RewardStack
+terms:
+  - _target_: envs.quidditch.rewards.terms.TagEntryPulse
+    magnitude: 5.0
+    gainer: blue_0
+    loser:  red_0
+
+  - _target_: envs.quidditch.rewards.terms.ProximityGradedTag
+    max_reward: 0.05
+    gainer: blue_0
+    loser:  red_0
+
+  - _target_: envs.quidditch.rewards.terms.ClosingVelInTagZone
+    scale: 0.05
+    gainer: blue_0
+    loser:  red_0
+
+  # Red-only (blue's midpoint penalty removed for blue_v7).
+  - _target_: envs.quidditch.rewards.terms.HoopDistancePenalty
+    scale: 0.01
+    agent_to_target:
+      red_0: hoop
+
+  - _target_: envs.quidditch.rewards.terms.ZeroSumDistMirror
+    scale: 0.01
+    agents: [blue_0]
+
+  - _target_: envs.quidditch.rewards.terms.HoopAnchor
+    scale: 0.005
+    agents: [blue_0]
+
+  # New term: closing-velocity reward on future-Red, gated on red-near-hoop.
+  # lookahead_s mirrors envs.quidditch.constants.REWARD_LOOKAHEAD_S.
+  - _target_: envs.quidditch.rewards.terms.InterceptShaping
+    scale: 0.05
+    lookahead_s: 0.5
+    activation_dist: 1.5
+    defender: blue_0
+
+  - _target_: envs.quidditch.rewards.terms.ScoreEvent
+    magnitude: 10.0
+    scorer: red_0
+    zero_sum_opponent: blue_0
+
+  - _target_: envs.quidditch.rewards.terms.TakeDown
+    aggressor_reward: 20.0
+    victim_penalty: -20.0
+    aggressor: blue_0
+    victim: red_0
+
+  - _target_: envs.quidditch.rewards.terms.CrashEvent
+    magnitude: -20.0
+    agent_to_crash_flags:
+      red_0:  [red_floor, red_wall_crash,  red_oob]
+      blue_0: [blue_floor, blue_wall_crash, blue_oob]
