@@ -59,6 +59,44 @@ def test_log_to_wandb_single_cam_mode() -> None:
     assert set(payload.keys()) == {"eval/video"}
 
 
+def test_log_to_wandb_passes_channel_first_array_to_wandb_video() -> None:
+    """Regression: wandb.Video expects (T, C, H, W); the callback receives
+    (T, H, W, C) frames from MuJoCo / imageio and must transpose at the
+    boundary.  Forgetting the transpose silently produces empty/blank
+    videos on the W&B dashboard (no exception raised) — discovered
+    2026-05-18 during the blue_v7 run.
+    """
+    from scripts.callbacks import VideoRecorderCallback
+    cb = VideoRecorderCallback.__new__(VideoRecorderCallback)
+    cb._moviepy_ok = True
+    cb.grid = True
+    cb.fps = 20
+    cb.grid_cams = ("south",)
+    cb.model = MagicMock()
+    cb.model.num_timesteps = 1
+
+    # Distinct H and W so the transpose can be verified unambiguously.
+    T, H, W, C = 4, 60, 80, 3
+    frames = [
+        np.full((H, W, C), fill_value=i * 10, dtype=np.uint8) for i in range(T)
+    ]
+
+    with patch("wandb.log"), patch("wandb.Video") as mock_video:
+        mock_video.side_effect = lambda *a, **k: MagicMock()
+        cb._log_to_wandb({"south": frames})
+
+    assert mock_video.call_count == 1
+    passed_array = mock_video.call_args.args[0]
+    # The shape and order of axes are the contract; verify both.
+    assert passed_array.shape == (T, C, H, W), (
+        f"wandb.Video expects (T, C, H, W) = ({T}, {C}, {H}, {W}); got {passed_array.shape}"
+    )
+    # And verify the data wasn't mangled: the first frame was uint8(0)s.
+    assert passed_array[0].max() == 0
+    # Fourth frame was uint8(30)s.
+    assert passed_array[3].max() == 30
+
+
 def test_log_to_wandb_noop_when_moviepy_missing() -> None:
     from scripts.callbacks import VideoRecorderCallback
     cb = VideoRecorderCallback.__new__(VideoRecorderCallback)

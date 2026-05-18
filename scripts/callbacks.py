@@ -217,13 +217,19 @@ class VideoRecorderCallback(BaseCallback):
 
         Grid mode emits one entry per cam under ``eval/video/<cam>`` (with
         the cam name lowercased for tag consistency); single-cam mode emits
-        one entry under ``eval/video``.  wandb.Video accepts ``(T, H, W, C)``
-        uint8 arrays and encodes the mp4 in-memory.
+        one entry under ``eval/video``.
 
-        In WANDB_MODE=disabled, wandb.log is a no-op — this method runs but
-        nothing leaves the process.  We still gate on _moviepy_ok because
-        wandb.Video uses moviepy for the in-memory mp4 encode (same dep as
-        the on-disk grid writer; one probe suffices).
+        wandb.Video expects ``(T, C, H, W)`` uint8 — channel-first, NOT the
+        ``(T, H, W, C)`` channel-last layout MuJoCo's renderer and our on-
+        disk imageio writer use.  We transpose at the boundary.  Getting
+        this wrong does not raise — wandb's moviepy encode silently
+        produces a video whose pixels are misindexed; the dashboard renders
+        an effectively-blank frame.  (Discovered on 2026-05-18 in the
+        blue_v7 run.)
+
+        In WANDB_MODE=disabled, wandb.log is a no-op — this method runs
+        but nothing leaves the process.  We still gate on _moviepy_ok
+        because wandb.Video uses moviepy for the in-memory mp4 encode.
         """
         if not self._moviepy_ok:
             return
@@ -231,7 +237,8 @@ class VideoRecorderCallback(BaseCallback):
 
         payload: dict[str, "wandb.Video"] = {}
         for name, frames in per_cam.items():
-            stack = np.stack(frames)  # (T, H, W, 3) uint8
+            stack = np.stack(frames)              # (T, H, W, C) uint8
+            stack = stack.transpose(0, 3, 1, 2)   # (T, C, H, W) — wandb.Video contract
             tag = f"eval/video/{name.lower()}" if self.grid else "eval/video"
             payload[tag] = wandb.Video(stack, fps=self.fps, format="mp4")
         wandb.log(payload, step=int(self.model.num_timesteps))
