@@ -317,10 +317,21 @@ def main(cfg: DictConfig) -> None:
         frame_stack=frame_stack,
     )
 
-    # Wandb integration callback: hooks SB3's internal logger and forwards
-    # every recorded value to wandb.log.  log="gradients" emits weight+grad
-    # histograms; cfg-gated for cost.  In WANDB_MODE=disabled this is a no-op.
+    # Wandb integration:
+    # (1) The official SB3 WandbCallback captures hyperparams + optional
+    #     gradient histograms.  It does NOT forward SB3's per-step metrics
+    #     (rollout/*, train/*, eval/*) — the wandb-sb3 example relies on
+    #     SB3's TB output + wandb.tensorboard.sync for that, which we
+    #     retired in the 2026-05-14 W&B migration.
+    # (2) WandbLoggerCallback attaches WandbOutputFormat (a KVWriter) to
+    #     model.logger.output_formats at training start, so every
+    #     logger.dump(step) ships its scalar key/values to wandb.log.
+    #     Lives in a callback (not inline append) because model.logger is
+    #     created lazily inside _setup_learn — accessing it before learn()
+    #     raises AttributeError.
+    # In WANDB_MODE=disabled both are no-ops.
     from wandb.integration.sb3 import WandbCallback as _WandbCallback
+    from scripts._wandb_logger import WandbLoggerCallback
     callbacks.append(
         _WandbCallback(
             verbose=0,
@@ -328,6 +339,7 @@ def main(cfg: DictConfig) -> None:
             model_save_path=None,   # we handle artifact upload ourselves in Phase C
         )
     )
+    callbacks.append(WandbLoggerCallback())
 
     # 5) Train
     started = datetime.now()
