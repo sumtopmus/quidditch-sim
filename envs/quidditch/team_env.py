@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from math import ceil
 from typing import Any
 
+import mujoco
 import numpy as np
 from gymnasium import spaces
 from pettingzoo import ParallelEnv
@@ -35,7 +36,9 @@ from core.world import World
 from core.quadrotor import Quadrotor
 from core.drone.cf2x import cf2x_assets, cf2x_fragment
 from envs.quidditch import obs_spec
-from envs.quidditch.obs_spec import DUEL_V1_BODY
+from envs.quidditch.obs_spec import (
+    DUEL_V1_BODY, DUEL_V2_WORLD, DUEL_V3_BODY_EGO, ObsSpec,
+)
 from envs.quidditch.scene import arena_wall_fragment, hoop_fragment
 from envs.quidditch.scoring import GeomDistanceScorer
 from envs.quidditch.tagging import TagDistanceScorer
@@ -51,6 +54,7 @@ from envs.quidditch.constants import (
     TAG_RADIUS,
     TAG_COOLDOWN_SECONDS,
     CRASH_VEL_THR,
+    REWARD_LOOKAHEAD_S,
 )
 from envs.quidditch.rewards import DEFAULT_MIDPOINT_ALPHA, default_team_stack
 from envs.quidditch.rewards.stack import RewardStack, StepState
@@ -104,6 +108,8 @@ class QuidditchTeamEnv(ParallelEnv):
         cfg: TeamConfig | None = None,
         render_mode: str | None = None,
         reward_stack: RewardStack | None = None,
+        learner_id: str | None = None,
+        learner_spec: ObsSpec | None = None,
     ) -> None:
         super().__init__()
         self.cfg = cfg if cfg is not None else TeamConfig()
@@ -114,12 +120,29 @@ class QuidditchTeamEnv(ParallelEnv):
         self.possible_agents = [self._red_id, self._blue_id]
         self.agents: list[str] = list(self.possible_agents)
 
-        obs_box = spaces.Box(low=-np.inf, high=np.inf, shape=(DUEL_V1_BODY.dim,),
-                             dtype=np.float32)
+        # Per-agent obs shape: non-learner always gets DUEL_V1_BODY (so frozen
+        # Red checkpoints load without surgery).  Learner gets `learner_spec`,
+        # which defaults to DUEL_V1_BODY when no learner is configured (canary
+        # path: both agents on DUEL_V1_BODY, byte-identical to pre-refactor).
+        if learner_id is not None and learner_id not in self.possible_agents:
+            raise ValueError(
+                f"learner_id={learner_id!r} not in possible_agents="
+                f"{self.possible_agents}"
+            )
+        self._learner_id: str | None = learner_id
+        self._learner_spec: ObsSpec = (
+            learner_spec if learner_spec is not None else DUEL_V1_BODY
+        )
+
+        # Observation spaces: build per-agent based on its spec.
         act_box = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
         self.observation_spaces: dict[str, spaces.Box] = {
-            self._red_id:  obs_box,
-            self._blue_id: obs_box,
+            agent: spaces.Box(
+                low=-np.inf, high=np.inf,
+                shape=(self._spec_for_agent(agent).dim,),
+                dtype=np.float32,
+            )
+            for agent in self.possible_agents
         }
         self.action_spaces: dict[str, spaces.Box] = {
             self._red_id:  act_box,
@@ -153,6 +176,19 @@ class QuidditchTeamEnv(ParallelEnv):
         # env is in the post-crash observation window with Red's motors cut.
         self._aftermath_steps_left: int = 0
 
+        # Free-joint dofadr cache for world-frame velocity readback (populated
+        # on first reset).  -1 sentinel = uncached.
+        self._red_dofadr:  int = -1
+        self._blue_dofadr: int = -1
+
+        # Closing-rate state for the learner (formerly in OCE).
+        self._prev_dist_to_opp: float = 0.0
+
+        # Future-red distance cache for InterceptShaping (populated each step
+        # when learner_id is set).
+        self._dist_def_to_future_red:      float = 0.0
+        self._dist_def_to_future_red_prev: float = 0.0
+
         self._np_random: np.random.Generator = np.random.default_rng()
 
         # YAML team_v2.yaml hardcodes agent IDs as "red_0"/"blue_0".  If cfg
@@ -168,6 +204,11 @@ class QuidditchTeamEnv(ParallelEnv):
                 )
             reward_stack = default_team_stack()
         self._reward_stack = reward_stack
+
+    def _spec_for_agent(self, agent_id: str) -> ObsSpec:
+        if agent_id == self._learner_id:
+            return self._learner_spec
+        return DUEL_V1_BODY
 
     def observation_space(self, agent: str) -> spaces.Box:
         return self.observation_spaces[agent]
@@ -204,6 +245,16 @@ class QuidditchTeamEnv(ParallelEnv):
             self._world, defender_prefixes=[self._blue_id], attacker_prefixes=[self._red_id]
         )
         self._crash_detector = CrashDetector(self._world, [self._red_id, self._blue_id])
+
+        # Cache free-joint dofadrs for world-frame velocity reads.
+        for prefix, attr in (
+            (self._red_id,  "_red_dofadr"),
+            (self._blue_id, "_blue_dofadr"),
+        ):
+            bid = mujoco.mj_name2id(self._world.model,
+                                     mujoco.mjtObj.mjOBJ_BODY, prefix)
+            jnt = int(self._world.model.body_jntadr[bid])
+            setattr(self, attr, int(self._world.model.jnt_dofadr[jnt]))
 
     # ── ParallelEnv API: reset / step / render / close ───────────────────────
 
@@ -242,6 +293,29 @@ class QuidditchTeamEnv(ParallelEnv):
         self._red_prev_signed_dist  = self._signed_dist_to_hoop_plane(self._red_pos())
         self._dist_b2r_prev         = float(np.linalg.norm(self._red_pos() - self._blue_pos()))
         self._aftermath_steps_left  = 0
+
+        # Initialise closing-rate cache (formerly OCE side).
+        if self._learner_id is not None:
+            learner_pos = (self._blue_pos() if self._learner_id == self._blue_id
+                            else self._red_pos())
+            opp_pos = (self._red_pos() if self._learner_id == self._blue_id
+                        else self._blue_pos())
+            self._prev_dist_to_opp = float(np.linalg.norm(opp_pos - learner_pos))
+            # Initialise future-red distance cache.
+            red_vel_world = self._world.data.qvel[
+                self._red_dofadr : self._red_dofadr + 3
+            ].copy()
+            future_red = self._red_pos() + REWARD_LOOKAHEAD_S * red_vel_world
+            defender_pos = (self._blue_pos() if self._learner_id == self._blue_id
+                             else self._red_pos())
+            self._dist_def_to_future_red_prev = float(
+                np.linalg.norm(defender_pos - future_red)
+            )
+            self._dist_def_to_future_red = self._dist_def_to_future_red_prev
+        else:
+            self._prev_dist_to_opp = 0.0
+            self._dist_def_to_future_red      = 0.0
+            self._dist_def_to_future_red_prev = 0.0
 
         if self.render_mode == "human":
             time.sleep(1)
@@ -357,6 +431,19 @@ class QuidditchTeamEnv(ParallelEnv):
         dist_blue = float(np.linalg.norm(blue_pos - self._midpoint()))
         dist_blue_to_hoop = float(np.linalg.norm(blue_pos - HOOP_CENTER))
 
+        # ── InterceptShaping inputs (when a learner is configured) ──────────
+        if self._learner_id is not None:
+            red_vel_world = self._world.data.qvel[
+                self._red_dofadr : self._red_dofadr + 3
+            ].copy()
+            future_red = red_pos + REWARD_LOOKAHEAD_S * red_vel_world
+            defender_pos = (blue_pos if self._learner_id == self._blue_id
+                             else red_pos)
+            self._dist_def_to_future_red_prev = self._dist_def_to_future_red
+            self._dist_def_to_future_red = float(
+                np.linalg.norm(defender_pos - future_red)
+            )
+
         reward_state = StepState(
             agent_ids=(self._red_id, self._blue_id),
             red_pos=red_pos, blue_pos=blue_pos,
@@ -373,6 +460,8 @@ class QuidditchTeamEnv(ParallelEnv):
             drone_drone_crash=drone_drone_crash,
             arena_radius=ARENA_RADIUS,
             tag_radius=self.cfg.tag_radius,
+            dist_def_to_future_red=self._dist_def_to_future_red,
+            dist_def_to_future_red_prev=self._dist_def_to_future_red_prev,
         )
         rewards = self._reward_stack.compute_step(reward_state)
         self._dist_b2r_prev = dist_b2r
@@ -510,14 +599,25 @@ class QuidditchTeamEnv(ParallelEnv):
         return pos, yaw
 
     def _build_agent_obs(self, agent_id: str) -> np.ndarray:
+        return self._pack_agent_obs(agent_id, self._spec_for_agent(agent_id))
+
+    def _pack_agent_obs(self, agent_id: str, spec: ObsSpec) -> np.ndarray:
+        """Build the float32 obs vector for one agent under one ObsSpec.
+
+        Supports DUEL_V1_BODY (22-d), DUEL_V2_WORLD (25-d, world-frame
+        opp_vel_rel + closing_rate + vec_to_hoop), and DUEL_V3_BODY_EGO
+        (25-d, body-frame ego-centric).
+        """
         if agent_id == self._red_id:
-            self_q = self._red
-            opp_q  = self._blue
-            goal_target = HOOP_CENTER
+            self_q, opp_q = self._red,  self._blue
+            self_dofadr   = self._red_dofadr
+            opp_dofadr    = self._blue_dofadr
+            goal_target   = HOOP_CENTER
         else:
-            self_q = self._blue
-            opp_q  = self._red
-            goal_target = self._midpoint()
+            self_q, opp_q = self._blue, self._red
+            self_dofadr   = self._blue_dofadr
+            opp_dofadr    = self._red_dofadr
+            goal_target   = self._midpoint()
 
         s = self_q.state()
         ang_vel    = s[0]
@@ -526,30 +626,84 @@ class QuidditchTeamEnv(ParallelEnv):
         lin_pos    = s[3]
 
         opp_s = opp_q.state()
-        opp_pos    = opp_s[3]
+        opp_pos     = opp_s[3]
         opp_lin_vel = opp_s[2]
 
-        vec_to_goal = goal_target - lin_pos
-        dist_g      = float(np.linalg.norm(vec_to_goal))
+        vec_to_goal  = goal_target - lin_pos
+        dist_g       = float(np.linalg.norm(vec_to_goal))
         unit_to_goal = vec_to_goal / (dist_g + 1e-8)
         signed_dist_norm = self._signed_dist_to_hoop_plane(lin_pos) / ARENA_RADIUS
 
-        # OPP_VEL_REL_BODY (legacy body_mixed): each velocity is in its own body
-        # frame.  This is contractually frozen for DUEL_V1_BODY so frozen-Red
-        # checkpoints keep working.  The world-frame variant lives in DUEL_V2_WORLD.
-        opp_pos_rel = opp_pos     - lin_pos
-        opp_vel_rel = opp_lin_vel - lin_vel_b
+        opp_pos_rel_world = opp_pos - lin_pos
+        opp_vel_rel_body_mixed = opp_lin_vel - lin_vel_b  # legacy DUEL_V1_BODY
 
-        return obs_spec.pack(DUEL_V1_BODY, {
-            "ang_vel":          ang_vel,
-            "ang_pos":          ang_pos,
-            "lin_vel":          lin_vel_b,
-            "lin_pos":          lin_pos,
-            "unit_to_goal":     unit_to_goal,
-            "signed_dist_norm": [signed_dist_norm],
-            "opp_pos_rel":      opp_pos_rel,
-            "opp_vel_rel":      opp_vel_rel,
-        })
+        # DUEL_V1_BODY (22-d, body-mixed opp_vel_rel + signed-distance scalar).
+        if spec is DUEL_V1_BODY:
+            return obs_spec.pack(DUEL_V1_BODY, {
+                "ang_vel":          ang_vel,
+                "ang_pos":          ang_pos,
+                "lin_vel":          lin_vel_b,
+                "lin_pos":          lin_pos,
+                "unit_to_goal":     unit_to_goal,
+                "signed_dist_norm": [signed_dist_norm],
+                "opp_pos_rel":      opp_pos_rel_world,
+                "opp_vel_rel":      opp_vel_rel_body_mixed,
+            })
+
+        # World-frame velocities (free-joint qvel[0:3] for both bodies).
+        data = self._world.data
+        self_vel_world = data.qvel[self_dofadr : self_dofadr + 3].copy()
+        opp_vel_world  = data.qvel[opp_dofadr  : opp_dofadr  + 3].copy()
+        opp_vel_rel_world = (opp_vel_world - self_vel_world).astype(np.float32)
+
+        vec_to_hoop_world = (HOOP_CENTER - lin_pos).astype(np.float32)
+
+        # Closing rate tracked only for the configured learner.
+        dist_to_opp = float(np.linalg.norm(opp_pos_rel_world))
+        if agent_id == self._learner_id:
+            closing_rate = (
+                (self._prev_dist_to_opp - dist_to_opp) / self._red.step_period
+            )
+            self._prev_dist_to_opp = dist_to_opp
+        else:
+            closing_rate = 0.0
+
+        # DUEL_V2_WORLD (25-d, world-frame opp + closing_rate).
+        if spec is DUEL_V2_WORLD:
+            return obs_spec.pack(DUEL_V2_WORLD, {
+                "ang_vel":      ang_vel,
+                "ang_pos":      ang_pos,
+                "lin_vel":      lin_vel_b,
+                "lin_pos":      lin_pos,
+                "unit_to_goal": unit_to_goal,
+                "vec_to_hoop":  vec_to_hoop_world,
+                "opp_pos_rel":  opp_pos_rel_world.astype(np.float32),
+                "opp_vel_rel":  opp_vel_rel_world,
+                "closing_rate": [closing_rate],
+            })
+
+        # DUEL_V3_BODY_EGO (25-d, body-frame ego-centric).
+        if spec is DUEL_V3_BODY_EGO:
+            # Rotation: world → body via R_wb.T (R_wb = data.xmat[body_id]).
+            bid = self_q._drone_id
+            R_wb = data.xmat[bid].reshape(3, 3)
+            vec_to_goal_body  = obs_spec.world_to_body(vec_to_goal,  R_wb)
+            vec_to_hoop_body  = obs_spec.world_to_body(vec_to_hoop_world, R_wb)
+            opp_pos_rel_body  = obs_spec.world_to_body(opp_pos_rel_world, R_wb)
+            opp_vel_rel_body  = obs_spec.world_to_body(opp_vel_rel_world, R_wb)
+            return obs_spec.pack(DUEL_V3_BODY_EGO, {
+                "ang_vel":      ang_vel,
+                "ang_pos":      ang_pos,
+                "lin_vel":      lin_vel_b,
+                "lin_pos":      lin_pos,
+                "vec_to_goal":  vec_to_goal_body,
+                "vec_to_hoop":  vec_to_hoop_body,
+                "opp_pos_rel":  opp_pos_rel_body,
+                "opp_vel_rel":  opp_vel_rel_body,
+                "closing_rate": [closing_rate],
+            })
+
+        raise ValueError(f"_pack_agent_obs: unsupported spec {spec!r}")
 
     def _all_obs(self) -> dict[str, np.ndarray]:
         return {a: self._build_agent_obs(a) for a in self.possible_agents}

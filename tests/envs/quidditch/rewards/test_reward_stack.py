@@ -278,3 +278,111 @@ def test_team_v2_stack_produces_expected_rewards():
 
     assert abs(out["red_0"]  - expected_red)  < 1e-12, (out["red_0"], expected_red)
     assert abs(out["blue_0"] - expected_blue) < 1e-12, (out["blue_0"], expected_blue)
+
+
+def test_step_state_has_future_red_fields_defaulted_to_zero():
+    """New fields for InterceptShaping; default 0.0 so existing callers
+    that build StepState without them keep working."""
+    from envs.quidditch.rewards.stack import StepState
+    state = StepState(agent_ids=("red_0", "blue_0"))
+    assert state.dist_def_to_future_red == 0.0
+    assert state.dist_def_to_future_red_prev == 0.0
+
+
+def test_reward_lookahead_constant_exists():
+    """Constant lives in envs.quidditch.constants so team_env (which
+    populates the StepState fields) and the YAML (which carries the
+    InterceptShaping lookahead_s param) read from the same source."""
+    from envs.quidditch.constants import REWARD_LOOKAHEAD_S
+    assert REWARD_LOOKAHEAD_S == 0.5
+
+
+from envs.quidditch.rewards.terms import InterceptShaping
+
+
+def test_intercept_shaping_zero_when_red_far_from_hoop():
+    """Activation gate: dist_red_to_hoop >= activation_dist → zero reward."""
+    term = InterceptShaping(scale=0.05, lookahead_s=0.5, activation_dist=1.5,
+                             defender="blue_0")
+    state = _make_state(
+        dist_red_to_hoop=2.0,                  # >= 1.5, gate misses
+        dist_def_to_future_red=0.3,
+        dist_def_to_future_red_prev=0.5,       # blue closing on future-red
+        step_period=1 / 240.0,
+    )
+    out = term.compute(state)
+    assert out == {"red_0": 0.0, "blue_0": 0.0}
+
+
+def test_intercept_shaping_positive_when_red_near_and_blue_closing():
+    term = InterceptShaping(scale=0.05, lookahead_s=0.5, activation_dist=1.5,
+                             defender="blue_0")
+    state = _make_state(
+        dist_red_to_hoop=1.0,                  # < 1.5, gate fires
+        dist_def_to_future_red=0.3,
+        dist_def_to_future_red_prev=0.5,
+        step_period=1 / 240.0,
+    )
+    out = term.compute(state)
+    # closing = (0.5 - 0.3) / (1/240) = 48 m/s
+    # bonus = 0.05 * 48 = 2.4
+    assert out["blue_0"] == 0.05 * (0.5 - 0.3) / (1 / 240.0)
+    # Term is non-zero-sum: Red is NOT penalised.
+    assert out["red_0"] == 0.0
+
+
+def test_intercept_shaping_zero_when_blue_separating_from_future_red():
+    """max(0, closing) floors at 0 when defender is moving away from
+    future-red — no negative reward for retreating."""
+    term = InterceptShaping(scale=0.05, lookahead_s=0.5, activation_dist=1.5,
+                             defender="blue_0")
+    state = _make_state(
+        dist_red_to_hoop=1.0,
+        dist_def_to_future_red=0.7,
+        dist_def_to_future_red_prev=0.5,       # blue retreating
+        step_period=1 / 240.0,
+    )
+    out = term.compute(state)
+    assert out == {"red_0": 0.0, "blue_0": 0.0}
+
+
+def test_intercept_shaping_uses_only_defender_field():
+    """Even with all other state inputs non-zero, only `defender` is rewarded."""
+    term = InterceptShaping(scale=0.05, lookahead_s=0.5, activation_dist=1.5,
+                             defender="blue_0")
+    state = _make_state(
+        dist_red_to_hoop=0.5,
+        dist_def_to_future_red=0.0, dist_def_to_future_red_prev=1.0,
+        step_period=1 / 240.0,
+        # Distract: set other things that might leak into reward.
+        tag_during=True, tag_entry=True, scored=True, drone_drone_crash=True,
+    )
+    out = term.compute(state)
+    assert out["red_0"] == 0.0
+    assert out["blue_0"] > 0.0
+
+
+def test_team_v3_intercept_stack_composition():
+    """conf/reward/team_v3_intercept.yaml: 10 terms in the expected order,
+    Blue removed from HoopDistancePenalty, InterceptShaping inserted
+    between HoopAnchor and ScoreEvent."""
+    from envs.quidditch.rewards import load_reward_stack
+    stack = load_reward_stack("team_v3_intercept")
+    expected = [
+        "TagEntryPulse", "ProximityGradedTag", "ClosingVelInTagZone",
+        "HoopDistancePenalty", "ZeroSumDistMirror", "HoopAnchor",
+        "InterceptShaping",
+        "ScoreEvent", "TakeDown", "CrashEvent",
+    ]
+    assert [type(t).__name__ for t in stack.terms] == expected
+
+    # HoopDistancePenalty in v3 is Red-only (no blue→midpoint entry).
+    hdp = next(t for t in stack.terms if type(t).__name__ == "HoopDistancePenalty")
+    assert dict(hdp.agent_to_target) == {"red_0": "hoop"}
+
+    # InterceptShaping carries the spec'd starting values.
+    isp = next(t for t in stack.terms if type(t).__name__ == "InterceptShaping")
+    assert isp.scale == 0.05
+    assert isp.lookahead_s == 0.5
+    assert isp.activation_dist == 1.5
+    assert isp.defender == "blue_0"

@@ -1,0 +1,5 @@
+# Resolves at runtime to envs.quidditch.obs_spec.DUEL_V3_BODY_EGO (25-d,
+# body-frame ego-centric — vec_to_goal, vec_to_hoop, opp_pos_rel,
+# opp_vel_rel all in the learner's body frame).
+name: DUEL_V3_BODY_EGO
+n_stack: 3

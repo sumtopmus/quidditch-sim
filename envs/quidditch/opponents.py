@@ -11,21 +11,10 @@ from __future__ import annotations
 from typing import Protocol, runtime_checkable
 
 import gymnasium as gym
-import mujoco
 import numpy as np
 from stable_baselines3 import PPO
 
-from envs.quidditch import obs_spec
-from envs.quidditch.constants import HOOP_CENTER
-from envs.quidditch.obs_spec import DUEL_V2_WORLD
 from envs.quidditch.team_env import QuidditchTeamEnv
-
-
-# ── Learner-obs augmentation ─────────────────────────────────────────────────
-# OpponentControlledEnv hands the learner a 25-d obs derived from team_env's
-# raw 22-d per-agent obs.  The transformation is wrapper-local: team_env and
-# the frozen-opponent path see the original 22-d shape.  See DUEL_V2_WORLD in
-# envs.quidditch.obs_spec for the canonical slot layout.
 
 
 class FrameStackWrapper(gym.Wrapper):
@@ -258,6 +247,11 @@ def from_spec(spec: str, *, deterministic: bool = False) -> Opponent:
 class OpponentControlledEnv(gym.Env):
     """Reduces a QuidditchTeamEnv to single-agent Gym (for SB3) by driving
     the non-learner agent from a frozen Opponent each step.
+
+    Pure pass-through for obs shape: whatever team_env emits for the
+    learner is what the SB3 model sees.  team_env owns all obs-shape
+    decisions (DUEL_V1_BODY / DUEL_V2_WORLD / DUEL_V3_BODY_EGO via its
+    `learner_id` + `learner_spec` kwargs).
     """
 
     metadata = {"render_modes": ["human", "rgb_array"]}
@@ -280,91 +274,24 @@ class OpponentControlledEnv(gym.Env):
         self.opponent_id = next(a for a in team_env.possible_agents if a != learner_id)
         self.opponent = opponent
 
-        # Learner's policy sees the 25-d augmented obs; the opponent (via
-        # self._last_opp_obs) still receives team_env's raw 22-d obs because
-        # that's what frozen-opponent checkpoints were trained on.
-        self.observation_space = gym.spaces.Box(
-            low=-np.inf, high=np.inf, shape=(DUEL_V2_WORLD.dim,), dtype=np.float32,
-        )
+        # Pass-through observation/action space — team_env decided the shape.
+        self.observation_space = team_env.observation_space(learner_id)
         self.action_space      = team_env.action_space(learner_id)
         self.render_mode = team_env.render_mode
 
         self._last_opp_obs: np.ndarray = np.zeros(
             team_env.observation_space(self.opponent_id).shape, dtype=np.float32,
         )
-        # Free-joint dofadr lookups (cached on first reset, when world exists).
-        self._learner_dofadr: int = -1
-        self._opp_dofadr:     int = -1
-        # State for closing_rate computation.
-        self._prev_dist_to_opp: float = 0.0
         # Last team_env infos from reset/step — exposed for eval callers that
         # need both agents' info dicts (the wrapper only forwards the learner's).
         self.last_team_infos: dict = {}
 
-    def _cache_dofadrs(self) -> None:
-        model = self.team_env._world.model
-        for prefix, attr in (
-            (self.learner_id,  "_learner_dofadr"),
-            (self.opponent_id, "_opp_dofadr"),
-        ):
-            bid = mujoco.mj_name2id(model, mujoco.mjtObj.mjOBJ_BODY, prefix)
-            jnt = int(model.body_jntadr[bid])
-            setattr(self, attr, int(model.jnt_dofadr[jnt]))
-
-    def _augment_learner_obs(self, raw_obs: np.ndarray) -> np.ndarray:
-        """Map team_env's 22-d learner obs to the 25-d DUEL_V2_WORLD layout.
-
-        The raw 22-d obs is DUEL_V1_BODY (body-mixed opp_vel_rel + signed-distance
-        scalar).  Here we replace slot 15 with vec_to_hoop (world), slots 19:22
-        with world-frame opp_vel_rel, and append closing_rate.  See the [obs]
-        section of the design spec for the contract.
-        """
-        data = self.team_env._world.data
-        # Free-joint qvel[0:3] is world-frame linear velocity for both bodies.
-        learner_vel_world = data.qvel[
-            self._learner_dofadr : self._learner_dofadr + 3
-        ].astype(np.float64)
-        opp_vel_world     = data.qvel[
-            self._opp_dofadr : self._opp_dofadr + 3
-        ].astype(np.float64)
-        opp_vel_rel       = (opp_vel_world - learner_vel_world).astype(np.float32)
-
-        # Pull positions from raw_obs so we don't redo sensor reads:
-        #   raw_obs[9:12]  = learner_pos          (world)
-        #   raw_obs[16:19] = opp_pos - learner_pos (world)
-        learner_pos = raw_obs[9:12]
-        opp_pos_rel = raw_obs[16:19]
-        vec_to_hoop = (HOOP_CENTER - learner_pos).astype(np.float32)
-
-        dist_to_opp = float(np.linalg.norm(opp_pos_rel))
-        closing_rate = (
-            (self._prev_dist_to_opp - dist_to_opp) / self.team_env._red.step_period
-        )
-        self._prev_dist_to_opp = dist_to_opp
-
-        return obs_spec.pack(DUEL_V2_WORLD, {
-            "ang_vel":      raw_obs[0:3],
-            "ang_pos":      raw_obs[3:6],
-            "lin_vel":      raw_obs[6:9],
-            "lin_pos":      raw_obs[9:12],
-            "unit_to_goal": raw_obs[12:15],
-            "vec_to_hoop":  vec_to_hoop,
-            "opp_pos_rel":  opp_pos_rel,
-            "opp_vel_rel":  opp_vel_rel,
-            "closing_rate": [closing_rate],
-        })
-
     def reset(self, *, seed: int | None = None, options: dict | None = None):
         obs, infos = self.team_env.reset(seed=seed, options=options)
         self.opponent.reset()
-        if self._learner_dofadr < 0:
-            self._cache_dofadrs()
         self._last_opp_obs = obs[self.opponent_id]
-        # Initialise prev-distance so the first step's closing_rate is 0.
-        opp_pos_rel = obs[self.learner_id][16:19]
-        self._prev_dist_to_opp = float(np.linalg.norm(opp_pos_rel))
         self.last_team_infos = infos
-        return self._augment_learner_obs(obs[self.learner_id]), infos[self.learner_id]
+        return obs[self.learner_id], infos[self.learner_id]
 
     def step(self, action):
         opp_action = self.opponent.act(self._last_opp_obs)
@@ -373,7 +300,7 @@ class OpponentControlledEnv(gym.Env):
         self._last_opp_obs = obs[self.opponent_id]
         self.last_team_infos = infos
         return (
-            self._augment_learner_obs(obs[self.learner_id]),
+            obs[self.learner_id],
             float(rew[self.learner_id]),
             bool(term[self.learner_id]),
             bool(trunc[self.learner_id]),

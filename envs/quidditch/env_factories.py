@@ -86,12 +86,17 @@ class TeamEnvFactory:
     def _make_thunk(self):
         from envs.quidditch.team_env import QuidditchTeamEnv
         from envs.quidditch.opponents import OpponentControlledEnv, from_spec
+        from envs.quidditch.obs_spec import SPEC_BY_NAME
         cfg = self.team_cfg
         learner = self.learner_id
         opp_spec = self.opponent_spec
         reward_stack = self.reward_stack
+        learner_spec = SPEC_BY_NAME[self.obs_spec_name]
         def _thunk():
-            team = QuidditchTeamEnv(cfg=cfg, reward_stack=reward_stack)
+            team = QuidditchTeamEnv(
+                cfg=cfg, reward_stack=reward_stack,
+                learner_id=learner, learner_spec=learner_spec,
+            )
             opp = from_spec(opp_spec)
             return OpponentControlledEnv(team, learner_id=learner, opponent=opp)
         return _thunk
@@ -112,19 +117,25 @@ class TeamEnvFactory:
 
     def build_video_env_fn(self):
         from envs.quidditch.team_env import QuidditchTeamEnv
-        from envs.quidditch.opponents import OpponentControlledEnv, from_spec
+        from envs.quidditch.opponents import (
+            OpponentControlledEnv, from_spec, FrameStackWrapper,
+        )
+        from envs.quidditch.obs_spec import SPEC_BY_NAME
         cfg = self.team_cfg
         learner = self.learner_id
         opp_spec = self.opponent_spec
         frame_stack = self.frame_stack
         reward_stack = self.reward_stack
+        learner_spec = SPEC_BY_NAME[self.obs_spec_name]
         def _thunk():
-            team = QuidditchTeamEnv(cfg=cfg, render_mode="rgb_array",
-                                    reward_stack=reward_stack)
+            team = QuidditchTeamEnv(
+                cfg=cfg, render_mode="rgb_array",
+                reward_stack=reward_stack,
+                learner_id=learner, learner_spec=learner_spec,
+            )
             opp = from_spec(opp_spec, deterministic=True)
             env = OpponentControlledEnv(team, learner_id=learner, opponent=opp)
             if frame_stack > 1:
-                from envs.quidditch.opponents import FrameStackWrapper
                 return FrameStackWrapper(env, n_stack=frame_stack)
             return env
         return _thunk
