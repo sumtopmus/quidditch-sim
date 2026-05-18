@@ -278,11 +278,23 @@ def main(cfg: DictConfig) -> None:
     if is_team:
         from envs.quidditch.team_env import QuidditchTeamEnv
         from envs.quidditch.opponents import OpponentControlledEnv, from_spec
+        from envs.quidditch.obs_spec import SPEC_BY_NAME
         team_cfg = _build_team_cfg(cfg)
         opp_spec = _opponent_spec_from_cfg(cfg)
         learner = env_factory.learner_id
+        learner_spec = SPEC_BY_NAME[cfg.obs.name]
+        # Must mirror env_factory._make_thunk's wiring: same learner_id +
+        # learner_spec (so eval obs shape matches training, including for
+        # DUEL_V2_WORLD / DUEL_V3_BODY_EGO), and the same reward_stack (so
+        # eval rewards use the experiment's intended stack, not team_env's
+        # default fallback to team_v2).
         def eval_env_fn():
-            team = QuidditchTeamEnv(cfg=team_cfg)
+            team = QuidditchTeamEnv(
+                cfg=team_cfg,
+                reward_stack=env_factory.reward_stack,
+                learner_id=learner,
+                learner_spec=learner_spec,
+            )
             opp = from_spec(opp_spec)
             return OpponentControlledEnv(team, learner_id=learner, opponent=opp)
     else:

@@ -79,7 +79,15 @@ def test_train_smoke_calls_log_run_artifact(tmp_path: Path) -> None:
 
 def test_train_blue_v7_smoke(tmp_path: Path) -> None:
     """Smoke: blue_v7 experiment (DUEL_V3_BODY_EGO + InterceptShaping)
-    composes via Hydra and runs a tiny PPO loop end-to-end."""
+    composes via Hydra and runs a tiny PPO loop end-to-end.
+
+    Triggers the eval callback at least once (eval_freq_steps below the
+    first rollout boundary) so the eval-env-fn obs shape mismatch can't
+    slip past again — see 2026-05-18 fix where the inline eval_env_fn
+    in scripts/train.py was missing learner_id + learner_spec and
+    produced 22-d obs (× n_stack=3 = 66-d) instead of the model's
+    expected 75-d, crashing EvalCallback's first predict().
+    """
     repo_root = Path(__file__).resolve().parent.parent.parent
     env = {**os.environ, "WANDB_MODE": "disabled"}
     out = subprocess.run(
@@ -90,7 +98,14 @@ def test_train_blue_v7_smoke(tmp_path: Path) -> None:
             "trainer.n_steps=64",
             "trainer.batch_size=64",
             "env.n_envs=1",
-            "eval.eval_freq_steps=999999999",
+            # Trigger eval after the first 64-step rollout: with n_envs=1
+            # EvalCallback's eval_freq is just env_steps, and SB3 also
+            # invokes it on training start.  64 is enough that the eval
+            # actually fires within total_timesteps=512.
+            "eval.eval_freq_steps=64",
+            "eval.n_eval_episodes=1",
+            # Short episode so the eval rollout doesn't dwarf training.
+            "curriculum.episode_seconds=2.0",
             "eval.checkpoint_freq_steps=999999999",
             "eval.video.enabled=false",
             f"hydra.run.dir={tmp_path}/blue_v7_smoke",
