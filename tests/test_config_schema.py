@@ -20,3 +20,16 @@ def test_init_config_mode_values():
 def test_register_configs_runs_without_error():
     from config_schema import register_configs
     register_configs()  # idempotent (HydraConfigStore.store overwrites by name)
+
+
+def test_top_level_config_has_description_field():
+    """The top-level Config schema must carry an optional `description` string
+    so experiment YAMLs can set `description: |...` without Hydra struct
+    rejection.  Empty default = use auto-template in MODEL.md.
+    """
+    from omegaconf import OmegaConf
+    from config_schema import Config
+
+    cfg = OmegaConf.structured(Config)
+    assert "description" in cfg
+    assert cfg.description == ""

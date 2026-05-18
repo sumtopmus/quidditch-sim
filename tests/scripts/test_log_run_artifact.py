@@ -146,3 +146,44 @@ def test_hydra_dir_added_when_present(tmp_path: Path) -> None:
     add_dir_args = art.add_dir.call_args
     assert add_dir_args.args[0].endswith("/.hydra")
     assert add_dir_args.kwargs["name"] == ".hydra"
+
+
+def test_log_run_artifact_includes_model_doc_when_present(tmp_path: Path) -> None:
+    """When <run_dir>/MODEL.md exists, log_run_artifact adds it to the artifact."""
+    from scripts._artifact_io import log_run_artifact
+
+    run_dir = _make_run_dir(tmp_path, best=True, final=False)
+    (run_dir / "MODEL.md").write_text("# MODEL: ppo_hoop_blue_5_20260515_120000\n")
+    run = MagicMock()
+    run.disabled = False
+    art = MagicMock()
+
+    with patch("wandb.Artifact", return_value=art):
+        log_run_artifact(run=run, run_dir=run_dir, cfg=_make_cfg(),
+                         parent_chain_total=0, best_eval_reward=None)
+
+    # Two add_file calls: best_model.zip (first) + MODEL.md (second).
+    add_calls = art.add_file.call_args_list
+    file_names = [c.kwargs.get("name") for c in add_calls]
+    assert "MODEL.md" in file_names
+    md_call = next(c for c in add_calls if c.kwargs.get("name") == "MODEL.md")
+    assert md_call.args[0].endswith("/MODEL.md")
+
+
+def test_log_run_artifact_skips_model_doc_when_absent(tmp_path: Path) -> None:
+    """When <run_dir>/MODEL.md is absent, no extra add_file call is made."""
+    from scripts._artifact_io import log_run_artifact
+
+    run_dir = _make_run_dir(tmp_path, best=True, final=False)
+    # No MODEL.md created.
+    run = MagicMock()
+    run.disabled = False
+    art = MagicMock()
+
+    with patch("wandb.Artifact", return_value=art):
+        log_run_artifact(run=run, run_dir=run_dir, cfg=_make_cfg(),
+                         parent_chain_total=0, best_eval_reward=None)
+
+    add_calls = art.add_file.call_args_list
+    file_names = [c.kwargs.get("name") for c in add_calls]
+    assert "MODEL.md" not in file_names

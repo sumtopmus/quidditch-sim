@@ -109,6 +109,9 @@ def promote_run_dir(run_dir: Path, run_name: str, models_root: Path) -> None:
         if hydra_dest.exists():
             shutil.rmtree(hydra_dest)
         shutil.copytree(hydra_src, hydra_dest)
+    src_doc = run_dir / "MODEL.md"
+    if src_doc.exists():
+        shutil.copy2(src_doc, dest / "MODEL.md")
     def _str_or_none(v):
         return v if isinstance(v, str) else None
     metadata = {

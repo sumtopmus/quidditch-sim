@@ -10,11 +10,14 @@ named ladder rungs.
 """
 from __future__ import annotations
 
+import logging
 import os
 import sys
 import warnings
 from datetime import datetime
 from pathlib import Path
+
+log = logging.getLogger(__name__)
 
 # Allow `python -m scripts.train` and direct invocation alike.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -344,6 +347,17 @@ def main(cfg: DictConfig) -> None:
             completed_steps=completed_steps,
             best_eval_reward=best_eval_reward,
         )
+
+        # Render MODEL.md before the artifact log so the upload picks it up.
+        # Best-effort: a doc-gen failure logs a warning but does not fail the
+        # training run.
+        try:
+            from scripts._render_model_doc import render_model_doc
+            doc = render_model_doc(run_dir)
+            (run_dir / "MODEL.md").write_text(doc)
+            log.info("wrote %s", run_dir / "MODEL.md")
+        except Exception as e:  # noqa: BLE001
+            log.warning("MODEL.md generation failed (training succeeded): %s", e)
 
         # Log the best_model + .hydra/ as a wandb artifact (no-op in disabled).
         from scripts._artifact_io import log_run_artifact

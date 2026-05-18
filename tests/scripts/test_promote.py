@@ -198,3 +198,49 @@ def test_promote_path_without_entity_when_only_project_set(
         _find_run_artifact("foo", "20260101_000000",
                             entity=None, project="drone-quidditch")
     api.artifact.assert_called_once_with("drone-quidditch/foo:latest")
+
+
+def test_promote_copies_model_doc_when_present(tmp_path: Path) -> None:
+    """When <run_dir>/MODEL.md exists, promote copies it to models/<name>/MODEL.md."""
+    from scripts.promote import promote_run_dir
+
+    run_dir = _make_run_dir(tmp_path, "ppo_hoop_blue_5")
+    (run_dir / "MODEL.md").write_text("# MODEL: ppo_hoop_blue_5_20260514_120000\n")
+    models_root = tmp_path / "models"
+
+    art = MagicMock()
+    art.version = "v0"
+    art.aliases = ["latest"]
+    api = MagicMock()
+    api.artifact.return_value = art
+
+    with patch("wandb.Api", return_value=api):
+        promote_run_dir(run_dir=run_dir, run_name="ppo_hoop_blue_5",
+                        models_root=models_root)
+
+    dest = models_root / "ppo_hoop_blue_5"
+    assert (dest / "MODEL.md").exists()
+    assert "ppo_hoop_blue_5" in (dest / "MODEL.md").read_text()
+
+
+def test_promote_skips_model_doc_when_absent(tmp_path: Path) -> None:
+    """When the run dir lacks MODEL.md, promote completes without copying it."""
+    from scripts.promote import promote_run_dir
+
+    run_dir = _make_run_dir(tmp_path, "ppo_hoop_blue_5")
+    # No MODEL.md created.
+    models_root = tmp_path / "models"
+
+    art = MagicMock()
+    art.version = "v0"
+    art.aliases = ["latest"]
+    api = MagicMock()
+    api.artifact.return_value = art
+
+    with patch("wandb.Api", return_value=api):
+        promote_run_dir(run_dir=run_dir, run_name="ppo_hoop_blue_5",
+                        models_root=models_root)
+
+    dest = models_root / "ppo_hoop_blue_5"
+    assert (dest / "best_model.zip").exists()
+    assert not (dest / "MODEL.md").exists()
