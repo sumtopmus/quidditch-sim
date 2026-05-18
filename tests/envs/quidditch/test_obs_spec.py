@@ -118,11 +118,78 @@ def test_team_env_obs_uses_body_mixed_opp_vel_rel():
     assert obs_spec.OPP_VEL_REL_WORLD in obs_spec.DUEL_V2_WORLD.blocks
 
 
-def test_spec_by_name_maps_canonical_specs():
-    from envs.quidditch.obs_spec import (
-        SPEC_BY_NAME, SIMPLE_ENV_OBS, DUEL_V1_BODY, DUEL_V2_WORLD,
-    )
-    assert SPEC_BY_NAME["SIMPLE_ENV_OBS"] is SIMPLE_ENV_OBS
-    assert SPEC_BY_NAME["DUEL_V1_BODY"]   is DUEL_V1_BODY
-    assert SPEC_BY_NAME["DUEL_V2_WORLD"]  is DUEL_V2_WORLD
-    assert set(SPEC_BY_NAME) == {"SIMPLE_ENV_OBS", "DUEL_V1_BODY", "DUEL_V2_WORLD"}
+def test_vec_to_goal_body_block_is_distinct_from_unit_to_goal():
+    g_body  = obs_spec.VEC_TO_GOAL_BODY
+    g_world = obs_spec.UNIT_TO_GOAL
+    assert g_body.name == "vec_to_goal"
+    assert g_world.name == "unit_to_goal"
+    assert g_body != g_world
+
+
+def test_vec_to_hoop_body_and_world_are_distinct():
+    body  = obs_spec.VEC_TO_HOOP_BODY
+    world = obs_spec.VEC_TO_HOOP
+    assert body.name == world.name == "vec_to_hoop"
+    assert body.dim == world.dim == 3
+    assert body.frame == "body"
+    assert world.frame == "world"
+    assert body != world
+
+
+def test_opp_pos_rel_body_and_world_are_distinct():
+    body  = obs_spec.OPP_POS_REL_BODY
+    world = obs_spec.OPP_POS_REL
+    assert body.name == world.name == "opp_pos_rel"
+    assert body.dim == world.dim == 3
+    assert body.frame == "body"
+    assert world.frame == "world"
+    assert body != world
+
+
+def test_opp_vel_rel_body_ego_is_distinct_from_legacy_body_mixed_and_world():
+    ego        = obs_spec.OPP_VEL_REL_BODY_EGO
+    body_mixed = obs_spec.OPP_VEL_REL_BODY
+    world      = obs_spec.OPP_VEL_REL_WORLD
+    assert ego.name == body_mixed.name == world.name == "opp_vel_rel"
+    assert ego.frame == "body"
+    assert body_mixed.frame == "body_mixed"
+    assert world.frame == "world"
+    assert ego != body_mixed
+    assert ego != world
+
+
+def test_duel_v3_body_ego_dim_is_25():
+    assert obs_spec.DUEL_V3_BODY_EGO.dim == 25
+
+
+def test_duel_v3_body_ego_block_names_in_order():
+    names = [b.name for b in obs_spec.DUEL_V3_BODY_EGO.blocks]
+    assert names == [
+        "ang_vel", "ang_pos", "lin_vel", "lin_pos",
+        "vec_to_goal", "vec_to_hoop", "opp_pos_rel", "opp_vel_rel",
+        "closing_rate",
+    ]
+
+
+def test_duel_v3_body_ego_uses_body_frame_for_relative_blocks():
+    spec = obs_spec.DUEL_V3_BODY_EGO
+    assert obs_spec.VEC_TO_GOAL_BODY     in spec.blocks
+    assert obs_spec.VEC_TO_HOOP_BODY     in spec.blocks
+    assert obs_spec.OPP_POS_REL_BODY     in spec.blocks
+    assert obs_spec.OPP_VEL_REL_BODY_EGO in spec.blocks
+    # No world-frame opp blocks in v3.
+    assert obs_spec.OPP_POS_REL          not in spec.blocks
+    assert obs_spec.OPP_VEL_REL_WORLD    not in spec.blocks
+
+
+def test_spec_by_name_registers_duel_v3_body_ego():
+    from envs.quidditch.obs_spec import SPEC_BY_NAME, DUEL_V3_BODY_EGO
+    assert SPEC_BY_NAME["DUEL_V3_BODY_EGO"] is DUEL_V3_BODY_EGO
+
+
+def test_spec_by_name_set_is_exact():
+    """Adding a new spec without registering it (or removing one) breaks here."""
+    from envs.quidditch.obs_spec import SPEC_BY_NAME
+    assert set(SPEC_BY_NAME) == {
+        "SIMPLE_ENV_OBS", "DUEL_V1_BODY", "DUEL_V2_WORLD", "DUEL_V3_BODY_EGO",
+    }

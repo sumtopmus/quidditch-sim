@@ -100,6 +100,18 @@ CLOSING_RATE = ObsBlock(
     "closing_rate", dim=1,
     notes="-d‖opp - learner‖/dt",
 )
+VEC_TO_GOAL_BODY = ObsBlock(
+    "vec_to_goal", dim=3, frame="body",
+    notes="goal point - learner_pos, rotated into learner body frame; "
+          "goal = α·red_pos + (1-α)·hoop_center (α from TeamConfig.midpoint_alpha)",
+)
+VEC_TO_HOOP_BODY     = ObsBlock("vec_to_hoop",  dim=3, frame="body")
+OPP_POS_REL_BODY     = ObsBlock("opp_pos_rel",  dim=3, frame="body")
+OPP_VEL_REL_BODY_EGO = ObsBlock(
+    "opp_vel_rel", dim=3, frame="body",
+    notes="(opp_vel_world - learner_vel_world) rotated into learner body "
+          "frame; distinct from OPP_VEL_REL_BODY (body_mixed)",
+)
 
 
 # ── Composed specs, one per obs construction site ────────────────────────────
@@ -117,15 +129,25 @@ DUEL_V2_WORLD: ObsSpec = ObsSpec((
     VEC_TO_HOOP, OPP_POS_REL, OPP_VEL_REL_WORLD, CLOSING_RATE,
 ))
 
+DUEL_V3_BODY_EGO: ObsSpec = ObsSpec((
+    ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS,
+    VEC_TO_GOAL_BODY,
+    VEC_TO_HOOP_BODY,
+    OPP_POS_REL_BODY,
+    OPP_VEL_REL_BODY_EGO,
+    CLOSING_RATE,
+))
+
 
 # ── Name registry — used by config-driven obs selection ──────────────────────
 # Maps the string name of a canonical spec (as written in conf/obs/*.yaml's
 # `name:` field) to the ObsSpec constant itself.  Adding a new composed spec
 # requires adding it here as well so `cfg.obs.name` lookups can resolve it.
 SPEC_BY_NAME: dict[str, ObsSpec] = {
-    "SIMPLE_ENV_OBS": SIMPLE_ENV_OBS,
-    "DUEL_V1_BODY":   DUEL_V1_BODY,
-    "DUEL_V2_WORLD":  DUEL_V2_WORLD,
+    "SIMPLE_ENV_OBS":   SIMPLE_ENV_OBS,
+    "DUEL_V1_BODY":     DUEL_V1_BODY,
+    "DUEL_V2_WORLD":    DUEL_V2_WORLD,
+    "DUEL_V3_BODY_EGO": DUEL_V3_BODY_EGO,
 }
 
 
