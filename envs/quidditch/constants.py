@@ -36,6 +36,13 @@ TAG_COOLDOWN_SECONDS: float = 1.0      # post-exit gate on the tag-entry pulse
 # physics but do not terminate the episode.
 CRASH_VEL_THR: float = 1.0             # m/s, |v_rel · contact_normal| threshold
 
+# ── Reward shaping ───────────────────────────────────────────────────────────
+# Prediction horizon for InterceptShaping: dist_def_to_future_red uses
+# future_red = red_pos + REWARD_LOOKAHEAD_S · red_vel_world.  Mirrored in
+# conf/reward/team_v3_intercept.yaml's InterceptShaping.lookahead_s field
+# (kept in sync visually so a reader sees both numbers next to each other).
+REWARD_LOOKAHEAD_S: float = 0.5
+
 # Default Blue start (hovering 1 m in front of the hoop, slightly below hoop height).
 BLUE_START_POS = np.array([1.0, 0.0, 1.5], dtype=np.float64)
 BLUE_START_YAW: float = float(np.pi)   # facing arena center (−x direction)

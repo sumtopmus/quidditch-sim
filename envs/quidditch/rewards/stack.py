@@ -59,6 +59,14 @@ class StepState:
     arena_radius: float = 3.0
     tag_radius: float = 0.3
 
+    # ── Intercept-shaping inputs ────────────────────────────────────────────
+    # Populated by team_env.step when learner_id is set; both default to 0 so
+    # single-agent envs and the no-learner canary path keep working.
+    # future_red = red_pos + REWARD_LOOKAHEAD_S · red_vel_world
+    # dist_def_to_future_red = ‖defender_pos - future_red‖
+    dist_def_to_future_red:      float = 0.0
+    dist_def_to_future_red_prev: float = 0.0
+
 
 @dataclass
 class RewardStack:

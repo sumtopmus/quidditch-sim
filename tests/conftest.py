@@ -57,11 +57,15 @@ def set_body_state(
     body: str,
     pos: tuple[float, float, float],
     vel: tuple[float, float, float] = (0.0, 0.0, 0.0),
+    yaw: float = 0.0,
 ) -> None:
-    """Write body's free-joint position, identity quat, and linear velocity."""
+    """Write body's free-joint position, yaw-only quat, and linear velocity."""
+    import math
     qa = qpos_addr(world, body)
     world.data.qpos[qa : qa + 3] = pos
-    world.data.qpos[qa + 3 : qa + 7] = (1.0, 0.0, 0.0, 0.0)
+    # ZYX-euler yaw → quaternion (w, x, y, z): only z-component active.
+    cy, sy = math.cos(yaw / 2.0), math.sin(yaw / 2.0)
+    world.data.qpos[qa + 3 : qa + 7] = (cy, 0.0, 0.0, sy)
     bid = mujoco.mj_name2id(world.model, mujoco.mjtObj.mjOBJ_BODY, body)
     jnt = int(world.model.body_jntadr[bid])
     qva = int(world.model.jnt_dofadr[jnt])
