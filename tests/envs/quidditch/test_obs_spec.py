@@ -231,3 +231,14 @@ def test_world_to_body_preserves_norm():
     v_world = np.array([3.0, 4.0, 0.0], dtype=np.float64)
     v_body = obs_spec.world_to_body(v_world, R_wb)
     assert abs(np.linalg.norm(v_body) - np.linalg.norm(v_world)) < 1e-6
+
+
+def test_duel_v3_body_ego_yaml_resolves_to_canonical_spec():
+    """conf/obs/duel_v3_body_ego.yaml must declare name=DUEL_V3_BODY_EGO
+    so that SPEC_BY_NAME[cfg.obs.name] lookup in env_factories resolves."""
+    from pathlib import Path
+    from omegaconf import OmegaConf
+    cfg = OmegaConf.load(Path(__file__).resolve().parents[3] / "conf" / "obs" / "duel_v3_body_ego.yaml")
+    assert cfg.name == "DUEL_V3_BODY_EGO"
+    assert int(cfg.n_stack) == 3
+    assert obs_spec.SPEC_BY_NAME[cfg.name] is obs_spec.DUEL_V3_BODY_EGO
