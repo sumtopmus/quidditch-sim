@@ -278,3 +278,20 @@ def test_team_v2_stack_produces_expected_rewards():
 
     assert abs(out["red_0"]  - expected_red)  < 1e-12, (out["red_0"], expected_red)
     assert abs(out["blue_0"] - expected_blue) < 1e-12, (out["blue_0"], expected_blue)
+
+
+def test_step_state_has_future_red_fields_defaulted_to_zero():
+    """New fields for InterceptShaping; default 0.0 so existing callers
+    that build StepState without them keep working."""
+    from envs.quidditch.rewards.stack import StepState
+    state = StepState(agent_ids=("red_0", "blue_0"))
+    assert state.dist_def_to_future_red == 0.0
+    assert state.dist_def_to_future_red_prev == 0.0
+
+
+def test_reward_lookahead_constant_exists():
+    """Constant lives in envs.quidditch.constants so team_env (which
+    populates the StepState fields) and the YAML (which carries the
+    InterceptShaping lookahead_s param) read from the same source."""
+    from envs.quidditch.constants import REWARD_LOOKAHEAD_S
+    assert REWARD_LOOKAHEAD_S == 0.5
