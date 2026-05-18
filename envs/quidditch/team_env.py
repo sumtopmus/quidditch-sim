@@ -607,6 +607,12 @@ class QuidditchTeamEnv(ParallelEnv):
         Supports DUEL_V1_BODY (22-d), DUEL_V2_WORLD (25-d, world-frame
         opp_vel_rel + closing_rate + vec_to_hoop), and DUEL_V3_BODY_EGO
         (25-d, body-frame ego-centric).
+
+        Dispatch uses structural equality (==), not identity (is): under
+        SubprocVecEnv the env is pickled into worker processes, which
+        creates fresh ObsSpec dataclass instances that are not `is`-equal
+        to the module-level constants.  ObsSpec is `frozen=True` so == is
+        well-defined and matches block-by-block.
         """
         if agent_id == self._red_id:
             self_q, opp_q = self._red,  self._blue
@@ -638,7 +644,7 @@ class QuidditchTeamEnv(ParallelEnv):
         opp_vel_rel_body_mixed = opp_lin_vel - lin_vel_b  # legacy DUEL_V1_BODY
 
         # DUEL_V1_BODY (22-d, body-mixed opp_vel_rel + signed-distance scalar).
-        if spec is DUEL_V1_BODY:
+        if spec == DUEL_V1_BODY:
             return obs_spec.pack(DUEL_V1_BODY, {
                 "ang_vel":          ang_vel,
                 "ang_pos":          ang_pos,
@@ -669,7 +675,7 @@ class QuidditchTeamEnv(ParallelEnv):
             closing_rate = 0.0
 
         # DUEL_V2_WORLD (25-d, world-frame opp + closing_rate).
-        if spec is DUEL_V2_WORLD:
+        if spec == DUEL_V2_WORLD:
             return obs_spec.pack(DUEL_V2_WORLD, {
                 "ang_vel":      ang_vel,
                 "ang_pos":      ang_pos,
@@ -683,7 +689,7 @@ class QuidditchTeamEnv(ParallelEnv):
             })
 
         # DUEL_V3_BODY_EGO (25-d, body-frame ego-centric).
-        if spec is DUEL_V3_BODY_EGO:
+        if spec == DUEL_V3_BODY_EGO:
             # Rotation: world → body via R_wb.T (R_wb = data.xmat[body_id]).
             bid = self_q._drone_id
             R_wb = data.xmat[bid].reshape(3, 3)

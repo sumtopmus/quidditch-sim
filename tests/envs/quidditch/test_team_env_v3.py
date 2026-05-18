@@ -174,3 +174,60 @@ def test_blue_v4_round_trip_through_new_in_env_packer():
         assert np.asarray(action).shape == (4,)
     finally:
         env.close()
+
+
+def test_pack_agent_obs_dispatch_uses_structural_equality_not_identity():
+    """Regression: under SubprocVecEnv the env is pickled into workers,
+    which creates fresh ObsSpec dataclass instances that are NOT
+    `is`-equal to the module-level constants — but ARE structurally
+    equal under == (ObsSpec is frozen=True).  The packer must dispatch
+    on ==.  See 2026-05-18 fix on develop after `make train EXP=blue_v7`
+    crashed with `_pack_agent_obs: unsupported spec ObsSpec(...)` on
+    every SubprocVecEnv worker.
+    """
+    import copy
+    # Deep-copy the canonical spec — same data, different identity.
+    spec_copy = copy.deepcopy(DUEL_V3_BODY_EGO)
+    assert spec_copy is not DUEL_V3_BODY_EGO   # precondition: identity differs
+    assert spec_copy == DUEL_V3_BODY_EGO       # precondition: structurally equal
+
+    env = QuidditchTeamEnv(
+        cfg=TeamConfig(randomise_red_start=False),
+        learner_id="blue_0", learner_spec=spec_copy,
+    )
+    try:
+        obs, _ = env.reset(seed=0)
+        # If dispatch were `is`, this would raise ValueError from the
+        # `raise ValueError(f"_pack_agent_obs: unsupported spec ...")`
+        # tail of _pack_agent_obs.
+        assert obs["blue_0"].shape == (DUEL_V3_BODY_EGO.dim,)
+        assert obs["red_0"].shape  == (DUEL_V1_BODY.dim,)
+    finally:
+        env.close()
+
+
+@pytest.mark.slow
+def test_subproc_vec_env_does_not_lose_spec_identity_on_pickling():
+    """End-to-end regression: SubprocVecEnv(n_envs=2) actually pickles
+    the team_env across the multiprocessing boundary.  Reset must
+    succeed and yield the right obs shape on both workers."""
+    from envs.quidditch.env_factories import TeamEnvFactory
+
+    factory = TeamEnvFactory(
+        n_envs=2,
+        team_cfg=TeamConfig(randomise_red_start=False),
+        learner_id="blue_0",
+        opponent_spec="zero",
+        obs_spec_name="DUEL_V3_BODY_EGO",
+        frame_stack=1,
+        seed=42,
+    )
+    vec_env = factory.build_train_env()
+    try:
+        obs = vec_env.reset()
+        # SubprocVecEnv reset returns (n_envs, obs_dim) ndarray.
+        assert obs.shape == (2, DUEL_V3_BODY_EGO.dim), (
+            f"expected (2, {DUEL_V3_BODY_EGO.dim}), got {obs.shape}"
+        )
+    finally:
+        vec_env.close()
