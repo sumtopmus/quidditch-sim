@@ -1,4 +1,5 @@
 kind: scripted
+spec: intercepter_blue:lookahead=0.5  # from_spec() spec used by standalone eval CLIs
 _target_: envs.quidditch.opponents.IntercepterBlue
 _partial_: true
 lookahead: 0.5

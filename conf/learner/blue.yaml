@@ -1,0 +1,5 @@
+# Identify the learner side.  uri is required at CLI time; obs spec + n_stack
+# are resolved from the URI's .hydra/config.yaml at run time (via
+# core.run_context.load_run_context).
+id: blue_0
+uri: ???
