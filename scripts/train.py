@@ -365,11 +365,16 @@ def main(cfg: DictConfig) -> None:
                     best_eval_reward = rwd
                 break
 
+        # "best" when EvalCallback wrote a best_model.zip during training,
+        # else "final" (final_model.zip is always written above).  Same logic
+        # as _artifact_io.log_run_artifact uses to tag the wandb artifact.
+        model_kind = "best" if (run_dir / "best_model.zip").exists() else "final"
         append_meta_yaml_final_stats(
             run_dir,
             wall_time_s=elapsed_s,
             completed_steps=completed_steps,
             best_eval_reward=best_eval_reward,
+            model_kind=model_kind,
         )
 
         # Render MODEL.md before the artifact log so the upload picks it up.

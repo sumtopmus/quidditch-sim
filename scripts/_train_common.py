@@ -366,8 +366,14 @@ def append_meta_yaml_final_stats(
     completed_steps: int,
     best_eval_reward: float | None = None,
     peak_eval_step: int | None = None,
+    model_kind: str | None = None,
 ) -> None:
-    """Merge final-stats fields into `<run_dir>/.hydra/meta.yaml`."""
+    """Merge final-stats fields into `<run_dir>/.hydra/meta.yaml`.
+
+    `model_kind` is "best" when EvalCallback produced `best_model.zip`, else
+    "final" (final_model.zip only).  Mirrors the tag `log_run_artifact` writes
+    into wandb artifact metadata so MODEL.md can render it from meta.yaml.
+    """
     import yaml
     run_dir = Path(run_dir)
     p = run_dir / ".hydra" / "meta.yaml"
@@ -380,6 +386,7 @@ def append_meta_yaml_final_stats(
         "completed_steps":  int(completed_steps),
         "best_eval_reward": None if best_eval_reward is None else float(best_eval_reward),
         "peak_eval_step":   None if peak_eval_step  is None else int(peak_eval_step),
+        "model_kind":       model_kind,
     }
     p.write_text(yaml.safe_dump(payload))
 
