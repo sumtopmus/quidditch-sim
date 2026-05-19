@@ -386,3 +386,99 @@ def test_team_v3_intercept_stack_composition():
     assert isp.lookahead_s == 0.5
     assert isp.activation_dist == 1.5
     assert isp.defender == "blue_0"
+
+
+def test_step_state_hoop_pos_defaults_to_zeros():
+    from envs.quidditch.rewards.stack import StepState
+    state = StepState(agent_ids=("red_0", "blue_0"))
+    assert np.array_equal(state.hoop_pos, np.zeros(3))
+
+
+from envs.quidditch.rewards.terms import GoalSideCone
+
+
+def _cone_state(blue_xyz, red_xyz=(-1.0, 0.0, 2.0), hoop_xyz=(2.0, 0.0, 2.0)):
+    return _make_state(
+        red_pos=np.array(red_xyz, dtype=float),
+        blue_pos=np.array(blue_xyz, dtype=float),
+        hoop_pos=np.array(hoop_xyz, dtype=float),
+    )
+
+
+def test_goal_side_cone_max_when_blue_at_red_on_axis():
+    """Blue at Red's position → t=1, cos_align=1 → reward = scale."""
+    term = GoalSideCone(scale=0.01, defender="blue_0")
+    out = term.compute(_cone_state(blue_xyz=(-1.0, 0.0, 2.0)))
+    assert out["red_0"] == 0.0
+    assert abs(out["blue_0"] - 0.01) < 1e-12
+
+
+def test_goal_side_cone_half_when_blue_midway_on_axis():
+    """Blue at midpoint(hoop, red) → t=0.5, cos_align=1 → reward = scale/2."""
+    term = GoalSideCone(scale=0.02, defender="blue_0")
+    out = term.compute(_cone_state(blue_xyz=(0.5, 0.0, 2.0)))
+    assert abs(out["blue_0"] - 0.01) < 1e-12
+
+
+def test_goal_side_cone_zero_at_hoop():
+    """Blue at the hoop → bh = 0 → reward 0 (HoopAnchor still pulls)."""
+    term = GoalSideCone(scale=0.01, defender="blue_0")
+    out = term.compute(_cone_state(blue_xyz=(2.0, 0.0, 2.0)))
+    assert out["blue_0"] == 0.0
+
+
+def test_goal_side_cone_zero_when_blue_past_red():
+    """Blue further from hoop than Red along axis → t>1 → reward 0."""
+    term = GoalSideCone(scale=0.01, defender="blue_0")
+    out = term.compute(_cone_state(blue_xyz=(-2.0, 0.0, 2.0)))  # t = 4/3
+    assert out["blue_0"] == 0.0
+
+
+def test_goal_side_cone_zero_when_blue_behind_hoop():
+    """Blue on the wrong side of hoop (away from Red) → cos_align<0 → reward 0."""
+    term = GoalSideCone(scale=0.01, defender="blue_0")
+    out = term.compute(_cone_state(blue_xyz=(3.0, 0.0, 2.0)))
+    assert out["blue_0"] == 0.0
+
+
+def test_goal_side_cone_decays_off_axis():
+    """Blue at t≈0.5 along axis but offset perpendicular → cos_align<1 → reward < scale/2."""
+    term = GoalSideCone(scale=0.02, defender="blue_0")
+    # Hoop at (2,0,2), Red at (-1,0,2): axis along -x.  Blue at (0.5, 1, 2) is
+    # 1m off-axis (in +y).  along = 1.5, axis_len = 3 → t = 0.5.
+    # ‖bh‖ = √(1.5²+1²) = √3.25, cos_align = 1.5/√3.25 ≈ 0.832.
+    out = term.compute(_cone_state(blue_xyz=(0.5, 1.0, 2.0)))
+    expected = 0.02 * (1.5 / np.sqrt(3.25)) * 0.5
+    assert abs(out["blue_0"] - expected) < 1e-12
+
+
+def test_goal_side_cone_zero_when_red_at_hoop():
+    """Degenerate: axis_len ≈ 0 → reward 0 (no axis to project onto)."""
+    term = GoalSideCone(scale=0.01, defender="blue_0")
+    out = term.compute(_cone_state(
+        blue_xyz=(0.5, 0.0, 2.0), red_xyz=(2.0, 0.0, 2.0)))
+    assert out["blue_0"] == 0.0
+
+
+def test_goal_side_cone_does_not_reward_red():
+    """Non-zero-sum: defender-only term.  Red gets 0 even at favorable geom."""
+    term = GoalSideCone(scale=0.01, defender="blue_0")
+    out = term.compute(_cone_state(blue_xyz=(-1.0, 0.0, 2.0)))
+    assert out["red_0"] == 0.0
+
+
+def test_team_v4_cone_stack_composition():
+    """conf/reward/team_v4_cone.yaml: adds GoalSideCone to v3_intercept;
+    11 terms in the expected order."""
+    from envs.quidditch.rewards import load_reward_stack
+    stack = load_reward_stack("team_v4_cone")
+    expected = [
+        "TagEntryPulse", "ProximityGradedTag", "ClosingVelInTagZone",
+        "HoopDistancePenalty", "ZeroSumDistMirror", "HoopAnchor",
+        "GoalSideCone", "InterceptShaping",
+        "ScoreEvent", "TakeDown", "CrashEvent",
+    ]
+    assert [type(t).__name__ for t in stack.terms] == expected
+    cone = next(t for t in stack.terms if type(t).__name__ == "GoalSideCone")
+    assert cone.scale == 0.01
+    assert cone.defender == "blue_0"

@@ -462,6 +462,7 @@ class QuidditchTeamEnv(ParallelEnv):
             tag_radius=self.cfg.tag_radius,
             dist_def_to_future_red=self._dist_def_to_future_red,
             dist_def_to_future_red_prev=self._dist_def_to_future_red_prev,
+            hoop_pos=HOOP_CENTER,
         )
         rewards = self._reward_stack.compute_step(reward_state)
         self._dist_b2r_prev = dist_b2r

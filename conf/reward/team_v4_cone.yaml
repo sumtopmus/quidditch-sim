@@ -1,0 +1,66 @@
+# Reward stack for blue_v8: team_v3_intercept + GoalSideCone.  Adds a
+# per-step positional pull for Blue to sit on the Red→hoop axis, on the
+# goal side.  See envs.quidditch.rewards.terms.GoalSideCone for the
+# formula.  All other terms unchanged from team_v3_intercept.
+
+_target_: envs.quidditch.rewards.stack.RewardStack
+terms:
+  - _target_: envs.quidditch.rewards.terms.TagEntryPulse
+    magnitude: 5.0
+    gainer: blue_0
+    loser:  red_0
+
+  - _target_: envs.quidditch.rewards.terms.ProximityGradedTag
+    max_reward: 0.05
+    gainer: blue_0
+    loser:  red_0
+
+  - _target_: envs.quidditch.rewards.terms.ClosingVelInTagZone
+    scale: 0.05
+    gainer: blue_0
+    loser:  red_0
+
+  # Red-only (blue's midpoint penalty removed — GoalSideCone replaces it).
+  - _target_: envs.quidditch.rewards.terms.HoopDistancePenalty
+    scale: 0.01
+    agent_to_target:
+      red_0: hoop
+
+  - _target_: envs.quidditch.rewards.terms.ZeroSumDistMirror
+    scale: 0.01
+    agents: [blue_0]
+
+  - _target_: envs.quidditch.rewards.terms.HoopAnchor
+    scale: 0.005
+    agents: [blue_0]
+
+  # New positional shaper: pulls Blue out along the Red→hoop axis on the
+  # hoop side.  Max per-step contribution = scale (when Blue at Red, on
+  # axis); zero at hoop / past Red / behind hoop.  Equilibrium with
+  # HoopAnchor lands Blue at a guard position between hoop and Red.
+  - _target_: envs.quidditch.rewards.terms.GoalSideCone
+    scale: 0.01
+    defender: blue_0
+
+  - _target_: envs.quidditch.rewards.terms.InterceptShaping
+    scale: 0.05
+    lookahead_s: 0.5
+    activation_dist: 1.5
+    defender: blue_0
+
+  - _target_: envs.quidditch.rewards.terms.ScoreEvent
+    magnitude: 10.0
+    scorer: red_0
+    zero_sum_opponent: blue_0
+
+  - _target_: envs.quidditch.rewards.terms.TakeDown
+    aggressor_reward: 20.0
+    victim_penalty: -20.0
+    aggressor: blue_0
+    victim: red_0
+
+  - _target_: envs.quidditch.rewards.terms.CrashEvent
+    magnitude: -20.0
+    agent_to_crash_flags:
+      red_0:  [red_floor, red_wall_crash,  red_oob]
+      blue_0: [blue_floor, blue_wall_crash, blue_oob]
