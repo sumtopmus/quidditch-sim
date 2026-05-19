@@ -125,3 +125,16 @@ def test_read_obs_spec_passthrough_for_non_renamed_names(tmp_path):
     )
     spec, _ = read_obs_spec(info)
     assert [b.name for b in spec.blocks] == ["ang_vel", "lin_pos"]
+
+
+def test_obs_config_schema_carries_blocks():
+    from config_schema import ObsConfig
+    cfg = ObsConfig(name="X", n_stack=2, blocks=["ANG_VEL", "ANG_POS"])
+    assert cfg.blocks == ["ANG_VEL", "ANG_POS"]
+
+
+def test_obs_config_default_blocks_is_empty_list():
+    """Default empty list keeps current YAMLs (no blocks: field) loading."""
+    from config_schema import ObsConfig
+    cfg = ObsConfig()
+    assert cfg.blocks == []

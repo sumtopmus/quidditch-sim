@@ -90,9 +90,10 @@ class CurriculumConfig:
 
 @dataclass
 class ObsConfig:
-    """Names a canonical ObsSpec from envs.quidditch.obs_spec.SPEC_BY_NAME."""
+    """Names a canonical ObsSpec; `blocks` carries the ordered ObsBlock identifiers."""
     name: str = "DUEL_V2_WORLD"
     n_stack: int = 3
+    blocks: list[str] = field(default_factory=list)
 
 
 @dataclass
