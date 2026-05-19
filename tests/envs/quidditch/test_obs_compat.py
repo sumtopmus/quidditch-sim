@@ -45,12 +45,16 @@ def test_removed_block_refuses(tmp_path: Path, capsys):
 
 
 def test_frame_only_change_renders_warning(tmp_path: Path, capsys):
-    info = _write_info(tmp_path, DUEL_V1_BODY, n_stack=1)
-    # Construct a spec identical to DUEL_V1_BODY except opp_vel_rel uses world frame.
-    cur = ObsSpec((ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS, UNIT_TO_GOAL,
-                   SIGNED_DIST_NORM, OPP_POS_REL, OPP_VEL_REL_WORLD))
+    """Same-name + different-frame: diff renderer flags ⚠️ frame change.
+
+    After 2026-05-18 rename, canonical blocks no longer collide on name —
+    construct a synthetic same-name pair to exercise the renderer path."""
+    parent_block = ObsBlock("custom", dim=3, frame="world")
+    current_block = ObsBlock("custom", dim=3, frame="body")
+    info = _write_info(tmp_path, ObsSpec((parent_block,)), n_stack=1)
     with pytest.raises(SystemExit):
-        check_obs_compat(info, current=cur, current_n_stack=1, surgery=False)
+        check_obs_compat(info, current=ObsSpec((current_block,)),
+                         current_n_stack=1, surgery=False)
     out = capsys.readouterr().out
     assert "⚠️" in out
     assert "frame" in out  # the rendered explanation mentions "frame changed"

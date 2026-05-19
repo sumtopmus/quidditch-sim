@@ -105,7 +105,8 @@ def test_simple_env_obs_is_prefix_of_team_env_obs():
 def test_opp_vel_rel_body_and_world_are_distinct():
     body = obs_spec.OPP_VEL_REL_BODY
     world = obs_spec.OPP_VEL_REL_WORLD
-    assert body.name == world.name == "opp_vel_rel"
+    assert body.name == "opp_vel_rel_body_mixed"
+    assert world.name == "opp_vel_rel_world"
     assert body.dim == world.dim == 3
     assert body.frame != world.frame
     assert body != world
@@ -129,7 +130,8 @@ def test_vec_to_goal_body_block_is_distinct_from_unit_to_goal():
 def test_vec_to_hoop_body_and_world_are_distinct():
     body  = obs_spec.VEC_TO_HOOP_BODY
     world = obs_spec.VEC_TO_HOOP
-    assert body.name == world.name == "vec_to_hoop"
+    assert body.name == "vec_to_hoop_body"
+    assert world.name == "vec_to_hoop_world"
     assert body.dim == world.dim == 3
     assert body.frame == "body"
     assert world.frame == "world"
@@ -139,7 +141,8 @@ def test_vec_to_hoop_body_and_world_are_distinct():
 def test_opp_pos_rel_body_and_world_are_distinct():
     body  = obs_spec.OPP_POS_REL_BODY
     world = obs_spec.OPP_POS_REL
-    assert body.name == world.name == "opp_pos_rel"
+    assert body.name == "opp_pos_rel_body"
+    assert world.name == "opp_pos_rel_world"
     assert body.dim == world.dim == 3
     assert body.frame == "body"
     assert world.frame == "world"
@@ -150,7 +153,9 @@ def test_opp_vel_rel_body_ego_is_distinct_from_legacy_body_mixed_and_world():
     ego        = obs_spec.OPP_VEL_REL_BODY_EGO
     body_mixed = obs_spec.OPP_VEL_REL_BODY
     world      = obs_spec.OPP_VEL_REL_WORLD
-    assert ego.name == body_mixed.name == world.name == "opp_vel_rel"
+    assert ego.name == "opp_vel_rel_body_ego"
+    assert body_mixed.name == "opp_vel_rel_body_mixed"
+    assert world.name == "opp_vel_rel_world"
     assert ego.frame == "body"
     assert body_mixed.frame == "body_mixed"
     assert world.frame == "world"
@@ -166,7 +171,7 @@ def test_duel_v3_body_ego_block_names_in_order():
     names = [b.name for b in obs_spec.DUEL_V3_BODY_EGO.blocks]
     assert names == [
         "ang_vel", "ang_pos", "lin_vel", "lin_pos",
-        "vec_to_goal", "vec_to_hoop", "opp_pos_rel", "opp_vel_rel",
+        "vec_to_goal", "vec_to_hoop_body", "opp_pos_rel_body", "opp_vel_rel_body_ego",
         "closing_rate",
     ]
 

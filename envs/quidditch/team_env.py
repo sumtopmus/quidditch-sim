@@ -647,14 +647,14 @@ class QuidditchTeamEnv(ParallelEnv):
         # DUEL_V1_BODY (22-d, body-mixed opp_vel_rel + signed-distance scalar).
         if spec == DUEL_V1_BODY:
             return obs_spec.pack(DUEL_V1_BODY, {
-                "ang_vel":          ang_vel,
-                "ang_pos":          ang_pos,
-                "lin_vel":          lin_vel_b,
-                "lin_pos":          lin_pos,
-                "unit_to_goal":     unit_to_goal,
-                "signed_dist_norm": [signed_dist_norm],
-                "opp_pos_rel":      opp_pos_rel_world,
-                "opp_vel_rel":      opp_vel_rel_body_mixed,
+                "ang_vel":                ang_vel,
+                "ang_pos":                ang_pos,
+                "lin_vel":                lin_vel_b,
+                "lin_pos":                lin_pos,
+                "unit_to_goal":           unit_to_goal,
+                "signed_dist_norm":       [signed_dist_norm],
+                "opp_pos_rel_world":      opp_pos_rel_world,
+                "opp_vel_rel_body_mixed": opp_vel_rel_body_mixed,
             })
 
         # World-frame velocities (free-joint qvel[0:3] for both bodies).
@@ -678,15 +678,15 @@ class QuidditchTeamEnv(ParallelEnv):
         # DUEL_V2_WORLD (25-d, world-frame opp + closing_rate).
         if spec == DUEL_V2_WORLD:
             return obs_spec.pack(DUEL_V2_WORLD, {
-                "ang_vel":      ang_vel,
-                "ang_pos":      ang_pos,
-                "lin_vel":      lin_vel_b,
-                "lin_pos":      lin_pos,
-                "unit_to_goal": unit_to_goal,
-                "vec_to_hoop":  vec_to_hoop_world,
-                "opp_pos_rel":  opp_pos_rel_world.astype(np.float32),
-                "opp_vel_rel":  opp_vel_rel_world,
-                "closing_rate": [closing_rate],
+                "ang_vel":           ang_vel,
+                "ang_pos":           ang_pos,
+                "lin_vel":           lin_vel_b,
+                "lin_pos":           lin_pos,
+                "unit_to_goal":      unit_to_goal,
+                "vec_to_hoop_world": vec_to_hoop_world,
+                "opp_pos_rel_world": opp_pos_rel_world.astype(np.float32),
+                "opp_vel_rel_world": opp_vel_rel_world,
+                "closing_rate":      [closing_rate],
             })
 
         # DUEL_V3_BODY_EGO (25-d, body-frame ego-centric).
@@ -699,15 +699,15 @@ class QuidditchTeamEnv(ParallelEnv):
             opp_pos_rel_body  = obs_spec.world_to_body(opp_pos_rel_world, R_wb)
             opp_vel_rel_body  = obs_spec.world_to_body(opp_vel_rel_world, R_wb)
             return obs_spec.pack(DUEL_V3_BODY_EGO, {
-                "ang_vel":      ang_vel,
-                "ang_pos":      ang_pos,
-                "lin_vel":      lin_vel_b,
-                "lin_pos":      lin_pos,
-                "vec_to_goal":  vec_to_goal_body,
-                "vec_to_hoop":  vec_to_hoop_body,
-                "opp_pos_rel":  opp_pos_rel_body,
-                "opp_vel_rel":  opp_vel_rel_body,
-                "closing_rate": [closing_rate],
+                "ang_vel":              ang_vel,
+                "ang_pos":              ang_pos,
+                "lin_vel":              lin_vel_b,
+                "lin_pos":              lin_pos,
+                "vec_to_goal":          vec_to_goal_body,
+                "vec_to_hoop_body":     vec_to_hoop_body,
+                "opp_pos_rel_body":     opp_pos_rel_body,
+                "opp_vel_rel_body_ego": opp_vel_rel_body,
+                "closing_rate":         [closing_rate],
             })
 
         raise ValueError(f"_pack_agent_obs: unsupported spec {spec!r}")

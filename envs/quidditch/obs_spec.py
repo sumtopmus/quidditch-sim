@@ -99,15 +99,15 @@ SIGNED_DIST_NORM = ObsBlock(
     notes="(pos - hoop)·hoop_normal / ARENA_RADIUS",
 )
 VEC_TO_HOOP = ObsBlock(
-    "vec_to_hoop", dim=3, frame="world",
+    "vec_to_hoop_world", dim=3, frame="world",
     notes="HOOP_CENTER - learner_pos, not normalized",
 )
-OPP_POS_REL = ObsBlock("opp_pos_rel", dim=3, frame="world")
+OPP_POS_REL = ObsBlock("opp_pos_rel_world", dim=3, frame="world")
 OPP_VEL_REL_BODY = ObsBlock(
-    "opp_vel_rel", dim=3, frame="body_mixed",
+    "opp_vel_rel_body_mixed", dim=3, frame="body_mixed",
     notes="legacy: each velocity in its own body frame",
 )
-OPP_VEL_REL_WORLD = ObsBlock("opp_vel_rel", dim=3, frame="world")
+OPP_VEL_REL_WORLD = ObsBlock("opp_vel_rel_world", dim=3, frame="world")
 CLOSING_RATE = ObsBlock(
     "closing_rate", dim=1,
     notes="-d‖opp - learner‖/dt",
@@ -117,10 +117,10 @@ VEC_TO_GOAL_BODY = ObsBlock(
     notes="goal point - learner_pos, rotated into learner body frame; "
           "goal = α·red_pos + (1-α)·hoop_center (α from TeamConfig.midpoint_alpha)",
 )
-VEC_TO_HOOP_BODY     = ObsBlock("vec_to_hoop",  dim=3, frame="body")
-OPP_POS_REL_BODY     = ObsBlock("opp_pos_rel",  dim=3, frame="body")
+VEC_TO_HOOP_BODY     = ObsBlock("vec_to_hoop_body",  dim=3, frame="body")
+OPP_POS_REL_BODY     = ObsBlock("opp_pos_rel_body",  dim=3, frame="body")
 OPP_VEL_REL_BODY_EGO = ObsBlock(
-    "opp_vel_rel", dim=3, frame="body",
+    "opp_vel_rel_body_ego", dim=3, frame="body",
     notes="(opp_vel_world - learner_vel_world) rotated into learner body "
           "frame; distinct from OPP_VEL_REL_BODY (body_mixed)",
 )
@@ -149,6 +149,24 @@ DUEL_V3_BODY_EGO: ObsSpec = ObsSpec((
     OPP_VEL_REL_BODY_EGO,
     CLOSING_RATE,
 ))
+
+
+# ── Legacy persisted obs-block names ─────────────────────────────────────────
+# Translates pre-2026-05-18 `[obs] slots` entries on read so old run_info.toml
+# files still match the renamed canonical blocks.  Do not extend — new runs
+# persist the unique names directly.  Body-frame variants of these blocks
+# were not persisted before 2026-05-18, so no body-frame entries appear here.
+_LEGACY_NAME_RENAMES: dict[tuple[str, str | None], str] = {
+    ("opp_vel_rel", "body_mixed"): "opp_vel_rel_body_mixed",
+    ("opp_vel_rel", "world"):      "opp_vel_rel_world",
+    ("vec_to_hoop", "world"):      "vec_to_hoop_world",
+    ("opp_pos_rel", "world"):      "opp_pos_rel_world",
+}
+
+
+def _apply_legacy_rename(name: str, frame: str | None) -> str:
+    """Return the post-2026-05-18 unique name for a (name, frame) pair, else `name`."""
+    return _LEGACY_NAME_RENAMES.get((name, frame), name)
 
 
 # ── Block registry — name→block for YAML-driven obs spec resolution ──────────
