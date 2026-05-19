@@ -8,12 +8,14 @@ import numpy as np
 import pytest
 
 from envs.quidditch.constants import HOOP_CENTER, REWARD_LOOKAHEAD_S
-from envs.quidditch.obs_spec import (
-    DUEL_V1_BODY, DUEL_V2_WORLD, DUEL_V3_BODY_EGO,
-)
+from envs.quidditch.obs_spec import load_obs_yaml
 from envs.quidditch.opponents import OpponentControlledEnv, from_spec
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 from tests.conftest import set_body_state
+
+DUEL_V1_BODY = load_obs_yaml("duel_v1_body")
+DUEL_V2_WORLD = load_obs_yaml("duel_v2_world")
+DUEL_V3_BODY_EGO = load_obs_yaml("duel_v3_body_ego")
 
 
 def _team(*, learner_id="blue_0", learner_spec=DUEL_V3_BODY_EGO):

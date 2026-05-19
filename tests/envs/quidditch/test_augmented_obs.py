@@ -11,7 +11,9 @@ import mujoco
 import numpy as np
 
 from envs.quidditch.constants import HOOP_CENTER
-from envs.quidditch.obs_spec import DUEL_V2_WORLD
+from envs.quidditch.obs_spec import load_obs_yaml
+
+DUEL_V2_WORLD = load_obs_yaml("duel_v2_world")
 from envs.quidditch.opponents import (
     FrameStackWrapper,
     OpponentControlledEnv,

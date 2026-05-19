@@ -126,31 +126,6 @@ OPP_VEL_REL_BODY_EGO = ObsBlock(
 )
 
 
-# ── Composed specs, one per obs construction site ────────────────────────────
-
-SIMPLE_ENV_OBS: ObsSpec = ObsSpec((
-    ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS, UNIT_TO_GOAL, SIGNED_DIST_NORM,
-))
-
-DUEL_V1_BODY: ObsSpec = ObsSpec(
-    SIMPLE_ENV_OBS.blocks + (OPP_POS_REL, OPP_VEL_REL_BODY),
-)
-
-DUEL_V2_WORLD: ObsSpec = ObsSpec((
-    ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS, UNIT_TO_GOAL,
-    VEC_TO_HOOP, OPP_POS_REL, OPP_VEL_REL_WORLD, CLOSING_RATE,
-))
-
-DUEL_V3_BODY_EGO: ObsSpec = ObsSpec((
-    ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS,
-    VEC_TO_GOAL_BODY,
-    VEC_TO_HOOP_BODY,
-    OPP_POS_REL_BODY,
-    OPP_VEL_REL_BODY_EGO,
-    CLOSING_RATE,
-))
-
-
 # ── Legacy persisted obs-block names ─────────────────────────────────────────
 # Translates pre-2026-05-18 `[obs] slots` entries on read so old run_info.toml
 # files still match the renamed canonical blocks.  Do not extend — new runs
@@ -210,21 +185,10 @@ def load_obs_yaml(stem: str) -> ObsSpec:
     if "blocks" not in cfg:
         raise KeyError(
             f"conf/obs/{stem}.yaml has no `blocks:` field — "
-            f"either upgrade the YAML to the new schema or use SPEC_BY_NAME[name] directly."
+            f"upgrade the YAML to the new schema (see Task 4 of the "
+            f"2026-05-18-yaml-driven-obs plan)."
         )
     return build_spec_from_block_names(cfg["blocks"])
-
-
-# ── Name registry — used by config-driven obs selection ──────────────────────
-# Maps the string name of a canonical spec (as written in conf/obs/*.yaml's
-# `name:` field) to the ObsSpec constant itself.  Adding a new composed spec
-# requires adding it here as well so `cfg.obs.name` lookups can resolve it.
-SPEC_BY_NAME: dict[str, ObsSpec] = {
-    "SIMPLE_ENV_OBS":   SIMPLE_ENV_OBS,
-    "DUEL_V1_BODY":     DUEL_V1_BODY,
-    "DUEL_V2_WORLD":    DUEL_V2_WORLD,
-    "DUEL_V3_BODY_EGO": DUEL_V3_BODY_EGO,
-}
 
 
 def describe(spec: ObsSpec, name: str | None = None) -> str:
@@ -241,6 +205,10 @@ def describe(spec: ObsSpec, name: str | None = None) -> str:
 
 
 if __name__ == "__main__":
-    for n, s in SPEC_BY_NAME.items():
-        print(describe(s, n))
+    import glob
+    repo_root = Path(__file__).resolve().parents[2]
+    for yaml_path in sorted(glob.glob(str(repo_root / "conf" / "obs" / "*.yaml"))):
+        stem = Path(yaml_path).stem
+        spec = load_obs_yaml(stem)
+        print(describe(spec, stem))
         print()

@@ -7,9 +7,11 @@ from stable_baselines3.common.vec_env import DummyVecEnv
 import gymnasium as gym
 
 from envs.quidditch import obs_spec
-from envs.quidditch.obs_spec import (
-    SIMPLE_ENV_OBS, DUEL_V1_BODY, DUEL_V2_WORLD, ObsSpec, ObsBlock,
-)
+from envs.quidditch.obs_spec import ObsSpec, ObsBlock, load_obs_yaml
+
+SIMPLE_ENV_OBS = load_obs_yaml("simple")
+DUEL_V1_BODY = load_obs_yaml("duel_v1_body")
+DUEL_V2_WORLD = load_obs_yaml("duel_v2_world")
 from core.policies.warm_start import warm_start_ppo_by_spec
 
 

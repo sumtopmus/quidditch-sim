@@ -84,22 +84,30 @@ def test_pack_raises_on_dim_mismatch():
         obs_spec.pack(spec, {"a": np.array([1, 2], dtype=np.float32)})
 
 
+# Load composed specs from conf/obs/*.yaml at module level so test bodies
+# stay free of repeated load_obs_yaml() calls.
+SIMPLE_ENV_OBS = obs_spec.load_obs_yaml("simple")
+DUEL_V1_BODY = obs_spec.load_obs_yaml("duel_v1_body")
+DUEL_V2_WORLD = obs_spec.load_obs_yaml("duel_v2_world")
+DUEL_V3_BODY_EGO = obs_spec.load_obs_yaml("duel_v3_body_ego")
+
+
 def test_simple_env_obs_dim_is_16():
-    assert obs_spec.SIMPLE_ENV_OBS.dim == 16
+    assert SIMPLE_ENV_OBS.dim == 16
 
 
 def test_team_env_obs_dim_is_22():
-    assert obs_spec.DUEL_V1_BODY.dim == 22
+    assert DUEL_V1_BODY.dim == 22
 
 
 def test_augmented_obs_dim_is_25():
-    assert obs_spec.DUEL_V2_WORLD.dim == 25
+    assert DUEL_V2_WORLD.dim == 25
 
 
 def test_simple_env_obs_is_prefix_of_team_env_obs():
     # warm_start_ppo (16->22) depends on this prefix relationship.
-    n = len(obs_spec.SIMPLE_ENV_OBS.blocks)
-    assert obs_spec.DUEL_V1_BODY.blocks[:n] == obs_spec.SIMPLE_ENV_OBS.blocks
+    n = len(SIMPLE_ENV_OBS.blocks)
+    assert DUEL_V1_BODY.blocks[:n] == SIMPLE_ENV_OBS.blocks
 
 
 def test_opp_vel_rel_body_and_world_are_distinct():
@@ -114,9 +122,9 @@ def test_opp_vel_rel_body_and_world_are_distinct():
 
 def test_team_env_obs_uses_body_mixed_opp_vel_rel():
     # The 22-d legacy team obs is body_mixed; the augmented 25-d uses world.
-    assert obs_spec.OPP_VEL_REL_BODY in obs_spec.DUEL_V1_BODY.blocks
-    assert obs_spec.OPP_VEL_REL_BODY not in obs_spec.DUEL_V2_WORLD.blocks
-    assert obs_spec.OPP_VEL_REL_WORLD in obs_spec.DUEL_V2_WORLD.blocks
+    assert obs_spec.OPP_VEL_REL_BODY in DUEL_V1_BODY.blocks
+    assert obs_spec.OPP_VEL_REL_BODY not in DUEL_V2_WORLD.blocks
+    assert obs_spec.OPP_VEL_REL_WORLD in DUEL_V2_WORLD.blocks
 
 
 def test_vec_to_goal_body_block_is_distinct_from_unit_to_goal():
@@ -164,11 +172,11 @@ def test_opp_vel_rel_body_ego_is_distinct_from_legacy_body_mixed_and_world():
 
 
 def test_duel_v3_body_ego_dim_is_25():
-    assert obs_spec.DUEL_V3_BODY_EGO.dim == 25
+    assert DUEL_V3_BODY_EGO.dim == 25
 
 
 def test_duel_v3_body_ego_block_names_in_order():
-    names = [b.name for b in obs_spec.DUEL_V3_BODY_EGO.blocks]
+    names = [b.name for b in DUEL_V3_BODY_EGO.blocks]
     assert names == [
         "ang_vel", "ang_pos", "lin_vel", "lin_pos",
         "vec_to_goal", "vec_to_hoop_body", "opp_pos_rel_body", "opp_vel_rel_body_ego",
@@ -177,7 +185,7 @@ def test_duel_v3_body_ego_block_names_in_order():
 
 
 def test_duel_v3_body_ego_uses_body_frame_for_relative_blocks():
-    spec = obs_spec.DUEL_V3_BODY_EGO
+    spec = DUEL_V3_BODY_EGO
     assert obs_spec.VEC_TO_GOAL_BODY     in spec.blocks
     assert obs_spec.VEC_TO_HOOP_BODY     in spec.blocks
     assert obs_spec.OPP_POS_REL_BODY     in spec.blocks
@@ -185,19 +193,6 @@ def test_duel_v3_body_ego_uses_body_frame_for_relative_blocks():
     # No world-frame opp blocks in v3.
     assert obs_spec.OPP_POS_REL          not in spec.blocks
     assert obs_spec.OPP_VEL_REL_WORLD    not in spec.blocks
-
-
-def test_spec_by_name_registers_duel_v3_body_ego():
-    from envs.quidditch.obs_spec import SPEC_BY_NAME, DUEL_V3_BODY_EGO
-    assert SPEC_BY_NAME["DUEL_V3_BODY_EGO"] is DUEL_V3_BODY_EGO
-
-
-def test_spec_by_name_set_is_exact():
-    """Adding a new spec without registering it (or removing one) breaks here."""
-    from envs.quidditch.obs_spec import SPEC_BY_NAME
-    assert set(SPEC_BY_NAME) == {
-        "SIMPLE_ENV_OBS", "DUEL_V1_BODY", "DUEL_V2_WORLD", "DUEL_V3_BODY_EGO",
-    }
 
 
 def test_world_to_body_identity_rotation_passes_vec_through():
@@ -239,11 +234,11 @@ def test_world_to_body_preserves_norm():
 
 
 def test_duel_v3_body_ego_yaml_resolves_to_canonical_spec():
-    """conf/obs/duel_v3_body_ego.yaml must declare name=DUEL_V3_BODY_EGO
-    so that SPEC_BY_NAME[cfg.obs.name] lookup in env_factories resolves."""
+    """conf/obs/duel_v3_body_ego.yaml must declare name=DUEL_V3_BODY_EGO and
+    its blocks list must rebuild the canonical 25-d body-frame spec."""
     from pathlib import Path
     from omegaconf import OmegaConf
     cfg = OmegaConf.load(Path(__file__).resolve().parents[3] / "conf" / "obs" / "duel_v3_body_ego.yaml")
     assert cfg.name == "DUEL_V3_BODY_EGO"
     assert int(cfg.n_stack) == 3
-    assert obs_spec.SPEC_BY_NAME[cfg.name] is obs_spec.DUEL_V3_BODY_EGO
+    assert obs_spec.load_obs_yaml("duel_v3_body_ego") == DUEL_V3_BODY_EGO

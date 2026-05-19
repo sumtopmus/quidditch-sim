@@ -36,7 +36,12 @@ from core.world import World
 from core.quadrotor import Quadrotor
 from core.drone.cf2x import cf2x_assets, cf2x_fragment
 from envs.quidditch import obs_spec
-from envs.quidditch.obs_spec import DUEL_V1_BODY, ObsSpec
+from envs.quidditch.obs_spec import ObsSpec, load_obs_yaml
+
+# Default non-learner spec: the 22-d body-mixed legacy team obs.  Resolved at
+# import time so frozen red checkpoints load without surgery.  See decisions
+# 2026-05-15 (TEAM_ENV_OBS → DUEL_V1_BODY rename).
+_DUEL_V1_BODY: ObsSpec = load_obs_yaml("duel_v1_body")
 from envs.quidditch.scene import arena_wall_fragment, hoop_fragment
 from envs.quidditch.scoring import GeomDistanceScorer
 from envs.quidditch.tagging import TagDistanceScorer
@@ -129,7 +134,7 @@ class QuidditchTeamEnv(ParallelEnv):
             )
         self._learner_id: str | None = learner_id
         self._learner_spec: ObsSpec = (
-            learner_spec if learner_spec is not None else DUEL_V1_BODY
+            learner_spec if learner_spec is not None else _DUEL_V1_BODY
         )
 
         # Observation spaces: build per-agent based on its spec.
@@ -206,7 +211,7 @@ class QuidditchTeamEnv(ParallelEnv):
     def _spec_for_agent(self, agent_id: str) -> ObsSpec:
         if agent_id == self._learner_id:
             return self._learner_spec
-        return DUEL_V1_BODY
+        return _DUEL_V1_BODY
 
     def observation_space(self, agent: str) -> spaces.Box:
         return self.observation_spaces[agent]

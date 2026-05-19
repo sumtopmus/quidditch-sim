@@ -87,8 +87,10 @@ def test_team_factory_threads_learner_id_and_spec_into_team_env():
     """TeamEnvFactory must resolve cfg.obs.blocks → ObsSpec and pass it as
     learner_spec to QuidditchTeamEnv, so the learner sees the right shape."""
     from envs.quidditch.env_factories import TeamEnvFactory
-    from envs.quidditch.obs_spec import DUEL_V3_BODY_EGO
+    from envs.quidditch.obs_spec import load_obs_yaml
     from envs.quidditch.team_env import TeamConfig
+
+    DUEL_V3_BODY_EGO = load_obs_yaml("duel_v3_body_ego")
 
     factory = TeamEnvFactory(
         n_envs=1,

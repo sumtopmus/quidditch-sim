@@ -148,18 +148,9 @@ def test_obs_config_default_blocks_is_empty_list():
     assert cfg.blocks == []
 
 
-@pytest.mark.parametrize("stem,name_const", [
-    ("simple",           "SIMPLE_ENV_OBS"),
-    ("duel_v1_body",     "DUEL_V1_BODY"),
-    ("duel_v2_world",    "DUEL_V2_WORLD"),
-    ("duel_v3_body_ego", "DUEL_V3_BODY_EGO"),
-])
-def test_yaml_round_trip_matches_legacy_spec_by_name(stem, name_const):
-    """load_obs_yaml(stem) must match SPEC_BY_NAME[name_const] block-for-block."""
-    yaml_spec = obs_spec.load_obs_yaml(stem)
-    legacy_spec = obs_spec.SPEC_BY_NAME[name_const]
-    assert yaml_spec == legacy_spec, (
-        f"YAML-built spec for {stem!r} disagrees with legacy {name_const!r}.\n"
-        f"  yaml:   {[b.name for b in yaml_spec.blocks]}\n"
-        f"  legacy: {[b.name for b in legacy_spec.blocks]}"
-    )
+def test_composed_constants_are_gone():
+    """The composed-spec Python constants are deleted; only ObsBlock and helpers remain."""
+    from envs.quidditch import obs_spec
+    for removed in ("SIMPLE_ENV_OBS", "DUEL_V1_BODY", "DUEL_V2_WORLD",
+                    "DUEL_V3_BODY_EGO", "SPEC_BY_NAME"):
+        assert not hasattr(obs_spec, removed), f"{removed} should be deleted"

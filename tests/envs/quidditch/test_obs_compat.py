@@ -8,10 +8,14 @@ from envs.quidditch.obs_spec import (
     ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS, UNIT_TO_GOAL,
     SIGNED_DIST_NORM, VEC_TO_HOOP, OPP_POS_REL,
     OPP_VEL_REL_BODY, OPP_VEL_REL_WORLD, CLOSING_RATE,
-    SIMPLE_ENV_OBS, DUEL_V1_BODY, DUEL_V2_WORLD,
-    ObsBlock, ObsSpec,
+    ObsBlock, ObsSpec, load_obs_yaml,
 )
 from scripts._train_common import check_obs_compat, format_obs_block
+
+# Composed specs loaded from YAML so tests don't depend on Python-side constants.
+SIMPLE_ENV_OBS = load_obs_yaml("simple")
+DUEL_V1_BODY = load_obs_yaml("duel_v1_body")
+DUEL_V2_WORLD = load_obs_yaml("duel_v2_world")
 
 
 def _write_info(tmp_path: Path, spec: obs_spec.ObsSpec, n_stack: int) -> Path:
