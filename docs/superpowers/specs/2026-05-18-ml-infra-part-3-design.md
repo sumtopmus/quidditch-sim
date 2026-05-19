@@ -67,7 +67,7 @@ Three open threads remain:
 │    dsim list-runs            [--run NAME]                              │
 │    dsim resume               <run-name> [--trial T] [--ckpt C]         │
 │    dsim promote              <run-name> [--alias prod]                 │
-│    dsim describe-run         <run-name> [--trial T]   # wraps render_model_doc│
+│    dsim describe-run         <run-name> [--trial T]   # display existing MODEL.md│
 │    dsim sweep create|agent|agents <args…>                              │
 │    dsim tui                  # launches the Textual app                │
 │                                                                        │
@@ -457,7 +457,7 @@ train:       ## Launch a single training run  EXP=<name> [OVERRIDES="key=val …
 | `make promote` | `dsim promote <run-name>` |
 | `make list-runs` | `dsim list-runs [--run <name>]` |
 | `make obs-specs` | `dsim obs-specs` (kept as a `dsim` subcommand — pretty-prints SPEC_BY_NAME) |
-| `make describe-run` | `dsim describe-run <run-name> [--trial T]` (wraps the existing `scripts.render_model_doc`) |
+| `make describe-run` | `dsim describe-run <run-name> [--trial T]` (displays the existing MODEL.md; if absent, exits with an error pointing at `python -m scripts.render_model_doc`) |
 | `make sweep` / `sweep-agent` / `sweep-agents` | `dsim sweep create` / `dsim sweep agent` / `dsim sweep agents <args…>` |
 
 [repo/README.md](README.md) and [repo/CLAUDE.md](CLAUDE.md) get a "CLI surface" section explaining the three modes: `dsim` (inspection/dispatch), Hydra apps (composable runs), Make (chores).
@@ -501,13 +501,13 @@ Single-agent canary (`step 434 / reward 7.3837`) and team canary must remain byt
 4. **Merge into develop** with `--no-ff` merge commit (per project convention).
 5. **`feature/tui-launcher` retired**: branch + worktree removed after Slice 2 lands. The plan/spec docs in `repo/docs/superpowers/{specs,plans}/2026-05-1{0,1}-tui-launcher-*` are kept as historical record.
 
-## Open questions
+## Resolved decisions
 
-1. **Should `[e] edit overrides` in the Train task be implemented in Slice 2?** Three options: (a) full form-with-validation tied to Hydra schema; (b) open `$EDITOR` on a tmpfile pre-filled with `# overrides for blue_v5\n# one key=value per line\n` and parse the diff; (c) drop from Slice 2 — overrides are always reachable via shell. **Recommendation: drop from Slice 2, revisit if it hurts.**
-2. **Should `dsim describe-run` regenerate the MODEL.md (default) or only display the existing one?** **Recommendation: regenerate by default (`--no-regen` flag to display existing). Matches the existing `make describe-run` behavior.**
-3. **Should obs-preflight be a guard rail in `scripts/train.py`'s `init.mode == pretrain` path?** Currently `check_obs_compat` strict-raises mid-init. The preflight could run earlier and emit a friendly message, then strict-raise the same way for `pretrain` (or auto-suggest `init.mode=warm_start`). **Recommendation: warn-then-raise; do not auto-switch modes (too magical).**
-4. **`dsim sweep` subcommand layout** — `dsim sweep create <name>` vs `dsim sweep new <name>`. **Recommendation: `create` (matches W&B's own terminology).**
-5. **`models/.cache/` entries** — included in `dsim inventory` by default or behind `--include-cache`? **Recommendation: behind `--include-cache` (default lists only committed-vendored), so the default output is the canonical promoted set.**
+1. **`[e] edit overrides` in the Train task — opens `$EDITOR` on a tmpfile, parses the diff.** Tmpfile pre-filled with a header comment (`# overrides for blue_v5`, `# one key=value per line — lines starting with # are ignored`) and the empty body. On save+exit, parse non-comment lines as Hydra override tokens, validate each is a syntactically valid `key=value` (or `+key=value` / `~key`), display the resolved command in Pane 3, and dispatch on `[Enter]`. Implemented as part of Slice 2.
+2. **`dsim describe-run` displays the existing `MODEL.md`** — does not regenerate. If `MODEL.md` is absent from the resolved run directory, exits with a non-zero code and a message pointing at `python -m scripts.render_model_doc --run-dir <path>`. No `--regen` flag in Slice 1.
+3. **obs-preflight as a guard rail in `scripts/train.py`'s `init.mode == pretrain` path — warn-then-raise.** Preflight runs early, prints the friendly diff, then if `compatible=False` the existing `check_obs_compat` strict-raise fires the same way it does today. No auto-switch to `init.mode=warm_start`.
+4. **`dsim sweep` subcommand layout — `dsim sweep create <name>`** (matches W&B's own terminology), `dsim sweep agent <id>`, `dsim sweep agents <id> --n N`.
+5. **`models/.cache/` entries — behind `--include-cache`** for `dsim inventory`. Default output lists only committed-vendored promoted models, matching the canonical "promoted set" semantics; `--include-cache` adds the wandb-downloaded entries underneath. The TUI's Inventory task likewise defaults to vendored-only with an `[i] include cache` toggle.
 
 ## References
 
