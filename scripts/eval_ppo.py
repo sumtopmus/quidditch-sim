@@ -1,108 +1,37 @@
-"""Evaluate a trained PPO model on QuidditchSimpleEnv.
+"""Single-agent eval — Hydra entrypoint.
 
 Usage:
-    conda activate uav
-    cd repo
-
-    # Visual evaluation (MuJoCo viewer) — 10 episodes:
-    python eval_ppo.py --model runs/ppo_hoop_v1/best_model
-
-    # Headless stats over 50 episodes:
-    python eval_ppo.py --model runs/ppo_hoop_v1/best_model --no-render --episodes 50
-
-    # Evaluate a specific checkpoint:
-    python eval_ppo.py --model runs/ppo_hoop_v1/checkpoints/ppo_hoop_70000_steps
+    python -m scripts.eval_ppo +eval_ppo=default \
+        eval_ppo.model_uri=models/ppo_hoop_rand_start_20260505_174509/best_model \
+        eval.gui=true eval.n_episodes=10
 """
+from __future__ import annotations
 
+import os
 import sys
 from pathlib import Path
 
-# Allow imports from the project root (envs/) regardless of CWD.
-sys.path.insert(0, str(Path(__file__).parent.parent))
-
-import argparse
-import os
-
-import numpy as np
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
+import hydra
+import numpy as np
+from omegaconf import DictConfig
 from stable_baselines3 import PPO
 
 from envs.quidditch.simple_env import QuidditchSimpleEnv
+from scripts._artifact_io import resolve_parent
 
 
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="Evaluate a PPO model on QuidditchSimpleEnv")
-    p.add_argument(
-        "--model",
-        default="runs/ppo_hoop_v1/best_model",
-        help="Path to model .zip (without extension)",
-    )
-    p.add_argument(
-        "--episodes",
-        type=int,
-        default=10,
-        help="Number of evaluation episodes (default: 10)",
-    )
-    p.add_argument(
-        "--no-render",
-        action="store_true",
-        help="Run headless (no viewer) — useful for batch stats",
-    )
-    p.add_argument(
-        "--deterministic",
-        action="store_true",
-        default=True,
-        help="Use deterministic policy actions (default: True)",
-    )
-    p.add_argument(
-        "--stochastic",
-        dest="deterministic",
-        action="store_false",
-        help="Use stochastic policy actions",
-    )
-    return p.parse_args()
-
-
-def run_episode(env: QuidditchSimpleEnv, model: PPO, deterministic: bool) -> dict:
-    obs, _ = env.reset()
-    total_reward = 0.0
-    scored = False
-    crashed = False
-    steps = 0
-
-    while True:
-        action, _ = model.predict(obs, deterministic=deterministic)
-        obs, reward, terminated, truncated, info = env.step(action)
-        total_reward += reward
-        steps += 1
-
-        if info.get("scored"):
-            scored = True
-        if terminated and not info.get("scored"):
-            crashed = True
-
-        if terminated or truncated:
-            break
-
-    return {
-        "reward": total_reward,
-        "scored": scored,
-        "crashed": crashed,
-        "steps": steps,
-    }
-
-
-def main() -> None:
-    args = parse_args()
+@hydra.main(version_base=None, config_path="../conf", config_name="config")
+def main(cfg: DictConfig) -> None:
+    ep = cfg.eval_ppo
 
     # Route through resolve_parent so wandb://run:alias URIs work alongside
-    # filesystem paths.  A plain path passes through unchanged.
-    from scripts._artifact_io import resolve_parent
-    model_path = str(resolve_parent(args.model))
+    # filesystem paths.
+    model_path = str(resolve_parent(ep.model_uri))
     if not model_path.endswith(".zip") and not os.path.exists(model_path):
-        # Try with .zip extension
         if os.path.exists(model_path + ".zip"):
             model_path = model_path + ".zip"
         else:
@@ -110,51 +39,63 @@ def main() -> None:
                 f"Model not found: {model_path} (tried with and without .zip)"
             )
 
-    print(f"Model   : {model_path}")
-    print(f"Episodes: {args.episodes}")
-    print(f"Render  : {'no (headless)' if args.no_render else 'yes (MuJoCo viewer)'}")
-    print(f"Policy  : {'deterministic' if args.deterministic else 'stochastic'}")
-    print()
-
-    render_mode = None if args.no_render else "human"
+    render_mode = "human" if bool(cfg.eval.gui) else None
     env = QuidditchSimpleEnv(render_mode=render_mode)
     model = PPO.load(model_path, env=env)
 
-    results = []
-    for ep in range(1, args.episodes + 1):
-        r = run_episode(env, model, args.deterministic)
-        results.append(r)
-        status = "SCORE" if r["scored"] else ("CRASH" if r["crashed"] else "timeout")
-        print(
-            f"  ep {ep:3d}/{args.episodes}  "
-            f"reward={r['reward']:+7.2f}  "
-            f"steps={r['steps']:5d}  "
-            f"{status}"
-        )
+    n_eps = int(ep.get("n_episodes", cfg.eval.n_episodes))
+    deterministic = bool(cfg.eval.deterministic)
+    seed = int(cfg.eval.seed)
 
-    # ---- aggregate stats ----
-    n = len(results)
-    score_rate = sum(r["scored"] for r in results) / n * 100
-    crash_rate = sum(r["crashed"] for r in results) / n * 100
-    timeout_rate = 100.0 - score_rate - crash_rate
-    mean_reward = np.mean([r["reward"] for r in results])
-    std_reward = np.std([r["reward"] for r in results])
+    rewards: list[float] = []
+    scored_steps: list[int] = []
+    n_scored = 0
+    n_crashed = 0
+    for i in range(n_eps):
+        obs, _ = env.reset(seed=seed + i)
+        ep_reward = 0.0
+        steps = 0
+        scored = False
+        crashed = False
+        while True:
+            action, _ = model.predict(obs, deterministic=deterministic)
+            obs, r, terminated, truncated, info = env.step(action)
+            ep_reward += float(r)
+            steps += 1
+            if info.get("scored"):
+                scored = True
+            if terminated and not info.get("scored"):
+                crashed = True
+            if terminated or truncated:
+                break
+        rewards.append(ep_reward)
+        if scored:
+            scored_steps.append(steps)
+            n_scored += 1
+        if crashed:
+            n_crashed += 1
 
-    scored_steps = [r["steps"] for r in results if r["scored"]]
-    mean_steps_to_score = np.mean(scored_steps) if scored_steps else float("nan")
+    n = len(rewards)
+    mean_reward = float(np.mean(rewards)) if rewards else 0.0
+    std_reward = float(np.std(rewards)) if rewards else 0.0
+    score_rate = (n_scored / n * 100) if n else 0.0
+    crash_rate = (n_crashed / n * 100) if n else 0.0
+    timeout_rate = max(0.0, 100.0 - score_rate - crash_rate)
 
     print()
     print("=" * 50)
-    print(f"  Score rate   : {score_rate:5.1f}%  ({sum(r['scored'] for r in results)}/{n})")
-    print(f"  Crash rate   : {crash_rate:5.1f}%  ({sum(r['crashed'] for r in results)}/{n})")
+    print(f"  Score rate   : {score_rate:5.1f}%  ({n_scored}/{n})")
+    print(f"  Crash rate   : {crash_rate:5.1f}%  ({n_crashed}/{n})")
     print(f"  Timeout rate : {timeout_rate:5.1f}%")
     print(f"  Mean reward  : {mean_reward:+.2f} ± {std_reward:.2f}")
+    print(f"  n={n}  mean={mean_reward:+.4f}  std={std_reward:.4f}")
     if scored_steps:
+        mean_steps_to_score = float(np.mean(scored_steps))
         print(f"  Steps/score  : {mean_steps_to_score:.0f}  "
               f"({mean_steps_to_score * 0.05:.1f} s at 20 Hz)")
     print("=" * 50)
 
-    if not args.no_render and env._quad is not None:
+    if bool(cfg.eval.gui) and getattr(env, "_quad", None) is not None:
         env._quad.idle()
     env.close()
 
