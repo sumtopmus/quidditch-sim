@@ -108,12 +108,37 @@ def test_parent_missing_obs_block_passes_with_surgery(tmp_path: Path):
 # ── New Hydra-based compat check (post-cutover) ─────────────────────────────
 
 
+_DUEL_V2_BLOCKS_YAML = (
+    "  blocks:\n"
+    "    - ANG_VEL\n"
+    "    - ANG_POS\n"
+    "    - LIN_VEL_BODY\n"
+    "    - LIN_POS\n"
+    "    - UNIT_TO_GOAL\n"
+    "    - VEC_TO_HOOP\n"
+    "    - OPP_POS_REL\n"
+    "    - OPP_VEL_REL_WORLD\n"
+    "    - CLOSING_RATE\n"
+)
+_DUEL_V1_BLOCKS_YAML = (
+    "  blocks:\n"
+    "    - ANG_VEL\n"
+    "    - ANG_POS\n"
+    "    - LIN_VEL_BODY\n"
+    "    - LIN_POS\n"
+    "    - UNIT_TO_GOAL\n"
+    "    - SIGNED_DIST_NORM\n"
+    "    - OPP_POS_REL\n"
+    "    - OPP_VEL_REL_BODY\n"
+)
+
+
 def test_check_obs_compat_from_hydra_strict_match(tmp_path: Path):
     from scripts.train import _check_obs_compat_from_hydra
     hydra_dir = tmp_path / ".hydra"
     hydra_dir.mkdir()
     (hydra_dir / "config.yaml").write_text(
-        "obs:\n  name: DUEL_V2_WORLD\n  n_stack: 3\n"
+        "obs:\n  name: DUEL_V2_WORLD\n  n_stack: 3\n" + _DUEL_V2_BLOCKS_YAML
     )
     _check_obs_compat_from_hydra(hydra_dir, DUEL_V2_WORLD, current_n_stack=3)
 
@@ -123,7 +148,7 @@ def test_check_obs_compat_from_hydra_raises_on_mismatch(tmp_path: Path):
     hydra_dir = tmp_path / ".hydra"
     hydra_dir.mkdir()
     (hydra_dir / "config.yaml").write_text(
-        "obs:\n  name: DUEL_V1_BODY\n  n_stack: 1\n"
+        "obs:\n  name: DUEL_V1_BODY\n  n_stack: 1\n" + _DUEL_V1_BLOCKS_YAML
     )
     with pytest.raises(SystemExit):
         _check_obs_compat_from_hydra(hydra_dir, DUEL_V2_WORLD, current_n_stack=3)
