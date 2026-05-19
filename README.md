@@ -117,6 +117,36 @@ make check-gui      # opens MuJoCo viewer for visual inspection
 
 ---
 
+## CLI surface
+
+Three command surfaces, by purpose:
+
+| Purpose | Surface | Examples |
+|---|---|---|
+| Inspection / read-only / one-shot dispatch | **`dsim`** (Typer) | `dsim inventory`, `dsim obs-preflight --parent X --child-obs Y`, `dsim lineage --target ...`, `dsim list-runs`, `dsim resume <run-name>`, `dsim promote <run-name>`, `dsim describe-run <run-name>`, `dsim obs-specs`, `dsim sweep create <name>` |
+| Composable runs (training, eval, battery, sweep) | **Hydra apps** (`python -m scripts.X`) | `python -m scripts.train +experiment=blue_v5`, `python -m scripts.eval_team +eval_team=default +learner=blue learner.uri=<uri> opponent=beeline_red`, `python -m scripts.eval_battery +eval_battery=default eval_battery.candidate=<uri>`, `python -m scripts.eval_ppo +eval_ppo=default eval_ppo.model_uri=<uri>` |
+| Chores (install, test, train one-off, TUI) | **`make`** | `make install`, `make test`, `make test-fast`, `make test-warm MODEL=<x>`, `make train EXP=blue_v5`, `make tui` |
+
+Inspection and dispatch went to `dsim` for discoverability (`dsim --help` lists everything). Hydra apps cover anything with composable configs. Make is reserved for true chores plus the one-off `make train EXP=X` muscle-memory shortcut.
+
+### Replacing removed `make` targets
+
+| Old | New |
+|---|---|
+| `make demo` | TUI -> Demo task (Slice 2); or `mjpython demo/menu.py <key>` directly |
+| `make camera-test CAM=<x>` | TUI -> Camera Test (Slice 2); or `python demo/camera_test.py --cam <x>` |
+| `make eval` | `python -m scripts.eval_ppo +eval_ppo=default eval_ppo.model_uri=<uri>` |
+| `make eval-team LEARNER=… BLUE=… RED=… GUI=1` | `python -m scripts.eval_team +eval_team=default +learner=<side> learner.uri=<uri> opponent=<choice> eval.gui=true` |
+| `make resume RUN_NAME=…` | `dsim resume <run-name>` |
+| `make lineage RUN_NAME=…` | `dsim lineage --target models/ppo_hoop_<name>_*/best_model` |
+| `make promote RUN_NAME=…` | `dsim promote <run-name>` |
+| `make list-runs` | `dsim list-runs` |
+| `make obs-specs` | `dsim obs-specs` |
+| `make describe-run RUN_NAME=…` | `dsim describe-run <run-name>` |
+| `make sweep SWEEP=…` / `sweep-agents ID=… N=…` | `dsim sweep create <name>` / `dsim sweep agents <id> --n N` |
+
+---
+
 ## Workflow
 
 All day-to-day tasks go through `make`. Run `make help` for the full list.
