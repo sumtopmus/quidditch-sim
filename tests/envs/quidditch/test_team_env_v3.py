@@ -218,7 +218,10 @@ def test_subproc_vec_env_does_not_lose_spec_identity_on_pickling():
         team_cfg=TeamConfig(randomise_red_start=False),
         learner_id="blue_0",
         opponent_spec="zero",
-        obs_spec_name="DUEL_V3_BODY_EGO",
+        obs_blocks=["ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+                    "VEC_TO_GOAL_BODY", "VEC_TO_HOOP_BODY", "OPP_POS_REL_BODY",
+                    "OPP_VEL_REL_BODY_EGO", "CLOSING_RATE"],
+        obs_name="DUEL_V3_BODY_EGO",
         frame_stack=1,
         seed=42,
     )

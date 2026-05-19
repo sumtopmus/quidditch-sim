@@ -2,11 +2,21 @@
 from __future__ import annotations
 
 
+_SIMPLE_BLOCKS = ["ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+                  "UNIT_TO_GOAL", "SIGNED_DIST_NORM"]
+_DUEL_V2_BLOCKS = ["ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+                   "UNIT_TO_GOAL", "VEC_TO_HOOP", "OPP_POS_REL",
+                   "OPP_VEL_REL_WORLD", "CLOSING_RATE"]
+_DUEL_V3_BLOCKS = ["ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+                   "VEC_TO_GOAL_BODY", "VEC_TO_HOOP_BODY", "OPP_POS_REL_BODY",
+                   "OPP_VEL_REL_BODY_EGO", "CLOSING_RATE"]
+
+
 def test_simple_env_factory_builds_16d_train_env():
     from envs.quidditch.env_factories import SimpleEnvFactory
     factory = SimpleEnvFactory(
         n_envs=2, randomise_start=False, episode_seconds=30.0,
-        obs_spec_name="SIMPLE_ENV_OBS", seed=42,
+        obs_blocks=_SIMPLE_BLOCKS, obs_name="SIMPLE_ENV_OBS", seed=42,
     )
     train_env = factory.build_train_env()
     try:
@@ -20,7 +30,7 @@ def test_simple_env_factory_builds_eval_env_single_subprocess():
     from envs.quidditch.env_factories import SimpleEnvFactory
     factory = SimpleEnvFactory(
         n_envs=2, randomise_start=False, episode_seconds=30.0,
-        obs_spec_name="SIMPLE_ENV_OBS", seed=42,
+        obs_blocks=_SIMPLE_BLOCKS, obs_name="SIMPLE_ENV_OBS", seed=42,
     )
     eval_env = factory.build_eval_env()
     try:
@@ -38,7 +48,8 @@ def test_team_env_factory_builds_75d_train_env_with_frame_stack():
         team_cfg=TeamConfig(),
         learner_id="blue_0",
         opponent_spec="beeline_red",
-        obs_spec_name="DUEL_V2_WORLD",
+        obs_blocks=_DUEL_V2_BLOCKS,
+        obs_name="DUEL_V2_WORLD",
         frame_stack=3,
         seed=42,
     )
@@ -60,7 +71,8 @@ def test_team_env_factory_team_obs_unstacked():
         team_cfg=TeamConfig(),
         learner_id="red_0",
         opponent_spec="beeline_blue",
-        obs_spec_name="DUEL_V2_WORLD",
+        obs_blocks=_DUEL_V2_BLOCKS,
+        obs_name="DUEL_V2_WORLD",
         frame_stack=1,
         seed=42,
     )
@@ -72,7 +84,7 @@ def test_team_env_factory_team_obs_unstacked():
 
 
 def test_team_factory_threads_learner_id_and_spec_into_team_env():
-    """TeamEnvFactory must resolve cfg.obs.name → ObsSpec and pass it as
+    """TeamEnvFactory must resolve cfg.obs.blocks → ObsSpec and pass it as
     learner_spec to QuidditchTeamEnv, so the learner sees the right shape."""
     from envs.quidditch.env_factories import TeamEnvFactory
     from envs.quidditch.obs_spec import DUEL_V3_BODY_EGO
@@ -83,7 +95,8 @@ def test_team_factory_threads_learner_id_and_spec_into_team_env():
         team_cfg=TeamConfig(randomise_red_start=False),
         learner_id="blue_0",
         opponent_spec="zero",
-        obs_spec_name="DUEL_V3_BODY_EGO",
+        obs_blocks=_DUEL_V3_BLOCKS,
+        obs_name="DUEL_V3_BODY_EGO",
         frame_stack=1,
         seed=42,
     )
