@@ -9,6 +9,8 @@ See docs/superpowers/specs/2026-05-12-obs-spec-design.md for rationale.
 from __future__ import annotations
 
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Iterable
 
 import numpy as np
 from numpy.typing import ArrayLike
@@ -147,6 +149,52 @@ DUEL_V3_BODY_EGO: ObsSpec = ObsSpec((
     OPP_VEL_REL_BODY_EGO,
     CLOSING_RATE,
 ))
+
+
+# ── Block registry — name→block for YAML-driven obs spec resolution ──────────
+# Built by introspecting module-level ObsBlock attributes.  Keys are the
+# Python identifier (UPPER_SNAKE_CASE), not ObsBlock.name.  Multiple blocks
+# may share a `name` field (legacy collision — see _LEGACY_NAME_RENAMES);
+# their Python identifiers always differ.
+#
+# When adding a new module-level ObsBlock constant, add it ABOVE this line.
+BLOCK_BY_NAME: dict[str, "ObsBlock"] = {
+    name: obj for name, obj in dict(globals()).items()
+    if isinstance(obj, ObsBlock)
+}
+
+
+def build_spec_from_block_names(block_names: Iterable[str]) -> ObsSpec:
+    """Build an ObsSpec from a sequence of canonical block identifiers.
+
+    Raises KeyError naming the unknown block and listing known ones."""
+    blocks: list[ObsBlock] = []
+    for n in block_names:
+        if n not in BLOCK_BY_NAME:
+            raise KeyError(
+                f"Unknown ObsBlock {n!r}. "
+                f"Known blocks: {sorted(BLOCK_BY_NAME)}"
+            )
+        blocks.append(BLOCK_BY_NAME[n])
+    return ObsSpec(tuple(blocks))
+
+
+def load_obs_yaml(stem: str) -> ObsSpec:
+    """Load conf/obs/<stem>.yaml and build its ObsSpec.
+
+    Convenience for tests + scripts that need a known spec by config name.
+    Raises FileNotFoundError if the YAML is missing, KeyError if it lacks
+    a `blocks:` field or names an unknown block."""
+    import yaml
+    repo_root = Path(__file__).resolve().parents[2]
+    yaml_path = repo_root / "conf" / "obs" / f"{stem}.yaml"
+    cfg = yaml.safe_load(yaml_path.read_text())
+    if "blocks" not in cfg:
+        raise KeyError(
+            f"conf/obs/{stem}.yaml has no `blocks:` field — "
+            f"either upgrade the YAML to the new schema or use SPEC_BY_NAME[name] directly."
+        )
+    return build_spec_from_block_names(cfg["blocks"])
 
 
 # ── Name registry — used by config-driven obs selection ──────────────────────
