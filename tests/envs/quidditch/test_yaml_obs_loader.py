@@ -44,15 +44,23 @@ def test_build_spec_from_block_names_raises_on_unknown_block():
     assert "ANG_VEL" in msg  # error lists known blocks
 
 
-def test_load_obs_yaml_simple(tmp_path: Path, monkeypatch):
-    """load_obs_yaml reads conf/obs/<stem>.yaml and builds an ObsSpec.
+def test_load_obs_yaml_simple():
+    """load_obs_yaml reads conf/obs/simple.yaml and builds an ObsSpec."""
+    spec = obs_spec.load_obs_yaml("simple")
+    assert isinstance(spec, ObsSpec)
+    assert spec.dim == 16
 
-    Uses the repo's real conf/obs/simple.yaml — at this task the YAML still
-    holds the legacy `name`-only schema, so the test only asserts that the
-    helper raises a clear error when `blocks:` is absent.
-    """
-    with pytest.raises(KeyError, match="blocks"):
-        obs_spec.load_obs_yaml("simple")
+
+def test_load_obs_yaml_missing_blocks_field_raises(tmp_path: Path, monkeypatch):
+    """If a YAML lacks blocks:, load_obs_yaml raises KeyError mentioning blocks."""
+    repo_root = Path(obs_spec.__file__).resolve().parents[2]
+    target = repo_root / "conf" / "obs" / "_test_no_blocks.yaml"
+    target.write_text("name: TEST\nn_stack: 1\n")
+    try:
+        with pytest.raises(KeyError, match="blocks"):
+            obs_spec.load_obs_yaml("_test_no_blocks")
+    finally:
+        target.unlink()
 
 
 def test_opp_vel_rel_variants_have_unique_names():
@@ -138,3 +146,20 @@ def test_obs_config_default_blocks_is_empty_list():
     from config_schema import ObsConfig
     cfg = ObsConfig()
     assert cfg.blocks == []
+
+
+@pytest.mark.parametrize("stem,name_const", [
+    ("simple",           "SIMPLE_ENV_OBS"),
+    ("duel_v1_body",     "DUEL_V1_BODY"),
+    ("duel_v2_world",    "DUEL_V2_WORLD"),
+    ("duel_v3_body_ego", "DUEL_V3_BODY_EGO"),
+])
+def test_yaml_round_trip_matches_legacy_spec_by_name(stem, name_const):
+    """load_obs_yaml(stem) must match SPEC_BY_NAME[name_const] block-for-block."""
+    yaml_spec = obs_spec.load_obs_yaml(stem)
+    legacy_spec = obs_spec.SPEC_BY_NAME[name_const]
+    assert yaml_spec == legacy_spec, (
+        f"YAML-built spec for {stem!r} disagrees with legacy {name_const!r}.\n"
+        f"  yaml:   {[b.name for b in yaml_spec.blocks]}\n"
+        f"  legacy: {[b.name for b in legacy_spec.blocks]}"
+    )
