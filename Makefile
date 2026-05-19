@@ -46,7 +46,7 @@ PYTHON    := $(CONDA_RUN) python
 MJPYTHON  := $(CONDA_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
-.PHONY: help test test-fast test-warm camera-test demo train resume eval eval-headless lineage promote install clean list-runs obs-specs describe-run eval-team sweep sweep-agent sweep-agents
+.PHONY: help test test-fast camera-test demo train resume eval eval-headless lineage promote install clean list-runs obs-specs describe-run eval-team sweep sweep-agent sweep-agents
 
 .DEFAULT_GOAL := help
 
@@ -66,10 +66,6 @@ test: ## ✅ Run all tests (unit + integration)
 
 test-fast: ## ⚡ Unit tests only (skip slow integration canaries)
 	@$(PYTHON) -m pytest -m "not slow"
-
-test-warm: ## ✅ Warm-start preserves single-agent behavior  MODEL=<run-name>
-	@test -n "$(MODEL)" || { echo "ERROR: MODEL=<run-name> required (see 'make list-runs')"; exit 1; }; \
-	 MODEL="$(MODEL)" $(PYTHON) -m pytest tests/core/policies/test_warm_start.py
 
 CAM ?= grid
 camera-test: ## 🎥 Render hover flight as 2x2 grid → mp4 (CAM=grid|fixed|north|east|south|west|top|fpv|tpv|port|starboard)
