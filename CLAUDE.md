@@ -7,7 +7,7 @@ Three surfaces by purpose:
   obs-preflight, obs-specs, describe-run) and dispatch (resume, promote,
   sweep). Single binary; `dsim --help` lists all.
 - `python -m scripts.<name>` — Hydra apps for composable runs:
-  `train`, `eval_team`, `eval_ppo`, `eval_battery`.
+  `train`, `eval_team`, `eval_solo`, `eval_battery`.
 - `make <target>` — chores only: `install`, `clean`, `test*`, `tui`, `train`.
 
 See `README.md` "CLI surface" section for the migration map.

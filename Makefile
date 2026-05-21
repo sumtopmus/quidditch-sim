@@ -5,7 +5,7 @@
 #   python -m scripts.train +experiment=X  Hydra entrypoint (composable)
 #   python -m scripts.eval_team  …         Hydra entrypoint
 #   python -m scripts.eval_battery …       Hydra entrypoint
-#   python -m scripts.eval_ppo   …         Hydra entrypoint
+#   python -m scripts.eval_solo  …         Hydra entrypoint
 #   make tui                               opens the controller TUI (Slice 2)
 
 CONDA_ENV  ?= uav

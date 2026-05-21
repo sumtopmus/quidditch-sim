@@ -1,8 +1,8 @@
 """Single-agent eval — Hydra entrypoint.
 
 Usage:
-    python -m scripts.eval_ppo +eval_ppo=default \
-        eval_ppo.model_uri=models/ppo_hoop_rand_start_20260505_174509/best_model \
+    python -m scripts.eval_solo +eval_solo=default \
+        eval_solo.model_uri=models/ppo_hoop_rand_start_20260505_174509/best_model \
         eval.gui=true eval.n_episodes=10
 """
 from __future__ import annotations
@@ -26,7 +26,7 @@ from scripts._artifact_io import resolve_parent
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
 def main(cfg: DictConfig) -> None:
-    ep = cfg.eval_ppo
+    ep = cfg.eval_solo
 
     # Route through resolve_parent so wandb://run:alias URIs work alongside
     # filesystem paths.

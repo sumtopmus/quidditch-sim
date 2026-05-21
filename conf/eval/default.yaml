@@ -13,8 +13,8 @@ video:
   cell_width: 960
   cell_height: 540
 
-# Standalone CLI eval params (consumed by eval_team / eval_ppo / eval_battery
-# via cfg.eval_team.eval.* / cfg.eval_ppo.eval.* — these flow in via the
+# Standalone CLI eval params (consumed by eval_team / eval_solo / eval_battery
+# via cfg.eval_team.eval.* / cfg.eval_solo.eval.* — these flow in via the
 # `defaults: - /eval@eval: default` lines in those entrypoints' configs).
 n_episodes: 5
 deterministic: true
