@@ -1,3 +1,5 @@
+# Training-time eval callback params (consumed by scripts/train.py via
+# cfg.eval.{eval_freq_steps,n_eval_episodes,checkpoint_freq_steps,video}).
 eval_freq_steps: 200_000
 n_eval_episodes: 5
 checkpoint_freq_steps: 50_000
@@ -10,3 +12,13 @@ video:
   cells: ["south", "east", "top", "fixed"]
   cell_width: 960
   cell_height: 540
+
+# Standalone CLI eval params (consumed by eval_team / eval_solo / eval_battery
+# via cfg.eval_team.eval.* / cfg.eval_solo.eval.* — these flow in via the
+# `defaults: - /eval@eval: default` lines in those entrypoints' configs).
+n_episodes: 5
+deterministic: true
+crash_aftermath_seconds: 0.0
+gui: false
+randomise_start: false
+seed: 0

@@ -1,3 +1,16 @@
+[project]
+name = "drone-sim"
+version = "0.1.0"
+description = "MuJoCo-based RL project: drones playing simplified Quidditch."
+requires-python = ">=3.11"
+
+[project.scripts]
+dsim = "dsim.cli:app"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["core*", "envs*", "scripts*", "dsim*", "demo*", "tui*"]
+
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]

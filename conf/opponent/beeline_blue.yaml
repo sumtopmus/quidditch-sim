@@ -1,3 +1,4 @@
 kind: scripted
+spec: beeline_blue              # from_spec() spec used by standalone eval CLIs
 _target_: envs.quidditch.opponents.BeelineBlue
 _partial_: true
