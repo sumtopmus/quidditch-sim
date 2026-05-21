@@ -1,4 +1,13 @@
-# Resolves at runtime to envs.quidditch.obs_spec.DUEL_V1_BODY (22-d, body-mixed opp_vel_rel).
-# Used for legacy team runs (pre-2026-05-12 augmentation).
+# 22-d team-play obs, body-mixed opp_vel_rel.  Pre-2026-05-12 schema; used
+# by red_v1 and blue_v1.
 name: DUEL_V1_BODY
 n_stack: 1
+blocks:
+  - ANG_VEL
+  - ANG_POS
+  - LIN_VEL_BODY
+  - LIN_POS
+  - UNIT_TO_GOAL
+  - SIGNED_DIST_NORM
+  - OPP_POS_REL
+  - OPP_VEL_REL_BODY

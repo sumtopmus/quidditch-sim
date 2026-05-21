@@ -50,14 +50,17 @@ def format_obs_block(spec: ObsSpec, n_stack: int) -> str:
 
 def read_obs_spec(info_path: Path | str) -> tuple[ObsSpec, int] | None:
     """Parse run_info.toml and return (ObsSpec, n_stack) or None if [obs] absent."""
+    from envs.quidditch.obs_spec import _apply_legacy_rename
     data = tomllib.loads(Path(info_path).read_text())
     obs = data.get("obs")
     if obs is None:
         return None
     blocks = tuple(
         ObsBlock(
-            name=s["name"], dim=s["dim"],
-            frame=s.get("frame"), notes=s.get("notes"),
+            name=_apply_legacy_rename(s["name"], s.get("frame")),
+            dim=s["dim"],
+            frame=s.get("frame"),
+            notes=s.get("notes"),
         )
         for s in obs["slots"]
     )

@@ -25,7 +25,8 @@ class SimpleEnvFactory:
     n_envs: int
     randomise_start: bool
     episode_seconds: float
-    obs_spec_name: str = "SIMPLE_ENV_OBS"
+    obs_blocks: list[str]
+    obs_name: str
     seed: int = 42
     # Reward stack instantiated from cfg.reward in scripts/train.py and set on
     # the factory before env construction.  If None, the env falls back to
@@ -34,13 +35,15 @@ class SimpleEnvFactory:
 
     def _make_thunk(self):
         from envs.quidditch.simple_env import QuidditchSimpleEnv
+        from envs.quidditch.obs_spec import build_spec_from_block_names
         rs = self.randomise_start
         eps = self.episode_seconds
         reward_stack = self.reward_stack
+        spec = build_spec_from_block_names(self.obs_blocks)
         def _thunk():
             return QuidditchSimpleEnv(
                 render_mode=None, randomise_start=rs, episode_seconds=eps,
-                reward_stack=reward_stack,
+                reward_stack=reward_stack, spec=spec,
             )
         return _thunk
 
@@ -54,13 +57,15 @@ class SimpleEnvFactory:
 
     def build_video_env_fn(self):
         from envs.quidditch.simple_env import QuidditchSimpleEnv
+        from envs.quidditch.obs_spec import build_spec_from_block_names
         rs = self.randomise_start
         eps = self.episode_seconds
         reward_stack = self.reward_stack
+        spec = build_spec_from_block_names(self.obs_blocks)
         def _thunk():
             return QuidditchSimpleEnv(
                 render_mode="rgb_array", randomise_start=rs, episode_seconds=eps,
-                reward_stack=reward_stack,
+                reward_stack=reward_stack, spec=spec,
             )
         return _thunk
 
@@ -76,7 +81,8 @@ class TeamEnvFactory:
     team_cfg: Any
     learner_id: str
     opponent_spec: str
-    obs_spec_name: str = "DUEL_V2_WORLD"
+    obs_blocks: list[str]
+    obs_name: str
     frame_stack: int = 3
     seed: int = 42
     # See SimpleEnvFactory.reward_stack — same semantics.  Falls back to
@@ -86,12 +92,12 @@ class TeamEnvFactory:
     def _make_thunk(self):
         from envs.quidditch.team_env import QuidditchTeamEnv
         from envs.quidditch.opponents import OpponentControlledEnv, from_spec
-        from envs.quidditch.obs_spec import SPEC_BY_NAME
+        from envs.quidditch.obs_spec import build_spec_from_block_names
         cfg = self.team_cfg
         learner = self.learner_id
         opp_spec = self.opponent_spec
         reward_stack = self.reward_stack
-        learner_spec = SPEC_BY_NAME[self.obs_spec_name]
+        learner_spec = build_spec_from_block_names(self.obs_blocks)
         def _thunk():
             team = QuidditchTeamEnv(
                 cfg=cfg, reward_stack=reward_stack,
@@ -120,13 +126,13 @@ class TeamEnvFactory:
         from envs.quidditch.opponents import (
             OpponentControlledEnv, from_spec, FrameStackWrapper,
         )
-        from envs.quidditch.obs_spec import SPEC_BY_NAME
+        from envs.quidditch.obs_spec import build_spec_from_block_names
         cfg = self.team_cfg
         learner = self.learner_id
         opp_spec = self.opponent_spec
         frame_stack = self.frame_stack
         reward_stack = self.reward_stack
-        learner_spec = SPEC_BY_NAME[self.obs_spec_name]
+        learner_spec = build_spec_from_block_names(self.obs_blocks)
         def _thunk():
             team = QuidditchTeamEnv(
                 cfg=cfg, render_mode="rgb_array",

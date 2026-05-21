@@ -3,6 +3,15 @@ seed: 42
 obs:
   name: DUEL_V1_BODY
   n_stack: 1
+  blocks:
+  - ANG_VEL
+  - ANG_POS
+  - LIN_VEL_BODY
+  - LIN_POS
+  - UNIT_TO_GOAL
+  - SIGNED_DIST_NORM
+  - OPP_POS_REL
+  - OPP_VEL_REL_BODY
 init:
   mode: scratch
   parent: null
