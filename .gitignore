@@ -3,6 +3,9 @@ __pycache__
 *.pyc
 .pytest_cache
 
+# uv-managed virtual environment
+.venv/
+
 # Dev/training artifacts (ephemeral — use `make promote` to save good models)
 runs/
 
