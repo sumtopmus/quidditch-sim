@@ -98,6 +98,21 @@ def test_load_run_context_handles_hydra_yaml_with_unresolvable_interpolations(tm
 from scripts._render_model_doc import _section_header
 
 
+_DUEL_V2_BLOCKS = [
+    "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+    "UNIT_TO_GOAL", "VEC_TO_HOOP", "OPP_POS_REL",
+    "OPP_VEL_REL_WORLD", "CLOSING_RATE",
+]
+_DUEL_V1_BLOCKS = [
+    "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+    "UNIT_TO_GOAL", "SIGNED_DIST_NORM", "OPP_POS_REL", "OPP_VEL_REL_BODY",
+]
+_SIMPLE_BLOCKS = [
+    "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+    "UNIT_TO_GOAL", "SIGNED_DIST_NORM",
+]
+
+
 def _ctx_for_section(**overrides) -> dict:
     """Build a baseline ctx covering the union of fields all sections need.
     Tests override just what they care about.
@@ -105,7 +120,7 @@ def _ctx_for_section(**overrides) -> dict:
     cfg = OmegaConf.create({
         "run_name": "ppo_hoop_test",
         "description": "",
-        "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3},
+        "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3, "blocks": _DUEL_V2_BLOCKS},
         "init": {"mode": "scratch", "parent": None},
         "trainer": {"lr": 3e-4, "total_timesteps": 10_000_000,
                      "batch_size": 256, "n_epochs": 10,
@@ -225,12 +240,14 @@ def test_section_obs_spec_renders_table_for_known_spec():
     assert "closing_rate" in out
 
 
-def test_section_obs_spec_renders_error_blockquote_for_unknown_spec():
+def test_section_obs_spec_renders_error_blockquote_when_blocks_missing():
+    """Legacy configs without obs.blocks render a warning blockquote pointing
+    at the migration script."""
     ctx = _ctx_for_section()
-    ctx["cfg"].obs.name = "FAKE_NEVER_REGISTERED_OBS"
+    ctx["cfg"].obs.blocks = []
     out = _section_obs_spec(ctx)
-    assert "⚠" in out or "(unknown obs spec" in out
-    assert "FAKE_NEVER_REGISTERED_OBS" in out
+    assert "⚠" in out
+    assert "obs.blocks" in out
 
 
 from scripts._render_model_doc import _section_reward_stack

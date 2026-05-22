@@ -224,17 +224,18 @@ def _section_lineage(ctx: dict[str, Any]) -> str:
 
 def _section_obs_spec(ctx: dict[str, Any]) -> str:
     cfg = ctx["cfg"]
-    from envs.quidditch.obs_spec import SPEC_BY_NAME
+    from envs.quidditch.obs_spec import build_spec_from_block_names
 
     name = cfg.obs.name
     n_stack = int(cfg.obs.n_stack)
-    spec = SPEC_BY_NAME.get(name)
-    if spec is None:
+    blocks = list(cfg.obs.get("blocks", []) or [])
+    if not blocks:
         return (
             "## Obs spec\n\n"
-            f"> ⚠ unknown obs spec name `{name}` — not in SPEC_BY_NAME registry. "
-            "See `.hydra/config.yaml:obs` for the recorded name."
+            f"> ⚠ legacy config has no `obs.blocks` field for `{name}`. "
+            "See `.hydra/config.yaml:obs` or migrate via tmp_migrate_obs_blocks.py."
         )
+    spec = build_spec_from_block_names(blocks)
 
     header = (
         "## Obs spec\n\n"

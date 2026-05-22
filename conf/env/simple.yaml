@@ -6,5 +6,6 @@ _target_: envs.quidditch.env_factories.SimpleEnvFactory
 n_envs: 8
 randomise_start: ${curriculum.randomise_start}
 episode_seconds: ${curriculum.episode_seconds}
-obs_spec_name: ${obs.name}
+obs_blocks: ${obs.blocks}
+obs_name:   ${obs.name}
 seed: ${seed}

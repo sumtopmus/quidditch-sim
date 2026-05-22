@@ -33,7 +33,7 @@ import yaml
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-from envs.quidditch.obs_spec import SPEC_BY_NAME
+from envs.quidditch.obs_spec import load_obs_yaml
 
 
 # Hand-curated mapping from promoted model dir names to their obs spec name.
@@ -49,13 +49,22 @@ LEGACY_SPECS: dict[str, str] = {
 }
 
 
+_KNOWN_SPECS: dict[str, str] = {
+    "SIMPLE_ENV_OBS":   "simple",
+    "DUEL_V1_BODY":     "duel_v1_body",
+    "DUEL_V2_WORLD":    "duel_v2_world",
+    "DUEL_V3_BODY_EGO": "duel_v3_body_ego",
+}
+
+
 def _resolve_obs_name(model_dir: Path, info: dict) -> str:
     """Resolve the canonical obs-spec name for this promoted model."""
     if model_dir.name in LEGACY_SPECS:
         return LEGACY_SPECS[model_dir.name]
     obs = info.get("obs", {})
     target_dim = obs.get("dim")
-    for name, spec in SPEC_BY_NAME.items():
+    for name, stem in _KNOWN_SPECS.items():
+        spec = load_obs_yaml(stem)
         if spec.dim == target_dim:
             return name
     raise ValueError(

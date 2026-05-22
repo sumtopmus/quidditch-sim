@@ -1,4 +1,14 @@
-# Resolves at runtime to envs.quidditch.obs_spec.DUEL_V2_WORLD (25-d, world-frame opp_vel_rel + closing_rate + vec_to_hoop).
-# Current team-play obs.
+# 25-d team-play obs, world-frame opp_vel_rel + closing_rate + vec_to_hoop.
+# Current default for team runs; used by blue_v4.
 name: DUEL_V2_WORLD
 n_stack: 3
+blocks:
+  - ANG_VEL
+  - ANG_POS
+  - LIN_VEL_BODY
+  - LIN_POS
+  - UNIT_TO_GOAL
+  - VEC_TO_HOOP
+  - OPP_POS_REL
+  - OPP_VEL_REL_WORLD
+  - CLOSING_RATE
