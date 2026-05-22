@@ -72,10 +72,10 @@ git status --short
 
 Expected: shows the untracked spec at `docs/superpowers/specs/2026-05-06-pytest-migration-design.md` and nothing else.
 
-- [ ] **Step 2: Install pytest in the conda env**
+- [ ] **Step 2: Install pytest into the uv environment**
 
 ```bash
-conda run -n uav python -m pip install pytest
+uv run python -m pip install pytest
 ```
 
 Expected: pytest installs (or "Requirement already satisfied").
@@ -137,7 +137,7 @@ def test_imports_core() -> None:
 - [ ] **Step 7: Run pytest to verify the rails work**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 2 passed in <1s. If you see `ModuleNotFoundError`, double-check that `pyproject.toml` has `pythonpath = ["."]` and that you're running from the worktree root.
@@ -252,7 +252,7 @@ def test_team_env_mjcf_geoms_present_with_correct_collision_bits() -> None:
 - [ ] **Step 3: Run the test — expected to PASS first try (it's a port)**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_team_mjcf.py -v
+uv run python -m pytest tests/unit/test_team_mjcf.py -v
 ```
 
 Expected: 1 passed. If it fails, the source script `scripts/check_team_mjcf.py` was your reference — diff the two files for typos.
@@ -260,7 +260,7 @@ Expected: 1 passed. If it fails, the source script `scripts/check_team_mjcf.py` 
 - [ ] **Step 4: Confirm the original script still works (sanity check before delete)**
 
 ```bash
-conda run -n uav python scripts/check_team_mjcf.py
+uv run python scripts/check_team_mjcf.py
 ```
 
 Expected: prints `OK team-env MJCF: ngeom=...`.
@@ -297,7 +297,7 @@ Expected: prints the full target list, no `team-check-mjcf` entry, no errors.
 - [ ] **Step 8: Run all tests**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 3 passed (2 imports + 1 mjcf).
@@ -478,7 +478,7 @@ def test_drone_drone_above_threshold_crash() -> None:
 - [ ] **Step 3: Run the new tests**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_crash_detector.py -v
+uv run python -m pytest tests/unit/test_crash_detector.py -v
 ```
 
 Expected: 3 passed.
@@ -486,7 +486,7 @@ Expected: 3 passed.
 - [ ] **Step 4: Sanity-check the original script still works**
 
 ```bash
-conda run -n uav python scripts/check_team_crash.py
+uv run python scripts/check_team_crash.py
 ```
 
 Expected: prints `All crash sub-cases PASSED.`.
@@ -504,7 +504,7 @@ Same procedure as Task 2: drop `team-check-crash` from the `.PHONY` line and del
 - [ ] **Step 7: Run all tests**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 6 passed total (2 imports + 1 mjcf + 3 crash).
@@ -659,7 +659,7 @@ def test_tag_state_machine_full_lifecycle() -> None:
 - [ ] **Step 2: Run the new test**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_tag_state_machine.py -v
+uv run python -m pytest tests/unit/test_tag_state_machine.py -v
 ```
 
 Expected: 1 passed.
@@ -667,7 +667,7 @@ Expected: 1 passed.
 - [ ] **Step 3: Sanity-check the original script**
 
 ```bash
-conda run -n uav python scripts/check_team_tag.py
+uv run python scripts/check_team_tag.py
 ```
 
 Expected: prints `OK tag state machine: all 6 phases passed`.
@@ -685,7 +685,7 @@ Drop `team-check-tag` from `.PHONY`; delete its target/recipe block.
 - [ ] **Step 6: Run all tests**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 7 passed (2 imports + 1 mjcf + 3 crash + 1 tag).
@@ -774,15 +774,15 @@ def test_offscreen_render_one_frame_no_crash() -> None:
 - [ ] **Step 2: Run the new test**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_render_smoke.py -v
+uv run python -m pytest tests/unit/test_render_smoke.py -v
 ```
 
 Expected: 1 passed in <2s. **If you see a GLFW or "GLContext could not be created" error**, the offscreen renderer needs a backend. Try:
 
 ```bash
-MUJOCO_GL=osmesa conda run -n uav python -m pytest tests/unit/test_render_smoke.py -v
+MUJOCO_GL=osmesa uv run python -m pytest tests/unit/test_render_smoke.py -v
 # or
-MUJOCO_GL=egl    conda run -n uav python -m pytest tests/unit/test_render_smoke.py -v
+MUJOCO_GL=egl    uv run python -m pytest tests/unit/test_render_smoke.py -v
 ```
 
 If one of those works, we'll set the env var in the Makefile target rather than baking it into the test (Task 14). On macOS the default backend usually works with `mjpython`, but `python` might need `MUJOCO_GL=osmesa`.
@@ -790,7 +790,7 @@ If one of those works, we'll set the env var in the Makefile target rather than 
 - [ ] **Step 3: Run all tests**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 8 passed (2 imports + 1 mjcf + 3 crash + 1 tag + 1 render).
@@ -929,7 +929,7 @@ def test_beeline_red_vs_beeline_blue_canary() -> None:
 - [ ] **Step 3: Run the new test**
 
 ```bash
-conda run -n uav python -m pytest tests/integration/test_team_env_canary.py -v
+uv run python -m pytest tests/integration/test_team_env_canary.py -v
 ```
 
 Expected: 1 passed in 5–15s.
@@ -937,7 +937,7 @@ Expected: 1 passed in 5–15s.
 - [ ] **Step 4: Sanity-check the original script**
 
 ```bash
-conda run -n uav python scripts/check_team_env.py
+uv run python scripts/check_team_env.py
 ```
 
 Expected: prints the fingerprint lines from the docstring.
@@ -955,7 +955,7 @@ Drop `team-check` from `.PHONY`; delete its target/recipe block.
 - [ ] **Step 7: Run all tests**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 9 passed.
@@ -1123,7 +1123,7 @@ def test_scripted_flyaway_scores_through_hoop() -> None:
 - [ ] **Step 3: Run the new tests**
 
 ```bash
-conda run -n uav python -m pytest \
+uv run python -m pytest \
   tests/integration/test_simple_env_contract.py \
   tests/integration/test_scoring_canary.py -v
 ```
@@ -1133,7 +1133,7 @@ Expected: 3 passed in 5–10s total.
 - [ ] **Step 4: Sanity-check the original script**
 
 ```bash
-conda run -n uav python scripts/check_env.py
+uv run python scripts/check_env.py
 ```
 
 Expected: prints `All checks complete.` after running parts 1–3.
@@ -1155,7 +1155,7 @@ In `Makefile`:
 - [ ] **Step 7: Run all tests**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 12 passed.
@@ -1278,7 +1278,7 @@ def test_warm_started_policy_matches_old_on_obs_prefix() -> None:
 - [ ] **Step 2: Confirm the test SKIPS without MODEL**
 
 ```bash
-conda run -n uav python -m pytest tests/integration/test_warm_start.py -v
+uv run python -m pytest tests/integration/test_warm_start.py -v
 ```
 
 Expected: 1 skipped, with reason `set MODEL=<run-name>...`. The `-ra` config flag prints the skip reason in the summary.
@@ -1289,7 +1289,7 @@ This is optional — only do it if `models/ppo_hoop_fixed_start_20260504_023051/
 
 ```bash
 MODEL=ppo_hoop_fixed_start_20260504_023051 \
-  conda run -n uav python -m pytest tests/integration/test_warm_start.py -v
+  uv run python -m pytest tests/integration/test_warm_start.py -v
 ```
 
 Expected: 1 passed, prints a final `mean ||a_new − a_old||` statistic well under 0.1.
@@ -1307,7 +1307,7 @@ Drop `team-check-warm` from `.PHONY`; delete its multi-line target block (the on
 - [ ] **Step 6: Run all tests**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 12 passed, 1 skipped (warm-start).
@@ -1518,7 +1518,7 @@ if __name__ == "__main__":
 The team env may or may not auto-launch a viewer depending on its render-mode plumbing. First, run headless to confirm the scaffolding doesn't crash:
 
 ```bash
-conda run -n uav python demo/scenarios.py
+uv run python demo/scenarios.py
 ```
 
 Expected: prints both `[Scenario A]` and `[Scenario B]` headers, eventually hits some termination event (likely RED FLOOR since the placeholder policies don't fly), prints `Demo complete — viewer remains open.`. **Ctrl-C to exit the idle loop.**
@@ -1532,7 +1532,7 @@ This will be done in Task 12 once the menu entry is wired. Skip for now.
 - [ ] **Step 4: Run all tests (sanity check that nothing in tests/ is affected)**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 12 passed, 1 skipped. demo/scenarios.py isn't picked up because `pyproject.toml` scopes `testpaths = ["tests"]`.
@@ -1715,7 +1715,7 @@ In `main()`, replace the Scenario A invocation:
 To skip Scenario B during tuning, temporarily comment out its `_run_scenario` call in `main()`. Then:
 
 ```bash
-conda run -n uav python demo/scenarios.py
+uv run python demo/scenarios.py
 ```
 
 Expected: terminal log shows two TAG ENTRY events followed by DRONE-DRONE CRASH. If something different fires (e.g. RED FLOOR before Blue gets there), tune.
@@ -1746,7 +1746,7 @@ Un-comment the Scenario B `_run_scenario` invocation in `main()` so the file is 
 - [ ] **Step 6: Confirm headless run completes both scenarios**
 
 ```bash
-conda run -n uav python demo/scenarios.py
+uv run python demo/scenarios.py
 ```
 
 Expected: Scenario A logs two TAG ENTRYs and a CRASH; Scenario B (still placeholder, that's fine) logs whatever its placeholder policies cause. Idle loop kicks in. Ctrl-C to exit.
@@ -1754,7 +1754,7 @@ Expected: Scenario A logs two TAG ENTRYs and a CRASH; Scenario B (still placehol
 - [ ] **Step 7: Run all tests (still passing)**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 12 passed, 1 skipped.
@@ -1850,7 +1850,7 @@ In `main()`, replace the Scenario B `_run_scenario` invocation:
 - [ ] **Step 2: Run headless and watch for the SCORE**
 
 ```bash
-conda run -n uav python demo/scenarios.py
+uv run python demo/scenarios.py
 ```
 
 Expected: After Scenario A's events, Scenario B prints:
@@ -1877,7 +1877,7 @@ Both scenarios are wired up to real policies. Delete the `_placeholder_policy` f
 - [ ] **Step 5: Run all tests**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 12 passed, 1 skipped.
@@ -1938,7 +1938,7 @@ DEMOS: list[tuple[str, str, str]] = [
 - [ ] **Step 2: Run the demo menu (manual — viewer opens)**
 
 ```bash
-conda run -n uav mjpython demo/menu.py
+uv run mjpython demo/menu.py
 ```
 
 When prompted, type `scenarios` (or its number) and press Enter. Expected behavior:
@@ -1963,7 +1963,7 @@ Expected: `make demo` lists the three options including "scenarios".
 - [ ] **Step 4: Run all tests**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 12 passed, 1 skipped.
@@ -2234,7 +2234,7 @@ Expected: shows the four files were touched recently.
 - [ ] **Step 1: Run the full test suite**
 
 ```bash
-conda run -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: 12 passed, 1 skipped (warm-start, no MODEL).

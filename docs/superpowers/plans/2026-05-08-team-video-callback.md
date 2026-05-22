@@ -21,16 +21,16 @@ Verify the develop-state canaries pass before any change so post-change regressi
 **Files:**
 - Read-only: `tests/integration/test_scoring_canary.py`, `tests/unit/`, `tests/integration/`
 
-- [ ] **Step 1.1: Activate the conda env**
+- [ ] **Step 1.1: Sync the uv environment**
 
-The MuJoCo / SB3 stack lives in the `uav` conda env (see `brain/index.md`).
+The MuJoCo / SB3 stack is managed by uv (see `pyproject.toml` + `uv.lock`).
 
 Run:
 ```bash
-conda activate uav
+uv sync
 ```
 
-Expected: prompt prefix shows `(uav)`. If `conda activate` is not available in this shell, run `eval "$(conda shell.bash hook)" && conda activate uav` once at the top of the session.
+Expected: `.venv/` is created/updated. Subsequent commands are prefixed with `uv run` (no shell activation required).
 
 - [ ] **Step 1.2: Run the fast unit suite**
 
