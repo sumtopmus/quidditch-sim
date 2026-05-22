@@ -1,17 +1,17 @@
 """Evaluate a trained PPO model on QuidditchSimpleEnv.
 
 Usage:
-    conda activate uav
+    uv sync       # one-time
     cd repo
 
     # Visual evaluation (MuJoCo viewer) — 10 episodes:
-    python eval_ppo.py --model runs/ppo_hoop_v1/best_model
+    uv run python eval_ppo.py --model runs/ppo_hoop_v1/best_model
 
     # Headless stats over 50 episodes:
-    python eval_ppo.py --model runs/ppo_hoop_v1/best_model --no-render --episodes 50
+    uv run python eval_ppo.py --model runs/ppo_hoop_v1/best_model --no-render --episodes 50
 
     # Evaluate a specific checkpoint:
-    python eval_ppo.py --model runs/ppo_hoop_v1/checkpoints/ppo_hoop_70000_steps
+    uv run python eval_ppo.py --model runs/ppo_hoop_v1/checkpoints/ppo_hoop_70000_steps
 """
 
 import sys

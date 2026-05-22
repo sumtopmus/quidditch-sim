@@ -22,7 +22,8 @@ log = logging.getLogger(__name__)
 # Allow `python -m scripts.train` and direct invocation alike.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# macOS conda libomp guard (matches train_ppo.py / train_team_ppo.py).
+# macOS libomp guard (matches train_ppo.py / train_team_ppo.py):
+# prevent OMP duplicate-init abort with SubprocVecEnv.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 # SB3 emits an unconditional UserWarning when train (SubprocVecEnv) and eval
