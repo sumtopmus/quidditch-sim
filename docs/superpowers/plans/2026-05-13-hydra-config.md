@@ -37,12 +37,12 @@ omegaconf>=2.3,<3.0
 
 - [ ] **Step 3: Install into the uav env**
 
-Run: `conda run --no-capture-output -n uav pip install 'hydra-core>=1.3,<2.0' 'omegaconf>=2.3,<3.0'`
+Run: `uv run pip install 'hydra-core>=1.3,<2.0' 'omegaconf>=2.3,<3.0'`
 Expected: `Successfully installed hydra-core-1.X.X omegaconf-2.X.X` (or "Requirement already satisfied" if a transitive dep brought it in).
 
 - [ ] **Step 4: Verify imports**
 
-Run: `conda run --no-capture-output -n uav python -c "import hydra; import omegaconf; print(hydra.__version__, omegaconf.__version__)"`
+Run: `uv run python -c "import hydra; import omegaconf; print(hydra.__version__, omegaconf.__version__)"`
 Expected: two version strings on one line, no traceback.
 
 ### Task 1.2 — Create `conf/` tree skeleton
@@ -106,7 +106,7 @@ def test_spec_by_name_maps_canonical_specs():
 
 - [ ] **Step 2: Run the test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_obs_spec.py::test_spec_by_name_maps_canonical_specs -v`
+Run: `uv run python -m pytest tests/unit/test_obs_spec.py::test_spec_by_name_maps_canonical_specs -v`
 Expected: FAIL with `ImportError: cannot import name 'SPEC_BY_NAME'`.
 
 - [ ] **Step 3: Add SPEC_BY_NAME registry**
@@ -128,7 +128,7 @@ SPEC_BY_NAME: dict[str, ObsSpec] = {
 
 - [ ] **Step 4: Run the test to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_obs_spec.py::test_spec_by_name_maps_canonical_specs -v`
+Run: `uv run python -m pytest tests/unit/test_obs_spec.py::test_spec_by_name_maps_canonical_specs -v`
 Expected: PASS.
 
 ### Task 1.4 — Create `envs/quidditch/rewards/` package skeleton
@@ -163,12 +163,12 @@ touch envs/quidditch/rewards/stack.py
 
 - [ ] **Step 3: Verify imports still resolve**
 
-Run: `conda run --no-capture-output -n uav python -c "from envs.quidditch.rewards import SCORE_REWARD, TAG_DURATION_REWARD_MAX, CLOSING_VEL_REWARD_SCALE; print('ok')"`
+Run: `uv run python -c "from envs.quidditch.rewards import SCORE_REWARD, TAG_DURATION_REWARD_MAX, CLOSING_VEL_REWARD_SCALE; print('ok')"`
 Expected: `ok`.
 
 - [ ] **Step 4: Run tests to confirm no regressions**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit -x -q`
+Run: `uv run python -m pytest tests/unit -x -q`
 Expected: all unit tests pass (same as before).
 
 ### Task 1.5 — Create `env_factories.py` skeleton
@@ -192,7 +192,7 @@ from __future__ import annotations
 
 - [ ] **Step 2: Verify import**
 
-Run: `conda run --no-capture-output -n uav python -c "import envs.quidditch.env_factories; print('ok')"`
+Run: `uv run python -c "import envs.quidditch.env_factories; print('ok')"`
 Expected: `ok`.
 
 ### Task 1.6 — Create `config_schema.py` stub
@@ -214,24 +214,24 @@ from __future__ import annotations
 
 - [ ] **Step 2: Verify import**
 
-Run: `conda run --no-capture-output -n uav python -c "import config_schema; print('ok')"`
+Run: `uv run python -c "import config_schema; print('ok')"`
 Expected: `ok`.
 
 ### Task 1.7 — Phase 1 acceptance
 
 - [ ] **Step 1: Full test suite passes**
 
-Run: `conda run --no-capture-output -n uav python -m pytest -x -q`
+Run: `uv run python -m pytest -x -q`
 Expected: all tests pass (no regressions, plus the new SPEC_BY_NAME test).
 
 - [ ] **Step 2: Both training scripts still launch (smoke)**
 
-Run: `conda run --no-capture-output -n uav python scripts/train_ppo.py --timesteps 100 --run-name _phase1_smoke 2>&1 | tail -5`
+Run: `uv run python scripts/train_ppo.py --timesteps 100 --run-name _phase1_smoke 2>&1 | tail -5`
 Expected: PPO starts, runs 100 steps, exits cleanly. A `runs/_phase1_smoke/<timestamp>/` directory is created.
 
 Then run the team variant:
 ```bash
-WARM_START="" conda run --no-capture-output -n uav python scripts/train_team_ppo.py \
+WARM_START="" uv run python scripts/train_team_ppo.py \
   --learner blue_0 --opponent beeline_red --timesteps 100 --run-name _phase1_smoke_team 2>&1 | tail -5
 ```
 Expected: same — 100 steps, clean exit, run dir created.
@@ -345,7 +345,7 @@ def test_single_agent_state():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: FAIL with `ImportError: cannot import name 'RewardStack'`.
 
 - [ ] **Step 3: Implement StepState and RewardStack**
@@ -430,7 +430,7 @@ class RewardStack:
 
 - [ ] **Step 4: Run test to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: 3 PASSED.
 
 ### Task 2.2 — Implement `ScoreEvent` term
@@ -468,7 +468,7 @@ def test_score_event_single_agent_no_mirror():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py::test_score_event_team_zero_sum_on_scored -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py::test_score_event_team_zero_sum_on_scored -v`
 Expected: FAIL with `ImportError: cannot import name 'ScoreEvent'`.
 
 - [ ] **Step 3: Implement ScoreEvent**
@@ -514,7 +514,7 @@ class ScoreEvent:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: 6 PASSED.
 
 ### Task 2.3 — Implement `CrashEvent` term
@@ -561,7 +561,7 @@ def test_crash_event_single_agent():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -k crash_event -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -k crash_event -v`
 Expected: FAIL with `ImportError: cannot import name 'CrashEvent'`.
 
 - [ ] **Step 3: Implement CrashEvent**
@@ -593,7 +593,7 @@ class CrashEvent:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: 9 PASSED.
 
 ### Task 2.4 — Implement `HoopDistancePenalty` term
@@ -633,7 +633,7 @@ def test_hoop_distance_penalty_single_agent():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -k hoop_distance -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -k hoop_distance -v`
 Expected: FAIL with `ImportError: cannot import name 'HoopDistancePenalty'`.
 
 - [ ] **Step 3: Implement HoopDistancePenalty**
@@ -677,7 +677,7 @@ class HoopDistancePenalty:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: 11 PASSED.
 
 ### Task 2.5 — Implement `HoopAnchor` term
@@ -705,7 +705,7 @@ def test_hoop_anchor_blue_only():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -k hoop_anchor -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -k hoop_anchor -v`
 Expected: FAIL with `ImportError: cannot import name 'HoopAnchor'`.
 
 - [ ] **Step 3: Implement HoopAnchor**
@@ -735,7 +735,7 @@ class HoopAnchor:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: 12 PASSED.
 
 ### Task 2.6 — Implement `ZeroSumDistMirror` term
@@ -764,7 +764,7 @@ def test_zero_sum_dist_mirror_blue_only():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -k zero_sum -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -k zero_sum -v`
 Expected: FAIL with `ImportError`.
 
 - [ ] **Step 3: Implement ZeroSumDistMirror**
@@ -795,7 +795,7 @@ class ZeroSumDistMirror:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: 13 PASSED.
 
 ### Task 2.7 — Implement `TagEntryPulse` term
@@ -822,7 +822,7 @@ def test_tag_entry_pulse_fires_only_on_entry():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -k tag_entry_pulse -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -k tag_entry_pulse -v`
 Expected: FAIL with `ImportError`.
 
 - [ ] **Step 3: Implement TagEntryPulse**
@@ -853,7 +853,7 @@ class TagEntryPulse:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: 14 PASSED.
 
 ### Task 2.8 — Implement `ProximityGradedTag` term
@@ -892,7 +892,7 @@ def test_proximity_graded_tag_zero_when_not_during():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -k proximity -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -k proximity -v`
 Expected: FAIL with `ImportError`.
 
 - [ ] **Step 3: Implement ProximityGradedTag**
@@ -926,7 +926,7 @@ class ProximityGradedTag:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: 16 PASSED.
 
 ### Task 2.9 — Implement `ClosingVelInTagZone` term
@@ -970,7 +970,7 @@ def test_closing_vel_zero_when_not_during():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -k closing_vel -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -k closing_vel -v`
 Expected: FAIL with `ImportError`.
 
 - [ ] **Step 3: Implement ClosingVelInTagZone**
@@ -1004,7 +1004,7 @@ class ClosingVelInTagZone:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: 19 PASSED.
 
 ### Task 2.10 — Implement `TakeDown` term
@@ -1037,7 +1037,7 @@ def test_take_down_silent_otherwise():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -k take_down -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -k take_down -v`
 Expected: FAIL with `ImportError`.
 
 - [ ] **Step 3: Implement TakeDown**
@@ -1069,7 +1069,7 @@ class TakeDown:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py -v`
 Expected: 21 PASSED.
 
 ### Task 2.11 — Reproduce-current-team-reward integration test
@@ -1155,7 +1155,7 @@ def test_team_v2_stack_matches_current_constants():
 
 - [ ] **Step 2: Run test to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_reward_stack.py::test_team_v2_stack_matches_current_constants -v`
+Run: `uv run python -m pytest tests/unit/test_reward_stack.py::test_team_v2_stack_matches_current_constants -v`
 Expected: PASS.
 
 ### Task 2.12 — Wire `RewardStack` into `simple_env.py`
@@ -1236,14 +1236,14 @@ Replace with:
 
 - [ ] **Step 5: Run the scoring canary**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/integration/test_scoring_canary.py -v`
+Run: `uv run python -m pytest tests/integration/test_scoring_canary.py -v`
 Expected: PASS with `SCORED at step 434 / total reward 7.3837`.
 
 **If the number drifts**: STOP. Revert step 4. The bug is somewhere in how `StepState` is being populated. Re-check that `dist` matches the original `dist` variable exactly, `scored` matches `info.get("scored")` semantics, and `crash` matches the original crash boolean.
 
 - [ ] **Step 6: Run the full test suite**
 
-Run: `conda run --no-capture-output -n uav python -m pytest -x -q`
+Run: `uv run python -m pytest -x -q`
 Expected: all pass.
 
 ### Task 2.13 — Wire `RewardStack` into `team_env.py`
@@ -1360,7 +1360,7 @@ Eyeball the diff: removed lines should be exactly the reward arithmetic; added l
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/integration/test_team_env_canary.py tests/integration/test_take_down.py -v
+uv run python -m pytest tests/integration/test_team_env_canary.py tests/integration/test_take_down.py -v
 ```
 Expected: PASS — both canaries unchanged.
 
@@ -1368,22 +1368,22 @@ Expected: PASS — both canaries unchanged.
 
 - [ ] **Step 7: Full test suite**
 
-Run: `conda run --no-capture-output -n uav python -m pytest -x -q`
+Run: `uv run python -m pytest -x -q`
 Expected: all pass.
 
 ### Task 2.14 — Phase 2 acceptance & commit
 
 - [ ] **Step 1: Full test suite**
 
-Run: `conda run --no-capture-output -n uav python -m pytest -q`
+Run: `uv run python -m pytest -q`
 Expected: all pass, including the new 8 unit tests in `test_reward_stack.py`.
 
 - [ ] **Step 2: Both train scripts smoke-launch**
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python scripts/train_ppo.py --timesteps 100 --run-name _phase2_smoke 2>&1 | tail -5
-WARM_START="" conda run --no-capture-output -n uav python scripts/train_team_ppo.py --learner blue_0 --opponent beeline_red --timesteps 100 --run-name _phase2_smoke_team 2>&1 | tail -5
+uv run python scripts/train_ppo.py --timesteps 100 --run-name _phase2_smoke 2>&1 | tail -5
+WARM_START="" uv run python scripts/train_team_ppo.py --learner blue_0 --opponent beeline_red --timesteps 100 --run-name _phase2_smoke_team 2>&1 | tail -5
 rm -rf runs/_phase2_smoke runs/_phase2_smoke_team
 ```
 Expected: both run to completion.
@@ -1462,7 +1462,7 @@ def test_simple_env_factory_builds_eval_env_single_subprocess():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_env_factories.py -v`
+Run: `uv run python -m pytest tests/unit/test_env_factories.py -v`
 Expected: FAIL with `ImportError: cannot import name 'SimpleEnvFactory'`.
 
 - [ ] **Step 3: Implement SimpleEnvFactory**
@@ -1530,7 +1530,7 @@ class SimpleEnvFactory:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_env_factories.py -v`
+Run: `uv run python -m pytest tests/unit/test_env_factories.py -v`
 Expected: 2 PASSED.
 
 ### Task 3.2 — Implement `TeamEnvFactory`
@@ -1584,7 +1584,7 @@ def test_team_env_factory_team_obs_unstacked():
 
 - [ ] **Step 2: Run test to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_env_factories.py -k team_env_factory -v`
+Run: `uv run python -m pytest tests/unit/test_env_factories.py -k team_env_factory -v`
 Expected: FAIL with `ImportError: cannot import name 'TeamEnvFactory'`.
 
 - [ ] **Step 3: Implement TeamEnvFactory**
@@ -1654,7 +1654,7 @@ class TeamEnvFactory:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_env_factories.py -v`
+Run: `uv run python -m pytest tests/unit/test_env_factories.py -v`
 Expected: 4 PASSED.
 
 ### Task 3.3 — Rewire `train_ppo.py` to use `SimpleEnvFactory`
@@ -1706,8 +1706,8 @@ The factory is only used for the *vectorized* train env here; eval stays as a si
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/integration/test_scoring_canary.py -v
-conda run --no-capture-output -n uav python -m pytest -x -q
+uv run python -m pytest tests/integration/test_scoring_canary.py -v
+uv run python -m pytest -x -q
 ```
 Expected: both PASS. Canary fingerprint `step 434 / reward 7.3837` unchanged.
 
@@ -1715,7 +1715,7 @@ Expected: both PASS. Canary fingerprint `step 434 / reward 7.3837` unchanged.
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python scripts/train_ppo.py --timesteps 100 --run-name _phase3_smoke 2>&1 | tail -5
+uv run python scripts/train_ppo.py --timesteps 100 --run-name _phase3_smoke 2>&1 | tail -5
 rm -rf runs/_phase3_smoke
 ```
 Expected: 100 steps complete, clean exit.
@@ -1784,7 +1784,7 @@ Pass `eval_env_fn=_eval_env_fn` to `build_callbacks`.
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/integration/test_team_env_canary.py tests/integration/test_take_down.py -v
+uv run python -m pytest tests/integration/test_team_env_canary.py tests/integration/test_take_down.py -v
 ```
 Expected: both PASS, team canary unchanged.
 
@@ -1792,7 +1792,7 @@ Expected: both PASS, team canary unchanged.
 
 Run:
 ```bash
-WARM_START="" conda run --no-capture-output -n uav python scripts/train_team_ppo.py \
+WARM_START="" uv run python scripts/train_team_ppo.py \
   --learner blue_0 --opponent beeline_red --timesteps 100 --run-name _phase3_smoke_team 2>&1 | tail -5
 rm -rf runs/_phase3_smoke_team
 ```
@@ -1802,7 +1802,7 @@ Expected: clean 100-step run.
 
 - [ ] **Step 1: Full test suite**
 
-Run: `conda run --no-capture-output -n uav python -m pytest -q`
+Run: `uv run python -m pytest -q`
 Expected: all pass. Net new tests: 4 from `test_env_factories.py`.
 
 - [ ] **Step 2: Commit (user runs manually)**
@@ -2372,7 +2372,7 @@ def test_register_configs_runs_without_error():
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_config_schema.py -v`
+Run: `uv run python -m pytest tests/unit/test_config_schema.py -v`
 Expected: FAIL with `ImportError: cannot import name 'TrainerConfig'`.
 
 - [ ] **Step 3: Implement config_schema.py**
@@ -2477,7 +2477,7 @@ def register_configs() -> None:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_config_schema.py -v`
+Run: `uv run python -m pytest tests/unit/test_config_schema.py -v`
 Expected: 3 PASSED.
 
 ### Task 4.11 — `hydra_compose()` test helper
@@ -2535,7 +2535,7 @@ def hydra_compose(experiment: str | None = None, overrides: list[str] | None = N
 
 - [ ] **Step 3: Smoke test the helper**
 
-Run: `conda run --no-capture-output -n uav python -c "
+Run: `uv run python -c "
 from tests.conftest import hydra_compose
 with hydra_compose() as cfg:
     print('default run_name =', cfg.run_name)
@@ -2626,7 +2626,7 @@ def test_read_parent_chain_total_from_hydra(tmp_path: Path):
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_meta_yaml.py -v`
+Run: `uv run python -m pytest tests/unit/test_meta_yaml.py -v`
 Expected: FAIL with `ImportError: cannot import name 'write_meta_yaml'`.
 
 - [ ] **Step 3: Implement the helpers**
@@ -2723,7 +2723,7 @@ def read_parent_chain_total_from_hydra(parent_path: str | Path) -> int | None:
 
 - [ ] **Step 4: Run tests to verify pass**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_meta_yaml.py -v`
+Run: `uv run python -m pytest tests/unit/test_meta_yaml.py -v`
 Expected: 3 PASSED.
 
 ### Task 4.13 — New `scripts/train.py` Hydra entrypoint
@@ -2758,7 +2758,8 @@ from pathlib import Path
 # Allow `python -m scripts.train` and direct invocation alike.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# macOS conda libomp guard (matches train_ppo.py / train_team_ppo.py).
+# macOS libomp guard (matches train_ppo.py / train_team_ppo.py):
+# prevent OMP duplicate-init abort with SubprocVecEnv.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 # SB3 emits an unconditional UserWarning when train (SubprocVecEnv) and eval
@@ -3073,7 +3074,7 @@ Same for `TeamEnvFactory`:
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python -m scripts.train trainer.total_timesteps=100 run_name=_phase4_smoke 2>&1 | tail -10
+uv run python -m scripts.train trainer.total_timesteps=100 run_name=_phase4_smoke 2>&1 | tail -10
 ```
 Expected: clean 100-step team run (team is the default per `conf/config.yaml`). A `runs/_phase4_smoke/<timestamp>/` directory contains `.hydra/{config,overrides,hydra,meta}.yaml`.
 
@@ -3236,7 +3237,7 @@ Run:
 ```bash
 for exp in canary_single canary_team red_v1 blue_v4 blue_v5; do
   echo "--- $exp ---"
-  conda run --no-capture-output -n uav python -c "
+  uv run python -c "
 from tests.conftest import hydra_compose
 with hydra_compose(experiment='$exp') as cfg:
     print('run_name:', cfg.run_name)
@@ -3403,7 +3404,7 @@ def test_team_v2_stack_instantiates_via_hydra():
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python -m pytest \
+uv run python -m pytest \
   tests/unit/test_config_loading.py \
   tests/integration/test_scoring_canary_hydra.py \
   tests/integration/test_team_env_canary_hydra.py \
@@ -3415,14 +3416,14 @@ Expected: all pass.
 
 - [ ] **Step 1: Full test suite (old + new in parallel)**
 
-Run: `conda run --no-capture-output -n uav python -m pytest -q`
+Run: `uv run python -m pytest -q`
 Expected: all pass. Both old canaries (`test_scoring_canary.py`, `test_team_env_canary.py`) AND new canaries (`*_hydra.py`) succeed.
 
 - [ ] **Step 2: New train.py runs end-to-end with an experiment**
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python -m scripts.train +experiment=blue_v5 trainer.total_timesteps=200 run_name=_phase4_e2e 2>&1 | tail -10
+uv run python -m scripts.train +experiment=blue_v5 trainer.total_timesteps=200 run_name=_phase4_e2e 2>&1 | tail -10
 ls runs/_phase4_e2e/*/.hydra/
 rm -rf runs/_phase4_e2e
 ```
@@ -3432,8 +3433,8 @@ Expected: 200 steps complete, `.hydra/{config,overrides,hydra,meta}.yaml` all pr
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python scripts/train_ppo.py --timesteps 100 --run-name _phase4_old_single 2>&1 | tail -3
-WARM_START="" conda run --no-capture-output -n uav python scripts/train_team_ppo.py --learner blue_0 --opponent beeline_red --timesteps 100 --run-name _phase4_old_team 2>&1 | tail -3
+uv run python scripts/train_ppo.py --timesteps 100 --run-name _phase4_old_single 2>&1 | tail -3
+WARM_START="" uv run python scripts/train_team_ppo.py --learner blue_0 --opponent beeline_red --timesteps 100 --run-name _phase4_old_team 2>&1 | tail -3
 rm -rf runs/_phase4_old_single runs/_phase4_old_team
 ```
 Expected: both run cleanly.
@@ -3485,7 +3486,7 @@ Run: `rm tests/integration/test_scoring_canary_hydra.py`
 
 - [ ] **Step 3: Run the canary**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/integration/test_scoring_canary.py -v`
+Run: `uv run python -m pytest tests/integration/test_scoring_canary.py -v`
 Expected: PASS with `SCORED at step 434 / total reward 7.3837`.
 
 ### Task 5.2 — Replace `test_team_env_canary.py` body with Hydra version
@@ -3525,7 +3526,7 @@ Run: `rm tests/integration/test_team_env_canary_hydra.py`
 
 - [ ] **Step 3: Run the canary**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/integration/test_team_env_canary.py -v`
+Run: `uv run python -m pytest tests/integration/test_team_env_canary.py -v`
 Expected: both tests PASS.
 
 ### Task 5.3 — Update `test_warm_start.py` to use Hydra init group
@@ -3560,7 +3561,7 @@ assert result.returncode == 0, result.stderr
 
 - [ ] **Step 3: Run the test**
 
-Run: `MODEL=ppo_hoop_blue_4_20260511_202612 conda run --no-capture-output -n uav python -m pytest tests/integration/test_warm_start.py -v`
+Run: `MODEL=ppo_hoop_blue_4_20260511_202612 uv run python -m pytest tests/integration/test_warm_start.py -v`
 Expected: PASS (after Phase 6 migrates the legacy model — note that test_warm_start will *fail* between Phase 5 and Phase 6 against legacy models that lack `.hydra/`. That's expected; Phase 6 resolves it).
 
 For Phase 5 acceptance, run with `--skip-warm` if needed; the canary tests are the load-bearing ones.
@@ -3631,7 +3632,7 @@ rm tests/unit/test_obs_spec_toml.py \
 
 - [ ] **Step 3: Verify test suite still passes**
 
-Run: `conda run --no-capture-output -n uav python -m pytest -q --ignore=tests/integration/test_warm_start.py`
+Run: `uv run python -m pytest -q --ignore=tests/integration/test_warm_start.py`
 Expected: all pass (warm-start excluded until Phase 6 migration).
 
 ### Task 5.6 — Refactor `_train_common.py` (delete TOML helpers)
@@ -3664,7 +3665,7 @@ Search for `import tomllib` and remove. (If `read_obs_spec` still uses it, keep 
 
 - [ ] **Step 3: Run all tests**
 
-Run: `conda run --no-capture-output -n uav python -m pytest -q --ignore=tests/integration/test_warm_start.py`
+Run: `uv run python -m pytest -q --ignore=tests/integration/test_warm_start.py`
 Expected: all pass.
 
 ### Task 5.7 — Rewrite the Makefile
@@ -3747,7 +3748,7 @@ rm -f config/training.toml config/training.toml.bak
 
 - [ ] **Step 3: Run the full test suite**
 
-Run: `conda run --no-capture-output -n uav python -m pytest -q --ignore=tests/integration/test_warm_start.py`
+Run: `uv run python -m pytest -q --ignore=tests/integration/test_warm_start.py`
 Expected: all pass.
 
 ### Task 5.9 — Phase 5 acceptance & commit
@@ -3910,7 +3911,7 @@ def test_migrate_meta_yaml_has_parent_chain_total(tmp_path: Path):
 
 - [ ] **Step 2: Run to verify failure**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_migrate_legacy_models.py -v`
+Run: `uv run python -m pytest tests/unit/test_migrate_legacy_models.py -v`
 Expected: FAIL with `ImportError`.
 
 - [ ] **Step 3: Implement the migration script**
@@ -4061,7 +4062,7 @@ if __name__ == "__main__":
 
 - [ ] **Step 4: Run unit tests**
 
-Run: `conda run --no-capture-output -n uav python -m pytest tests/unit/test_migrate_legacy_models.py -v`
+Run: `uv run python -m pytest tests/unit/test_migrate_legacy_models.py -v`
 Expected: 4 PASSED.
 
 ### Task 6.2 — Migrate one model and smoke-test
@@ -4070,7 +4071,7 @@ Expected: 4 PASSED.
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python scripts/migrate_legacy_models.py models/ppo_hoop_blue_4_20260511_202612
+uv run python scripts/migrate_legacy_models.py models/ppo_hoop_blue_4_20260511_202612
 ls models/ppo_hoop_blue_4_20260511_202612/.hydra/
 cat models/ppo_hoop_blue_4_20260511_202612/.hydra/meta.yaml
 ```
@@ -4080,7 +4081,7 @@ Expected: `[done] ppo_hoop_blue_4_20260511_202612 → ...`. The `.hydra/` direct
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python -m scripts.train \
+uv run python -m scripts.train \
   +experiment=blue_v5 trainer.total_timesteps=200 run_name=_phase6_pretrain_smoke 2>&1 | tail -10
 rm -rf runs/_phase6_pretrain_smoke
 ```
@@ -4092,7 +4093,7 @@ Expected: PPO loads `blue_v4` as `init.parent` (declared in `conf/experiment/blu
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python scripts/migrate_legacy_models.py models/*
+uv run python scripts/migrate_legacy_models.py models/*
 ```
 Expected: 7 `[done]` or `[skip]` lines. The previously migrated `blue_4` will be `[skip]`.
 
@@ -4168,7 +4169,7 @@ Now that legacy models have `.hydra/`, `test_warm_start.py` can run end-to-end.
 
 Run:
 ```bash
-MODEL=ppo_hoop_blue_4_20260511_202612 conda run --no-capture-output -n uav python -m pytest tests/integration/test_warm_start.py -v
+MODEL=ppo_hoop_blue_4_20260511_202612 uv run python -m pytest tests/integration/test_warm_start.py -v
 ```
 Expected: PASS.
 
@@ -4176,7 +4177,7 @@ Expected: PASS.
 
 - [ ] **Step 1: Full test suite**
 
-Run: `conda run --no-capture-output -n uav python -m pytest -q`
+Run: `uv run python -m pytest -q`
 Expected: every test passes including `test_warm_start.py`.
 
 - [ ] **Step 2: Commit (user runs manually)**
@@ -4215,7 +4216,7 @@ The session-end protocol from `CLAUDE.md` says: after completing significant wor
 
 Run:
 ```bash
-conda run --no-capture-output -n uav python -m pytest -q
+uv run python -m pytest -q
 make train EXP=blue_v5 OVERRIDES="trainer.total_timesteps=500 run_name=_final_smoke"
 make lineage RUN_NAME=_final_smoke
 rm -rf runs/_final_smoke

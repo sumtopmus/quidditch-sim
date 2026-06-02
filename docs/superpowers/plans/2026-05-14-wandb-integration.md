@@ -68,9 +68,9 @@ The full delete is the four lines starting with `# Monitoring / logging` through
 - [ ] **Step 2: Install in env, verify import**
 
 ```bash
-conda run -n uav pip install "wandb>=0.16"
-conda run -n uav pip uninstall -y tensorboard tensorboard-data-server
-conda run -n uav python -c "import wandb; print(wandb.__version__)"
+uv pip install "wandb>=0.16"
+uv pip uninstall -y tensorboard tensorboard-data-server
+uv run python -c "import wandb; print(wandb.__version__)"
 ```
 
 Expected: prints a wandb version >= 0.16. `tensorboard` uninstall may print "not installed" (that's fine).
@@ -105,7 +105,7 @@ def test_wandb_mode_is_disabled() -> None:
 - [ ] **Step 2: Run to verify it fails**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_conftest_wandb_disabled.py -v
+uv run python -m pytest tests/unit/test_conftest_wandb_disabled.py -v
 ```
 
 Expected: FAIL — `WANDB_MODE` is not set (or set to something else).
@@ -124,7 +124,7 @@ os.environ.setdefault("WANDB_MODE", "disabled")
 - [ ] **Step 4: Run test, verify it passes**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_conftest_wandb_disabled.py -v
+uv run python -m pytest tests/unit/test_conftest_wandb_disabled.py -v
 ```
 
 Expected: PASS.
@@ -132,7 +132,7 @@ Expected: PASS.
 - [ ] **Step 5: Run full suite to confirm no regression**
 
 ```bash
-conda run -n uav python -m pytest tests/unit -x
+uv run python -m pytest tests/unit -x
 ```
 
 Expected: all existing unit tests still pass.
@@ -182,7 +182,7 @@ def test_wandb_config_in_defaults_list() -> None:
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_wandb_config_schema.py -v
+uv run python -m pytest tests/unit/test_wandb_config_schema.py -v
 ```
 
 Expected: FAIL — `cfg.wandb` doesn't exist (the group isn't in the defaults list yet).
@@ -249,7 +249,7 @@ defaults:
 - [ ] **Step 6: Run tests**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_wandb_config_schema.py -v
+uv run python -m pytest tests/unit/test_wandb_config_schema.py -v
 ```
 
 Expected: PASS.
@@ -257,7 +257,7 @@ Expected: PASS.
 - [ ] **Step 7: Run full unit suite to confirm no regression**
 
 ```bash
-conda run -n uav python -m pytest tests/unit -x
+uv run python -m pytest tests/unit -x
 ```
 
 Expected: all existing unit tests still pass.
@@ -321,7 +321,7 @@ def test_fully_qualified_uri_latest_also_rejected() -> None:
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_init_latest_ban.py -v
+uv run python -m pytest tests/unit/test_init_latest_ban.py -v
 ```
 
 Expected: FAIL — `InitConfig` doesn't validate.
@@ -367,7 +367,7 @@ class InitConfig:
 - [ ] **Step 4: Run tests**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_init_latest_ban.py -v
+uv run python -m pytest tests/unit/test_init_latest_ban.py -v
 ```
 
 Expected: PASS (5 cases).
@@ -375,7 +375,7 @@ Expected: PASS (5 cases).
 - [ ] **Step 5: Run full unit suite — confirm no regression**
 
 ```bash
-conda run -n uav python -m pytest tests/unit -x
+uv run python -m pytest tests/unit -x
 ```
 
 Expected: all green.
@@ -541,7 +541,7 @@ def test_entity_override_from_cfg() -> None:
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_wandb_init.py -v
+uv run python -m pytest tests/unit/test_wandb_init.py -v
 ```
 
 Expected: FAIL — `scripts._wandb_init` doesn't exist.
@@ -652,7 +652,7 @@ def init_wandb(cfg: DictConfig, run_dir: Path, role: str) -> Any:
 - [ ] **Step 4: Run tests, confirm pass**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_wandb_init.py -v
+uv run python -m pytest tests/unit/test_wandb_init.py -v
 ```
 
 Expected: 14 cases PASS.
@@ -722,7 +722,7 @@ def test_train_canary_team_2048_steps(tmp_path: Path) -> None:
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-conda run -n uav python -m pytest tests/integration/test_train_smoke_wandb_disabled.py -v
+uv run python -m pytest tests/integration/test_train_smoke_wandb_disabled.py -v
 ```
 
 Expected: FAIL — either tfevents files present (TB still active), or assertion on wandb wiring.
@@ -982,7 +982,7 @@ def main(cfg: DictConfig) -> None:
 - [ ] **Step 4: Run smoke test**
 
 ```bash
-conda run -n uav python -m pytest tests/integration/test_train_smoke_wandb_disabled.py -v
+uv run python -m pytest tests/integration/test_train_smoke_wandb_disabled.py -v
 ```
 
 Expected: PASS (training completes; no tfevents files written).
@@ -990,7 +990,7 @@ Expected: PASS (training completes; no tfevents files written).
 - [ ] **Step 5: Run scoring canary to confirm fingerprint preserved**
 
 ```bash
-conda run -n uav python -m pytest tests/integration/test_scoring_canary.py tests/integration/test_team_env_canary.py -v
+uv run python -m pytest tests/integration/test_scoring_canary.py tests/integration/test_team_env_canary.py -v
 ```
 
 Expected: both canaries pass (step 434 / reward 7.3837 for single-agent; team canary holds).
@@ -998,7 +998,7 @@ Expected: both canaries pass (step 434 / reward 7.3837 for single-agent; team ca
 - [ ] **Step 6: Run full pytest suite**
 
 ```bash
-conda run -n uav python -m pytest tests -x
+uv run python -m pytest tests -x
 ```
 
 Expected: all green.
@@ -1103,7 +1103,7 @@ def test_log_to_wandb_noop_when_moviepy_missing() -> None:
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_video_callback_wandb.py -v
+uv run python -m pytest tests/unit/test_video_callback_wandb.py -v
 ```
 
 Expected: FAIL — `_log_to_wandb` doesn't exist.
@@ -1189,7 +1189,7 @@ Also delete the now-unused import `from stable_baselines3.common.logger import V
 - [ ] **Step 4: Run tests**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_video_callback_wandb.py -v
+uv run python -m pytest tests/unit/test_video_callback_wandb.py -v
 ```
 
 Expected: 3 cases PASS.
@@ -1197,7 +1197,7 @@ Expected: 3 cases PASS.
 - [ ] **Step 5: Re-run smoke + canary**
 
 ```bash
-conda run -n uav python -m pytest tests/integration/test_train_smoke_wandb_disabled.py tests/integration/test_scoring_canary.py tests/integration/test_team_env_canary.py -v
+uv run python -m pytest tests/integration/test_train_smoke_wandb_disabled.py tests/integration/test_scoring_canary.py tests/integration/test_team_env_canary.py -v
 ```
 
 Expected: all pass.
@@ -1441,7 +1441,7 @@ def test_resolve_no_active_wandb_run_still_works(tmp_path: Path) -> None:
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_artifact_resolve.py -v
+uv run python -m pytest tests/unit/test_artifact_resolve.py -v
 ```
 
 Expected: FAIL — `scripts._artifact_io` doesn't exist.
@@ -1632,7 +1632,7 @@ def log_run_artifact(
 - [ ] **Step 4: Run tests**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_artifact_resolve.py -v
+uv run python -m pytest tests/unit/test_artifact_resolve.py -v
 ```
 
 Expected: 9 cases PASS.
@@ -1741,7 +1741,7 @@ Update the `finally:` block to call `log_run_artifact` before `wandb.finish()`. 
 - [ ] **Step 3: Run smoke test**
 
 ```bash
-conda run -n uav python -m pytest tests/integration/test_train_smoke_wandb_disabled.py -v
+uv run python -m pytest tests/integration/test_train_smoke_wandb_disabled.py -v
 ```
 
 Expected: both cases PASS.
@@ -1749,7 +1749,7 @@ Expected: both cases PASS.
 - [ ] **Step 4: Re-run canaries**
 
 ```bash
-conda run -n uav python -m pytest tests/integration/test_scoring_canary.py tests/integration/test_team_env_canary.py -v
+uv run python -m pytest tests/integration/test_scoring_canary.py tests/integration/test_team_env_canary.py -v
 ```
 
 Expected: both PASS.
@@ -1820,7 +1820,7 @@ def test_pretrain_branch_calls_resolve_parent(tmp_path: Path) -> None:
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_train_resolve_parent_wiring.py -v
+uv run python -m pytest tests/unit/test_train_resolve_parent_wiring.py -v
 ```
 
 Expected: FAIL — `resolve_parent` not imported / not called.
@@ -1859,7 +1859,7 @@ Then in `_build_or_load_model`, replace the three `parent = Path(cfg.init.parent
 - [ ] **Step 4: Run test, expect pass**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_train_resolve_parent_wiring.py -v
+uv run python -m pytest tests/unit/test_train_resolve_parent_wiring.py -v
 ```
 
 Expected: PASS.
@@ -1867,7 +1867,7 @@ Expected: PASS.
 - [ ] **Step 5: Re-run smoke + canaries**
 
 ```bash
-conda run -n uav python -m pytest tests/integration/test_train_smoke_wandb_disabled.py tests/integration/test_scoring_canary.py tests/integration/test_team_env_canary.py -v
+uv run python -m pytest tests/integration/test_train_smoke_wandb_disabled.py tests/integration/test_scoring_canary.py tests/integration/test_team_env_canary.py -v
 ```
 
 Expected: all PASS.
@@ -2000,7 +2000,7 @@ def test_promote_no_best_model_fails(tmp_path: Path) -> None:
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_promote.py -v
+uv run python -m pytest tests/unit/test_promote.py -v
 ```
 
 Expected: FAIL — `scripts.promote` doesn't exist.
@@ -2148,7 +2148,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run tests**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_promote.py -v
+uv run python -m pytest tests/unit/test_promote.py -v
 ```
 
 Expected: 4 cases PASS.
@@ -2279,7 +2279,7 @@ def test_frozen_wandb_uri_routes_through_resolve_parent(tmp_path: Path) -> None:
 - [ ] **Step 6: Run tests**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_eval_uri_resolution.py -v
+uv run python -m pytest tests/unit/test_eval_uri_resolution.py -v
 ```
 
 Expected: PASS.
@@ -2391,7 +2391,7 @@ def test_upload_idempotent_skips_if_metadata_present(tmp_path: Path) -> None:
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_upload_legacy_models.py -v
+uv run python -m pytest tests/unit/test_upload_legacy_models.py -v
 ```
 
 Expected: FAIL — script doesn't exist.
@@ -2555,7 +2555,7 @@ if __name__ == "__main__":
 - [ ] **Step 4: Run tests**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_upload_legacy_models.py -v
+uv run python -m pytest tests/unit/test_upload_legacy_models.py -v
 ```
 
 Expected: 3 cases PASS.
@@ -2744,7 +2744,7 @@ def test_resume_chain_collapses_in_render(tmp_path: Path) -> None:
 - [ ] **Step 2: Run to verify failure**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_lineage_walkers.py -v
+uv run python -m pytest tests/unit/test_lineage_walkers.py -v
 ```
 
 Expected: FAIL — `walk_chain_local`, `walk_chain_wandb`, `walk_dispatch` don't exist.
@@ -3030,7 +3030,7 @@ lineage: ## ⛓  Walk pretrain ancestry  [RUN_NAME=...] [TRIAL=...] [TARGET=<pat
 - [ ] **Step 5: Run tests**
 
 ```bash
-conda run -n uav python -m pytest tests/unit/test_lineage_walkers.py -v
+uv run python -m pytest tests/unit/test_lineage_walkers.py -v
 ```
 
 Expected: 5 cases PASS.
@@ -3038,7 +3038,7 @@ Expected: 5 cases PASS.
 - [ ] **Step 6: Smoke against the existing migrated models (local walker)**
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && conda run -n uav python -m scripts.lineage models/ppo_hoop_red_1_20260506_103058 --local
+cd "$(git rev-parse --show-toplevel)" && uv run python -m scripts.lineage models/ppo_hoop_red_1_20260506_103058 --local
 ```
 
 Expected: prints a table. The legacy dirs don't have `_wandb_metadata.json` yet — output may say "no _wandb_metadata.json found, chain truncated"; that's fine, the script doesn't crash.
@@ -3153,7 +3153,7 @@ sweep-agents: ## 🤖🤖 Run N parallel sweep agents  ID=<sweep_id> N=<n>
 - [ ] **Step 3: Lint the sweep YAML offline**
 
 ```bash
-conda run -n uav python -c "import yaml; yaml.safe_load(open('sweeps/blue_v5_lr_ent.yaml'))"
+uv run python -c "import yaml; yaml.safe_load(open('sweeps/blue_v5_lr_ent.yaml'))"
 ```
 
 Expected: no exception (YAML is valid).
@@ -3184,7 +3184,7 @@ git commit -m "feat(sweep): wandb sweep YAML + Makefile targets for blue_v5 lr �
 - [ ] **Step 1: Run the full pytest suite**
 
 ```bash
-cd "$(git rev-parse --show-toplevel)" && conda run -n uav python -m pytest tests -x -v
+cd "$(git rev-parse --show-toplevel)" && uv run python -m pytest tests -x -v
 ```
 
 Expected: all tests pass. Tests count should be ≥ 60 (was ~46 before Part 2).
@@ -3192,7 +3192,7 @@ Expected: all tests pass. Tests count should be ≥ 60 (was ~46 before Part 2).
 - [ ] **Step 2: Verify canary fingerprints byte-identical**
 
 ```bash
-conda run -n uav python -m pytest tests/integration/test_scoring_canary.py tests/integration/test_team_env_canary.py -v
+uv run python -m pytest tests/integration/test_scoring_canary.py tests/integration/test_team_env_canary.py -v
 ```
 
 Expected: `step 434 / reward 7.3837` for single-agent canary; team canary unchanged.

@@ -16,9 +16,9 @@ Two modes:
        the scripted opponent inside OCE.
 
 Run:
-    conda activate uav
-    python scripts/eval_team.py --red beeline_red --blue beeline_blue --episodes 100
-    python scripts/eval_team.py --red beeline_red \
+    uv sync       # one-time
+    uv run python scripts/eval_team.py --red beeline_red --blue beeline_blue --episodes 100
+    uv run python scripts/eval_team.py --red beeline_red \
         --blue frozen:models/ppo_hoop_blue_4_20260511_202612/best_model \
         --learner blue_0 --learner-frame-stack 3 --gui
 """
@@ -32,7 +32,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
-# macOS conda ships multiple copies of libomp; suppress the duplicate-init abort.
+# macOS: multiple libomp copies can coexist across Python distributions;
+# suppress the duplicate-init abort.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 import numpy as np

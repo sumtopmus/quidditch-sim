@@ -9,7 +9,6 @@
 #   ├── best_model.zip
 #   └── checkpoints/
 
-CONDA_ENV  ?= uav
 RUN_NAME   ?=
 TRIAL      ?=
 CHECKPOINT ?=
@@ -31,19 +30,19 @@ _TRIAL_DIR      = $(strip $(if $(TRIAL),\
                       $(_LATEST_OVERALL))))
 _LATEST_CKPT    = $(shell ls -1 "$(_TRIAL_DIR)/checkpoints/"*.zip 2>/dev/null | sort -V | tail -1 | sed 's/\.zip$$//')
 
-# Resolve the conda binary: prefer $CONDA_EXE (set by `conda init`), fall back to PATH.
-CONDA := $(or $(CONDA_EXE),$(shell command -v conda 2>/dev/null))
-ifeq ($(CONDA),)
-$(error conda not found — activate a conda shell or set CONDA_EXE)
+# Resolve uv: prefer PATH, else error out.
+UV := $(shell command -v uv 2>/dev/null)
+ifeq ($(UV),)
+$(error uv not found — install from https://docs.astral.sh/uv/)
 endif
 
-# Run a command inside the conda env, streaming output in real time.
-CONDA_RUN := $(CONDA) run --no-capture-output -n $(CONDA_ENV)
-PYTHON    := $(CONDA_RUN) python
+# Run a command inside the uv-managed venv, streaming output in real time.
+UV_RUN   := $(UV) run
+PYTHON   := $(UV_RUN) python
 # macOS: mujoco.viewer.launch_passive() requires mjpython (owns the Cocoa main
-# thread).  mjpython is a wrapper installed by the mujoco pip package; use it
-# only for targets that open the interactive viewer.
-MJPYTHON  := $(CONDA_RUN) mjpython
+# thread). mjpython is a console script installed by the mujoco pip wheel; use
+# it only for targets that open the interactive viewer.
+MJPYTHON := $(UV_RUN) mjpython
 
 # ──────────────────────────────────────────────────────────────────────────────
 .PHONY: help test test-fast camera-test demo train resume eval eval-headless lineage promote install clean list-runs obs-specs describe-run eval-team sweep sweep-agent sweep-agents
@@ -109,8 +108,8 @@ promote: ## 🏆 Promote best model — alias on wandb + copy to models/  [RUN_N
 
 # ──────────────────────────────────────────────────────────────────────────────
 
-install: ## 📦 Create/update the $(CONDA_ENV) conda env
-	@$(CONDA) env create -f environment.yml 2>/dev/null || $(CONDA) env update -f environment.yml --prune
+install: ## 📦 Sync the uv environment from pyproject.toml + uv.lock
+	@$(UV) sync
 	@echo "Done. Verify with: make test"
 
 obs-specs: ## 🔭 Print block-by-block layout of every canonical ObsSpec
@@ -162,16 +161,16 @@ N     ?= 1
 sweep: ## 🔁 Create a wandb sweep controller  SWEEP=<name> (file under sweeps/)
 	@test -n "$(SWEEP)" || { echo "ERROR: SWEEP=<name> required (see sweeps/)"; exit 1; }
 	@test -f "sweeps/$(SWEEP).yaml" || { echo "ERROR: sweeps/$(SWEEP).yaml not found"; exit 1; }
-	$(CONDA_RUN) wandb sweep --project $(WANDB_PROJECT) sweeps/$(SWEEP).yaml
+	$(UV_RUN) wandb sweep --project $(WANDB_PROJECT) sweeps/$(SWEEP).yaml
 
 sweep-agent: ## 🤖 Run one sweep agent  ID=<sweep_id>
 	@test -n "$(ID)" || { echo "ERROR: ID=<sweep_id> required (copy from 'make sweep' output)"; exit 1; }
-	$(CONDA_RUN) wandb agent $(ID)
+	$(UV_RUN) wandb agent $(ID)
 
 sweep-agents: ## 🤖🤖 Run N parallel sweep agents  ID=<sweep_id> N=<n>
 	@test -n "$(ID)" || { echo "ERROR: ID=<sweep_id> required"; exit 1; }
 	@echo "Spawning $(N) agents.  Single-machine: N=1 is the sane default for CPU laptop trainings."
-	@for i in $$(seq 1 $(N)); do $(CONDA_RUN) wandb agent $(ID) & done; wait
+	@for i in $$(seq 1 $(N)); do $(UV_RUN) wandb agent $(ID) & done; wait
 
 clean: ## 🧹 Remove __pycache__ and .pyc files
 	@find . -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true
