@@ -96,6 +96,16 @@ class World:
         """Duration of one control step in seconds (= 1 / CONTROL_HZ)."""
         return _DT_CONTROL
 
+    @property
+    def viewer_is_open(self) -> bool:
+        """True while an interactive viewer window is attached and open.
+
+        False when running headless (no viewer) or after the user has
+        closed the window.  Callers holding a scene open can poll this to
+        exit the moment the window is dismissed.
+        """
+        return self._viewer is not None and self._viewer.is_running()
+
     # ── lifecycle ─────────────────────────────────────────────────────────────
 
     def reset(self) -> None:
@@ -179,24 +189,31 @@ class World:
             self._renderer = None
 
     def idle(self, active: bool = False) -> None:
-        """Block until the user closes the viewer window.
+        """Block until the user closes the viewer window or presses Ctrl-C.
 
         Args:
             active: If True, keep stepping so each drone holds its last
                 setpoint.  If False (default), freeze physics and hold the
                 last frame.  No-op when running headless.
+
+        Either exit path returns cleanly — closing the window ends the
+        ``is_running()`` loop; Ctrl-C is caught and swallowed so the demo
+        finishes without a traceback.
         """
         if self._viewer is None or not self._viewer.is_running():
             return
 
         mode = "hovering" if active else "frozen"
-        print(f"[idle] viewer open ({mode}) — close the window to exit.")
-        if active:
-            while self._viewer.is_running():
-                self.step()
-        else:
-            while self._viewer.is_running():
-                time.sleep(0.05)
+        print(f"[idle] viewer open ({mode}) — close the window or press Ctrl-C to exit.")
+        try:
+            if active:
+                while self._viewer.is_running():
+                    self.step()
+            else:
+                while self._viewer.is_running():
+                    time.sleep(0.05)
+        except KeyboardInterrupt:
+            print("\n[idle] interrupted — closing viewer.")
 
     # ── camera resolution ─────────────────────────────────────────────────────
 

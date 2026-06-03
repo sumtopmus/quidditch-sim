@@ -168,8 +168,11 @@ def run_single_scenario_demo(*, name: str, blue_factory: Callable[[], Policy],
             blue_policy=blue_factory(),
             max_seconds=max_seconds,
         )
-        print("\nDemo complete — viewer remains open. Ctrl-C to quit.")
-        while True:
-            _idle_pause(env, seconds=1.0)
+        print("\nDemo complete — close the viewer window or press Ctrl-C to quit.")
+        try:
+            while env._world.viewer_is_open:
+                _idle_pause(env, seconds=1.0)
+        except KeyboardInterrupt:
+            print("\nQuitting.")
     finally:
         env.close()
