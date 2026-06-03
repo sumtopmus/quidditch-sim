@@ -360,6 +360,18 @@ def test_metadata_only_filesystem_file_returns_parent_dir(tmp_path: Path) -> Non
     assert out == run_dir
 
 
+def test_metadata_only_filesystem_path_without_zip_suffix(tmp_path: Path) -> None:
+    """Convention: `models/<run>/best_model` (no .zip) — `best_model.zip`
+    lives alongside it.  metadata_only=True returns the parent dir."""
+    from scripts._artifact_io import resolve_parent
+    run_dir = tmp_path / "models" / "ppo_hoop_blue_4"
+    run_dir.mkdir(parents=True)
+    (run_dir / "best_model.zip").write_bytes(b"")
+    # Pass the path WITHOUT .zip.
+    out = resolve_parent(str(run_dir / "best_model"), metadata_only=True)
+    assert out == run_dir
+
+
 def test_metadata_only_filesystem_dir_returns_dir(tmp_path: Path) -> None:
     """Path to a dir with metadata_only=True returns the dir as-is."""
     from scripts._artifact_io import resolve_parent

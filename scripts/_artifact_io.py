@@ -187,8 +187,13 @@ def resolve_parent(
     s = str(uri_or_path)
     if not _is_wandb_uri(s):
         p = Path(s)
-        if metadata_only and p.is_file():
-            return p.parent
+        if metadata_only:
+            # Normalize "<run_dir>/best_model" (no .zip), "<run_dir>/best_model.zip",
+            # or the run dir itself → run dir.
+            if p.is_file():
+                return p.parent
+            if not p.exists() and p.with_suffix(".zip").is_file():
+                return p.parent
         return p
 
     parsed = _parse_wandb_uri(s)

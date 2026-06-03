@@ -102,9 +102,13 @@ def run_scenario(
         from core.run_context import load_run_context
         from scripts._artifact_io import resolve_parent
         # Resolve weights path; load_run_context wants the run dir, not the .zip.
+        # Path conventions handled: "<run>/best_model.zip", "<run>/best_model"
+        # (no extension), or "<run>" itself.
         model_path = resolve_parent(learner_uri)
         model_path_p = Path(str(model_path))
         if model_path_p.is_file():
+            run_dir = model_path_p.parent
+        elif model_path_p.with_suffix(".zip").is_file():
             run_dir = model_path_p.parent
         else:
             run_dir = model_path_p

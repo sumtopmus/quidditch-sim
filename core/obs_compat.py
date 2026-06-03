@@ -105,10 +105,13 @@ def _resolve_parent_dir_metadata_only(parent_uri: str) -> Path:
         return resolve_parent(parent_uri, metadata_only=True)
 
     p = Path(parent_uri)
-    if not p.exists():
-        raise FileNotFoundError(f"no such parent: {p}")
+    # Normalize the "best_model" / "best_model.zip" / run-dir conventions.
     if p.is_file():
         p = p.parent
+    elif not p.exists() and p.with_suffix(".zip").is_file():
+        p = p.parent
+    elif not p.exists():
+        raise FileNotFoundError(f"no such parent: {p}")
     if not (p / ".hydra" / "config.yaml").exists():
         raise FileNotFoundError(f"no .hydra/config.yaml under {p}")
     return p
