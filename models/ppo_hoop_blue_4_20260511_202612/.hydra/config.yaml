@@ -3,6 +3,16 @@ seed: 42
 obs:
   name: DUEL_V2_WORLD
   n_stack: 3
+  blocks:
+  - ANG_VEL
+  - ANG_POS
+  - LIN_VEL_BODY
+  - LIN_POS
+  - UNIT_TO_GOAL
+  - VEC_TO_HOOP
+  - OPP_POS_REL
+  - OPP_VEL_REL_WORLD
+  - CLOSING_RATE
 init:
   mode: scratch
   parent: null

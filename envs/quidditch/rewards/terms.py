@@ -11,6 +11,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+import numpy as np
+
 from envs.quidditch.rewards.stack import StepState
 
 
@@ -248,4 +250,47 @@ class InterceptShaping:
             state.dist_def_to_future_red_prev - state.dist_def_to_future_red
         ) / state.step_period
         out[self.defender] += self.scale * max(0.0, closing)
+        return out
+
+
+@dataclass
+class GoalSideCone:
+    """Per-step pull for defender to be on the goal side of Red→hoop axis.
+
+        axis      = red_pos - hoop_pos
+        bh        = blue_pos - hoop_pos
+        along     = bh · (axis / ‖axis‖)
+        t         = along / ‖axis‖             (0 at hoop, 1 at Red)
+        cos_align = along / ‖bh‖               (cosine of angle from axis)
+
+        reward = scale × max(0, cos_align) × t        if 0 ≤ t ≤ 1
+        reward = 0                                     otherwise
+
+    Zero at hoop (t=0), peaks at Red (t=1, on-axis), zero past Red
+    (t>1), zero behind hoop (t<0).  Decays smoothly off-axis via
+    cos_align.  Non-zero-sum: only `defender` is rewarded.  HoopAnchor
+    still pulls defender back toward hoop, balancing this outward pull
+    at an equilibrium guard position.
+    """
+    scale: float
+    defender: str = "blue_0"
+
+    def compute(self, state: StepState) -> dict[str, float]:
+        out: dict[str, float] = {a: 0.0 for a in state.agent_ids}
+        if self.defender not in out:
+            return out
+        axis = state.red_pos - state.hoop_pos
+        axis_len = float(np.linalg.norm(axis))
+        if axis_len < 1e-8:
+            return out
+        bh = state.blue_pos - state.hoop_pos
+        bh_len = float(np.linalg.norm(bh))
+        if bh_len < 1e-8:
+            return out
+        along = float(np.dot(bh, axis / axis_len))
+        t = along / axis_len
+        if t < 0.0 or t > 1.0:
+            return out
+        cos_align = along / bh_len
+        out[self.defender] += self.scale * max(0.0, cos_align) * t
         return out

@@ -36,9 +36,12 @@ from core.world import World
 from core.quadrotor import Quadrotor
 from core.drone.cf2x import cf2x_assets, cf2x_fragment
 from envs.quidditch import obs_spec
-from envs.quidditch.obs_spec import (
-    DUEL_V1_BODY, DUEL_V2_WORLD, DUEL_V3_BODY_EGO, ObsSpec,
-)
+from envs.quidditch.obs_spec import ObsSpec, load_obs_yaml
+
+# Default non-learner spec: the 22-d body-mixed legacy team obs.  Resolved at
+# import time so frozen red checkpoints load without surgery.  See decisions
+# 2026-05-15 (TEAM_ENV_OBS → DUEL_V1_BODY rename).
+_DUEL_V1_BODY: ObsSpec = load_obs_yaml("duel_v1_body")
 from envs.quidditch.scene import arena_wall_fragment, hoop_fragment
 from envs.quidditch.scoring import GeomDistanceScorer
 from envs.quidditch.tagging import TagDistanceScorer
@@ -131,7 +134,7 @@ class QuidditchTeamEnv(ParallelEnv):
             )
         self._learner_id: str | None = learner_id
         self._learner_spec: ObsSpec = (
-            learner_spec if learner_spec is not None else DUEL_V1_BODY
+            learner_spec if learner_spec is not None else _DUEL_V1_BODY
         )
 
         # Observation spaces: build per-agent based on its spec.
@@ -208,7 +211,7 @@ class QuidditchTeamEnv(ParallelEnv):
     def _spec_for_agent(self, agent_id: str) -> ObsSpec:
         if agent_id == self._learner_id:
             return self._learner_spec
-        return DUEL_V1_BODY
+        return _DUEL_V1_BODY
 
     def observation_space(self, agent: str) -> spaces.Box:
         return self.observation_spaces[agent]
@@ -462,6 +465,7 @@ class QuidditchTeamEnv(ParallelEnv):
             tag_radius=self.cfg.tag_radius,
             dist_def_to_future_red=self._dist_def_to_future_red,
             dist_def_to_future_red_prev=self._dist_def_to_future_red_prev,
+            hoop_pos=HOOP_CENTER,
         )
         rewards = self._reward_stack.compute_step(reward_state)
         self._dist_b2r_prev = dist_b2r
@@ -601,18 +605,12 @@ class QuidditchTeamEnv(ParallelEnv):
     def _build_agent_obs(self, agent_id: str) -> np.ndarray:
         return self._pack_agent_obs(agent_id, self._spec_for_agent(agent_id))
 
-    def _pack_agent_obs(self, agent_id: str, spec: ObsSpec) -> np.ndarray:
-        """Build the float32 obs vector for one agent under one ObsSpec.
+    def _build_agent_features(self, agent_id: str) -> dict[str, np.ndarray]:
+        """Compute every feature this env can supply for one agent.
 
-        Supports DUEL_V1_BODY (22-d), DUEL_V2_WORLD (25-d, world-frame
-        opp_vel_rel + closing_rate + vec_to_hoop), and DUEL_V3_BODY_EGO
-        (25-d, body-frame ego-centric).
-
-        Dispatch uses structural equality (==), not identity (is): under
-        SubprocVecEnv the env is pickled into worker processes, which
-        creates fresh ObsSpec dataclass instances that are not `is`-equal
-        to the module-level constants.  ObsSpec is `frozen=True` so == is
-        well-defined and matches block-by-block.
+        Returns a {block_name: float32-array} dict.  `obs_spec.pack(spec, ...)`
+        picks the subset the active spec asks for.  Keys match canonical
+        ObsBlock.name strings post-2026-05-18 rename (see obs_spec.py).
         """
         if agent_id == self._red_id:
             self_q, opp_q = self._red,  self._blue
@@ -626,45 +624,25 @@ class QuidditchTeamEnv(ParallelEnv):
             goal_target   = self._midpoint()
 
         s = self_q.state()
-        ang_vel    = s[0]
-        ang_pos    = s[1]
-        lin_vel_b  = s[2]
-        lin_pos    = s[3]
+        ang_vel, ang_pos, lin_vel_b, lin_pos = s[0], s[1], s[2], s[3]
 
         opp_s = opp_q.state()
-        opp_pos     = opp_s[3]
-        opp_lin_vel = opp_s[2]
+        opp_pos, opp_lin_vel = opp_s[3], opp_s[2]
 
-        vec_to_goal  = goal_target - lin_pos
-        dist_g       = float(np.linalg.norm(vec_to_goal))
-        unit_to_goal = vec_to_goal / (dist_g + 1e-8)
-        signed_dist_norm = self._signed_dist_to_hoop_plane(lin_pos) / ARENA_RADIUS
-
-        opp_pos_rel_world = opp_pos - lin_pos
-        opp_vel_rel_body_mixed = opp_lin_vel - lin_vel_b  # legacy DUEL_V1_BODY
-
-        # DUEL_V1_BODY (22-d, body-mixed opp_vel_rel + signed-distance scalar).
-        if spec == DUEL_V1_BODY:
-            return obs_spec.pack(DUEL_V1_BODY, {
-                "ang_vel":          ang_vel,
-                "ang_pos":          ang_pos,
-                "lin_vel":          lin_vel_b,
-                "lin_pos":          lin_pos,
-                "unit_to_goal":     unit_to_goal,
-                "signed_dist_norm": [signed_dist_norm],
-                "opp_pos_rel":      opp_pos_rel_world,
-                "opp_vel_rel":      opp_vel_rel_body_mixed,
-            })
-
-        # World-frame velocities (free-joint qvel[0:3] for both bodies).
-        data = self._world.data
-        self_vel_world = data.qvel[self_dofadr : self_dofadr + 3].copy()
-        opp_vel_world  = data.qvel[opp_dofadr  : opp_dofadr  + 3].copy()
-        opp_vel_rel_world = (opp_vel_world - self_vel_world).astype(np.float32)
-
+        vec_to_goal_world = goal_target - lin_pos
+        dist_g            = float(np.linalg.norm(vec_to_goal_world))
+        unit_to_goal      = vec_to_goal_world / (dist_g + 1e-8)
+        signed_dist_norm  = self._signed_dist_to_hoop_plane(lin_pos) / ARENA_RADIUS
         vec_to_hoop_world = (HOOP_CENTER - lin_pos).astype(np.float32)
 
-        # Closing rate tracked only for the configured learner.
+        opp_pos_rel_world = opp_pos - lin_pos
+        data = self._world.data
+        self_vel_world    = data.qvel[self_dofadr : self_dofadr + 3].copy()
+        opp_vel_world     = data.qvel[opp_dofadr  : opp_dofadr  + 3].copy()
+        opp_vel_rel_world = (opp_vel_world - self_vel_world).astype(np.float32)
+
+        R_wb = data.xmat[self_q._drone_id].reshape(3, 3)
+
         dist_to_opp = float(np.linalg.norm(opp_pos_rel_world))
         if agent_id == self._learner_id:
             closing_rate = (
@@ -674,42 +652,27 @@ class QuidditchTeamEnv(ParallelEnv):
         else:
             closing_rate = 0.0
 
-        # DUEL_V2_WORLD (25-d, world-frame opp + closing_rate).
-        if spec == DUEL_V2_WORLD:
-            return obs_spec.pack(DUEL_V2_WORLD, {
-                "ang_vel":      ang_vel,
-                "ang_pos":      ang_pos,
-                "lin_vel":      lin_vel_b,
-                "lin_pos":      lin_pos,
-                "unit_to_goal": unit_to_goal,
-                "vec_to_hoop":  vec_to_hoop_world,
-                "opp_pos_rel":  opp_pos_rel_world.astype(np.float32),
-                "opp_vel_rel":  opp_vel_rel_world,
-                "closing_rate": [closing_rate],
-            })
+        return {
+            "ang_vel":                ang_vel,
+            "ang_pos":                ang_pos,
+            "lin_vel":                lin_vel_b,
+            "lin_pos":                lin_pos,
+            "unit_to_goal":           unit_to_goal,
+            "signed_dist_norm":       np.array([signed_dist_norm], dtype=np.float32),
+            "vec_to_hoop_world":      vec_to_hoop_world,
+            "vec_to_hoop_body":       obs_spec.world_to_body(vec_to_hoop_world, R_wb),
+            "vec_to_goal":            obs_spec.world_to_body(vec_to_goal_world, R_wb),
+            "opp_pos_rel_world":      opp_pos_rel_world.astype(np.float32),
+            "opp_pos_rel_body":       obs_spec.world_to_body(opp_pos_rel_world, R_wb),
+            "opp_vel_rel_body_mixed": (opp_lin_vel - lin_vel_b).astype(np.float32),
+            "opp_vel_rel_world":      opp_vel_rel_world,
+            "opp_vel_rel_body_ego":   obs_spec.world_to_body(opp_vel_rel_world, R_wb),
+            "closing_rate":           np.array([closing_rate], dtype=np.float32),
+        }
 
-        # DUEL_V3_BODY_EGO (25-d, body-frame ego-centric).
-        if spec == DUEL_V3_BODY_EGO:
-            # Rotation: world → body via R_wb.T (R_wb = data.xmat[body_id]).
-            bid = self_q._drone_id
-            R_wb = data.xmat[bid].reshape(3, 3)
-            vec_to_goal_body  = obs_spec.world_to_body(vec_to_goal,  R_wb)
-            vec_to_hoop_body  = obs_spec.world_to_body(vec_to_hoop_world, R_wb)
-            opp_pos_rel_body  = obs_spec.world_to_body(opp_pos_rel_world, R_wb)
-            opp_vel_rel_body  = obs_spec.world_to_body(opp_vel_rel_world, R_wb)
-            return obs_spec.pack(DUEL_V3_BODY_EGO, {
-                "ang_vel":      ang_vel,
-                "ang_pos":      ang_pos,
-                "lin_vel":      lin_vel_b,
-                "lin_pos":      lin_pos,
-                "vec_to_goal":  vec_to_goal_body,
-                "vec_to_hoop":  vec_to_hoop_body,
-                "opp_pos_rel":  opp_pos_rel_body,
-                "opp_vel_rel":  opp_vel_rel_body,
-                "closing_rate": [closing_rate],
-            })
-
-        raise ValueError(f"_pack_agent_obs: unsupported spec {spec!r}")
+    def _pack_agent_obs(self, agent_id: str, spec: ObsSpec) -> np.ndarray:
+        """Pack agent's obs from the universal feature dict under the given spec."""
+        return obs_spec.pack(spec, self._build_agent_features(agent_id))
 
     def _all_obs(self) -> dict[str, np.ndarray]:
         return {a: self._build_agent_obs(a) for a in self.possible_agents}

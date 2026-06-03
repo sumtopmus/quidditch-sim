@@ -50,14 +50,17 @@ def format_obs_block(spec: ObsSpec, n_stack: int) -> str:
 
 def read_obs_spec(info_path: Path | str) -> tuple[ObsSpec, int] | None:
     """Parse run_info.toml and return (ObsSpec, n_stack) or None if [obs] absent."""
+    from envs.quidditch.obs_spec import _apply_legacy_rename
     data = tomllib.loads(Path(info_path).read_text())
     obs = data.get("obs")
     if obs is None:
         return None
     blocks = tuple(
         ObsBlock(
-            name=s["name"], dim=s["dim"],
-            frame=s.get("frame"), notes=s.get("notes"),
+            name=_apply_legacy_rename(s["name"], s.get("frame")),
+            dim=s["dim"],
+            frame=s.get("frame"),
+            notes=s.get("notes"),
         )
         for s in obs["slots"]
     )
@@ -366,8 +369,14 @@ def append_meta_yaml_final_stats(
     completed_steps: int,
     best_eval_reward: float | None = None,
     peak_eval_step: int | None = None,
+    model_kind: str | None = None,
 ) -> None:
-    """Merge final-stats fields into `<run_dir>/.hydra/meta.yaml`."""
+    """Merge final-stats fields into `<run_dir>/.hydra/meta.yaml`.
+
+    `model_kind` is "best" when EvalCallback produced `best_model.zip`, else
+    "final" (final_model.zip only).  Mirrors the tag `log_run_artifact` writes
+    into wandb artifact metadata so MODEL.md can render it from meta.yaml.
+    """
     import yaml
     run_dir = Path(run_dir)
     p = run_dir / ".hydra" / "meta.yaml"
@@ -380,6 +389,7 @@ def append_meta_yaml_final_stats(
         "completed_steps":  int(completed_steps),
         "best_eval_reward": None if best_eval_reward is None else float(best_eval_reward),
         "peak_eval_step":   None if peak_eval_step  is None else int(peak_eval_step),
+        "model_kind":       model_kind,
     }
     p.write_text(yaml.safe_dump(payload))
 

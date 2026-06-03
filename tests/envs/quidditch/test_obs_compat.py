@@ -8,10 +8,14 @@ from envs.quidditch.obs_spec import (
     ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS, UNIT_TO_GOAL,
     SIGNED_DIST_NORM, VEC_TO_HOOP, OPP_POS_REL,
     OPP_VEL_REL_BODY, OPP_VEL_REL_WORLD, CLOSING_RATE,
-    SIMPLE_ENV_OBS, DUEL_V1_BODY, DUEL_V2_WORLD,
-    ObsBlock, ObsSpec,
+    ObsBlock, ObsSpec, load_obs_yaml,
 )
 from scripts._train_common import check_obs_compat, format_obs_block
+
+# Composed specs loaded from YAML so tests don't depend on Python-side constants.
+SIMPLE_ENV_OBS = load_obs_yaml("simple")
+DUEL_V1_BODY = load_obs_yaml("duel_v1_body")
+DUEL_V2_WORLD = load_obs_yaml("duel_v2_world")
 
 
 def _write_info(tmp_path: Path, spec: obs_spec.ObsSpec, n_stack: int) -> Path:
@@ -45,12 +49,16 @@ def test_removed_block_refuses(tmp_path: Path, capsys):
 
 
 def test_frame_only_change_renders_warning(tmp_path: Path, capsys):
-    info = _write_info(tmp_path, DUEL_V1_BODY, n_stack=1)
-    # Construct a spec identical to DUEL_V1_BODY except opp_vel_rel uses world frame.
-    cur = ObsSpec((ANG_VEL, ANG_POS, LIN_VEL_BODY, LIN_POS, UNIT_TO_GOAL,
-                   SIGNED_DIST_NORM, OPP_POS_REL, OPP_VEL_REL_WORLD))
+    """Same-name + different-frame: diff renderer flags ⚠️ frame change.
+
+    After 2026-05-18 rename, canonical blocks no longer collide on name —
+    construct a synthetic same-name pair to exercise the renderer path."""
+    parent_block = ObsBlock("custom", dim=3, frame="world")
+    current_block = ObsBlock("custom", dim=3, frame="body")
+    info = _write_info(tmp_path, ObsSpec((parent_block,)), n_stack=1)
     with pytest.raises(SystemExit):
-        check_obs_compat(info, current=cur, current_n_stack=1, surgery=False)
+        check_obs_compat(info, current=ObsSpec((current_block,)),
+                         current_n_stack=1, surgery=False)
     out = capsys.readouterr().out
     assert "⚠️" in out
     assert "frame" in out  # the rendered explanation mentions "frame changed"
@@ -104,12 +112,37 @@ def test_parent_missing_obs_block_passes_with_surgery(tmp_path: Path):
 # ── New Hydra-based compat check (post-cutover) ─────────────────────────────
 
 
+_DUEL_V2_BLOCKS_YAML = (
+    "  blocks:\n"
+    "    - ANG_VEL\n"
+    "    - ANG_POS\n"
+    "    - LIN_VEL_BODY\n"
+    "    - LIN_POS\n"
+    "    - UNIT_TO_GOAL\n"
+    "    - VEC_TO_HOOP\n"
+    "    - OPP_POS_REL\n"
+    "    - OPP_VEL_REL_WORLD\n"
+    "    - CLOSING_RATE\n"
+)
+_DUEL_V1_BLOCKS_YAML = (
+    "  blocks:\n"
+    "    - ANG_VEL\n"
+    "    - ANG_POS\n"
+    "    - LIN_VEL_BODY\n"
+    "    - LIN_POS\n"
+    "    - UNIT_TO_GOAL\n"
+    "    - SIGNED_DIST_NORM\n"
+    "    - OPP_POS_REL\n"
+    "    - OPP_VEL_REL_BODY\n"
+)
+
+
 def test_check_obs_compat_from_hydra_strict_match(tmp_path: Path):
     from scripts.train import _check_obs_compat_from_hydra
     hydra_dir = tmp_path / ".hydra"
     hydra_dir.mkdir()
     (hydra_dir / "config.yaml").write_text(
-        "obs:\n  name: DUEL_V2_WORLD\n  n_stack: 3\n"
+        "obs:\n  name: DUEL_V2_WORLD\n  n_stack: 3\n" + _DUEL_V2_BLOCKS_YAML
     )
     _check_obs_compat_from_hydra(hydra_dir, DUEL_V2_WORLD, current_n_stack=3)
 
@@ -119,7 +152,7 @@ def test_check_obs_compat_from_hydra_raises_on_mismatch(tmp_path: Path):
     hydra_dir = tmp_path / ".hydra"
     hydra_dir.mkdir()
     (hydra_dir / "config.yaml").write_text(
-        "obs:\n  name: DUEL_V1_BODY\n  n_stack: 1\n"
+        "obs:\n  name: DUEL_V1_BODY\n  n_stack: 1\n" + _DUEL_V1_BLOCKS_YAML
     )
     with pytest.raises(SystemExit):
         _check_obs_compat_from_hydra(hydra_dir, DUEL_V2_WORLD, current_n_stack=3)

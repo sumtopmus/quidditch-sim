@@ -8,18 +8,22 @@
 #   python -m scripts.eval_solo  …         Hydra entrypoint
 #   make tui                               opens the controller TUI (Slice 2)
 
-CONDA_ENV  ?= uav
 EXP        ?=
 OVERRIDES  ?=
 
-CONDA := $(or $(CONDA_EXE),$(shell command -v conda 2>/dev/null))
-ifeq ($(CONDA),)
-$(error conda not found — activate a conda shell or set CONDA_EXE)
+# Resolve uv: prefer PATH, else error out.
+UV := $(shell command -v uv 2>/dev/null)
+ifeq ($(UV),)
+$(error uv not found — install from https://docs.astral.sh/uv/)
 endif
 
-CONDA_RUN := $(CONDA) run --no-capture-output -n $(CONDA_ENV)
-PYTHON    := $(CONDA_RUN) python
-MJPYTHON  := $(CONDA_RUN) mjpython
+# Run a command inside the uv-managed venv, streaming output in real time.
+UV_RUN   := $(UV) run
+PYTHON   := $(UV_RUN) python
+# macOS: mujoco.viewer.launch_passive() requires mjpython (owns the Cocoa main
+# thread). mjpython is a console script installed by the mujoco pip wheel; use
+# it only for targets that open the interactive viewer.
+MJPYTHON := $(UV_RUN) mjpython
 
 .PHONY: help install clean test test-fast test-warm tui train
 
@@ -37,9 +41,9 @@ help: ## 📋 Show targets + pointers to dsim and Hydra entrypoints
 	@echo "      eval_battery.candidate=<uri>"
 	@echo ""
 
-install: ## ⚙️  Create conda env + install dsim editable
-	conda env create -f environment.yml || conda env update -f environment.yml
-	$(CONDA_RUN) pip install -e .
+install: ## ⚙️  Sync the uv-managed venv from pyproject.toml + uv.lock
+	@$(UV) sync
+	@echo "Done. Verify with: make test"
 
 clean: ## 🧹 Remove build artifacts and __pycache__
 	find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true

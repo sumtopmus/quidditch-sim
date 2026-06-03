@@ -138,7 +138,7 @@ Manual smoke (cannot run in CI):
 ```bash
 # In the worktree:
 cd worktrees/feature/team-gui
-conda activate uav
+uv sync
 
 # Trained Red, default Blue (the one Red was trained against), 1 episode, viewer open:
 make eval-team \

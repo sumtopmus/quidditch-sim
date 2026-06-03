@@ -22,7 +22,8 @@ log = logging.getLogger(__name__)
 # Allow `python -m scripts.train` and direct invocation alike.
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-# macOS conda libomp guard (matches train_ppo.py / train_team_ppo.py).
+# macOS libomp guard (matches train_ppo.py / train_team_ppo.py):
+# prevent OMP duplicate-init abort with SubprocVecEnv.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 # SB3 emits an unconditional UserWarning when train (SubprocVecEnv) and eval
@@ -40,7 +41,7 @@ from omegaconf import DictConfig, OmegaConf
 from stable_baselines3 import PPO
 
 from config_schema import register_configs
-from envs.quidditch.obs_spec import SPEC_BY_NAME
+from envs.quidditch.obs_spec import build_spec_from_block_names
 from envs.quidditch.team_env import TeamConfig
 from scripts._artifact_io import resolve_parent
 from scripts._train_common import (
@@ -117,26 +118,35 @@ def _check_obs_compat_from_hydra(parent_hydra: Path, current_spec, current_n_sta
     """Read parent's obs spec from .hydra/config.yaml, compare to current."""
     cfg_path = parent_hydra / "config.yaml"
     parent_cfg = OmegaConf.load(cfg_path)
-    parent_spec_name = parent_cfg.obs.name
     parent_n_stack = int(parent_cfg.obs.n_stack)
-    if parent_spec_name not in SPEC_BY_NAME:
-        raise ValueError(f"Parent obs name {parent_spec_name!r} not in SPEC_BY_NAME registry")
-    parent_spec = SPEC_BY_NAME[parent_spec_name]
+    parent_blocks = list(parent_cfg.obs.get("blocks", []))
+    if not parent_blocks:
+        raise SystemExit(
+            f"Parent .hydra/config.yaml at {cfg_path} has no obs.blocks field.\n"
+            f"Run tmp_migrate_obs_blocks.py to add it (see "
+            f"docs/superpowers/plans/2026-05-18-yaml-driven-obs.md Task 13)."
+        )
+    parent_spec = build_spec_from_block_names(parent_blocks)
     if parent_spec.blocks != current_spec.blocks or parent_n_stack != current_n_stack:
+        parent_name = parent_cfg.obs.get("name", "<unnamed>")
         raise SystemExit(
             f"Obs spec mismatch:\n"
-            f"  parent: {parent_spec_name} (n_stack={parent_n_stack})\n"
+            f"  parent: {parent_name} (n_stack={parent_n_stack})\n"
             f"  current: {[b.name for b in current_spec.blocks]} (n_stack={current_n_stack})\n"
             f"Use init=warm_start for surgical extension."
         )
 
 
-def _read_hydra_obs(parent_hydra: Path) -> tuple[str | None, int | None]:
+def _read_hydra_obs(parent_hydra: Path) -> tuple[str | None, int | None, list[str]]:
     cfg_path = parent_hydra / "config.yaml"
     if not cfg_path.exists():
-        return None, None
+        return None, None, []
     parent_cfg = OmegaConf.load(cfg_path)
-    return parent_cfg.obs.name, int(parent_cfg.obs.n_stack)
+    return (
+        parent_cfg.obs.get("name"),
+        int(parent_cfg.obs.n_stack),
+        list(parent_cfg.obs.get("blocks", [])),
+    )
 
 
 def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
@@ -151,7 +161,7 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
         "clip_range":    cfg.trainer.clip_range,
         "ent_coef":      cfg.trainer.ent_coef,
     }
-    current_spec = SPEC_BY_NAME[cfg.obs.name]
+    current_spec = build_spec_from_block_names(cfg.obs.blocks)
     frame_stack = int(cfg.obs.n_stack)
 
     if cfg.init.mode == "scratch":
@@ -239,8 +249,13 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
         parent_hydra = parent.parent / ".hydra"
         if not parent_hydra.exists() and (parent.parent.parent / ".hydra").exists():
             parent_hydra = parent.parent.parent / ".hydra"
-        parent_spec_name, parent_n_stack = _read_hydra_obs(parent_hydra)
-        parent_spec = SPEC_BY_NAME[parent_spec_name] if parent_spec_name else SPEC_BY_NAME["SIMPLE_ENV_OBS"]
+        parent_spec_name, parent_n_stack, parent_blocks = _read_hydra_obs(parent_hydra)
+        if parent_blocks:
+            parent_spec = build_spec_from_block_names(parent_blocks)
+        else:
+            # Legacy parent without obs.blocks — fall back to SIMPLE_ENV_OBS shape.
+            from envs.quidditch.obs_spec import load_obs_yaml
+            parent_spec = load_obs_yaml("simple")
         model = warm_start_ppo_by_spec(
             old_checkpoint=str(parent),
             new_env=vec_env,
@@ -309,11 +324,10 @@ def main(cfg: DictConfig) -> None:
     if is_team:
         from envs.quidditch.team_env import QuidditchTeamEnv
         from envs.quidditch.opponents import OpponentControlledEnv, from_spec
-        from envs.quidditch.obs_spec import SPEC_BY_NAME
         team_cfg = _build_team_cfg(cfg)
         opp_spec = _opponent_spec_from_cfg(cfg)
         learner = env_factory.learner_id
-        learner_spec = SPEC_BY_NAME[cfg.obs.name]
+        learner_spec = build_spec_from_block_names(cfg.obs.blocks)
         # Must mirror env_factory._make_thunk's wiring: same learner_id +
         # learner_spec (so eval obs shape matches training, including for
         # DUEL_V2_WORLD / DUEL_V3_BODY_EGO), and the same reward_stack (so
@@ -396,11 +410,16 @@ def main(cfg: DictConfig) -> None:
                     best_eval_reward = rwd
                 break
 
+        # "best" when EvalCallback wrote a best_model.zip during training,
+        # else "final" (final_model.zip is always written above).  Same logic
+        # as _artifact_io.log_run_artifact uses to tag the wandb artifact.
+        model_kind = "best" if (run_dir / "best_model.zip").exists() else "final"
         append_meta_yaml_final_stats(
             run_dir,
             wall_time_s=elapsed_s,
             completed_steps=completed_steps,
             best_eval_reward=best_eval_reward,
+            model_kind=model_kind,
         )
 
         # Render MODEL.md before the artifact log so the upload picks it up.

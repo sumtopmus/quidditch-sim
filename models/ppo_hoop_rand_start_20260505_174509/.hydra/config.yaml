@@ -3,6 +3,13 @@ seed: 42
 obs:
   name: SIMPLE_ENV_OBS
   n_stack: 1
+  blocks:
+  - ANG_VEL
+  - ANG_POS
+  - LIN_VEL_BODY
+  - LIN_POS
+  - UNIT_TO_GOAL
+  - SIGNED_DIST_NORM
 init:
   mode: pretrain
   parent: models/ppo_hoop_fixed_start_20260504_023051/best_model

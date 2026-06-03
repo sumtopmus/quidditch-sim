@@ -5,7 +5,8 @@ n_envs: 8
 team_cfg: ???                       # built by train.py from team_env_params (below)
 learner_id: blue_0
 opponent_spec: ???                  # built by train.py from cfg.opponent
-obs_spec_name: ${obs.name}
+obs_blocks: ${obs.blocks}
+obs_name:   ${obs.name}
 frame_stack: ${obs.n_stack}
 seed: ${seed}
 

@@ -87,13 +87,14 @@ def run_scenario(
       - wandb:// URI (resolves via scripts._artifact_io.resolve_parent)
       - "scripted:<spec>" for tests (e.g. "scripted:beeline_blue")
     """
-    from envs.quidditch.obs_spec import DUEL_V1_BODY, SPEC_BY_NAME
+    from envs.quidditch.obs_spec import build_spec_from_block_names
     from envs.quidditch.opponents import (
         FrameStackWrapper, OpponentControlledEnv, from_spec,
     )
     from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 
     is_scripted_learner = learner_uri.startswith("scripted:")
+    learner_blocks: list[str] = []
     learner_spec_name: str | None = None
     learner_n_stack: int = 1
 
@@ -113,11 +114,18 @@ def run_scenario(
         if obs is not None and hasattr(obs, "get"):
             learner_spec_name = str(obs.get("name", "DUEL_V1_BODY"))
             learner_n_stack = int(obs.get("n_stack", 1))
+            learner_blocks = list(obs.get("blocks") or [])
 
-    learner_spec = (
-        SPEC_BY_NAME.get(learner_spec_name, DUEL_V1_BODY)
-        if learner_spec_name else DUEL_V1_BODY
-    )
+    if learner_blocks:
+        learner_spec = build_spec_from_block_names(learner_blocks)
+    elif learner_spec_name:
+        # Pre-2026-05-18 schema: only obs.name was recorded.  Look up the
+        # blocks via conf/obs/*.yaml by matching the name field.
+        from core.obs_compat import _spec_by_name
+        learner_spec = _spec_by_name(learner_spec_name)
+    else:
+        from core.obs_compat import _spec_by_name
+        learner_spec = _spec_by_name("DUEL_V1_BODY")
 
     team_cfg = TeamConfig(
         randomise_red_start=scenario.randomise_start,

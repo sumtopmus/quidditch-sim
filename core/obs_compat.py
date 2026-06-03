@@ -9,6 +9,10 @@ to render.
 Public API:
     preflight(parent_uri, child_obs_name, child_n_stack=1) -> PreflightReport
 
+`child_obs_name` is matched (case-insensitive) against the `name:` field of
+`conf/obs/*.yaml`; that YAML's `blocks: [...]` list resolves to an ObsSpec
+via `build_spec_from_block_names`.
+
 For wandb:// URIs, downloads ONLY .hydra/ from the artifact (not the
 weights) via scripts._artifact_io.resolve_parent(metadata_only=True).
 """
@@ -18,8 +22,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Literal
 
+import yaml
+
 from core.run_context import load_run_context
-from envs.quidditch.obs_spec import SPEC_BY_NAME, ObsSpec
+from envs.quidditch.obs_spec import (
+    ObsSpec,
+    build_spec_from_block_names,
+)
 
 DiffStatus = Literal["matched", "frame_changed", "removed", "added"]
 
@@ -58,18 +67,19 @@ def preflight(
     """
     parent_dir = _resolve_parent_dir_metadata_only(parent_uri)
     ctx = load_run_context(parent_dir)
-    parent_obs = ctx["cfg"].get("obs") if hasattr(ctx["cfg"], "get") else None
+    parent_cfg = ctx["cfg"]
+    parent_obs = parent_cfg.get("obs") if hasattr(parent_cfg, "get") else None
     if not parent_obs:
         raise FileNotFoundError(
             f"parent {parent_dir}/.hydra/config.yaml has no `obs` block — "
             "cannot preflight"
         )
 
-    parent_spec_name = str(parent_obs["name"])
-    parent_n_stack = int(parent_obs.get("n_stack", 1)) if hasattr(parent_obs, "get") else 1
+    parent_spec_name = str(parent_obs.get("name", "?"))
+    parent_n_stack = int(parent_obs.get("n_stack", 1))
 
-    parent_spec = SPEC_BY_NAME[parent_spec_name]   # KeyError on unknown
-    child_spec = SPEC_BY_NAME[child_obs_name]
+    parent_spec = _resolve_parent_spec(parent_obs, parent_spec_name)
+    child_spec = _spec_by_name(child_obs_name)
 
     diff = _build_diff(parent_spec, child_spec)
     n_stack_ok = parent_n_stack == child_n_stack
@@ -92,9 +102,6 @@ def _resolve_parent_dir_metadata_only(parent_uri: str) -> Path:
     """Return the parent run dir, downloading only .hydra/ for wandb URIs."""
     if parent_uri.startswith(("wandb://", "wandb-artifact://")):
         from scripts._artifact_io import resolve_parent
-        # metadata_only=True: download .hydra/ + _wandb_metadata.json only;
-        # do NOT fetch best_model.zip.  Added to resolve_parent for the
-        # obs-preflight path.
         return resolve_parent(parent_uri, metadata_only=True)
 
     p = Path(parent_uri)
@@ -105,6 +112,43 @@ def _resolve_parent_dir_metadata_only(parent_uri: str) -> Path:
     if not (p / ".hydra" / "config.yaml").exists():
         raise FileNotFoundError(f"no .hydra/config.yaml under {p}")
     return p
+
+
+def _resolve_parent_spec(parent_obs, parent_spec_name: str) -> ObsSpec:
+    """Build the parent's ObsSpec.
+
+    Preference order:
+      1. `parent_obs.blocks` if present (post-2026-05-18 schema).
+      2. Lookup parent_spec_name in conf/obs/*.yaml by `name:` field.
+    """
+    blocks = parent_obs.get("blocks") if hasattr(parent_obs, "get") else None
+    if blocks:
+        return build_spec_from_block_names(list(blocks))
+    return _spec_by_name(parent_spec_name)
+
+
+def _spec_by_name(name: str) -> ObsSpec:
+    """Find the conf/obs/*.yaml whose `name:` field matches (case-insensitive)
+    and build its ObsSpec.  Raises KeyError if no match."""
+    repo_root = Path(__file__).resolve().parents[1]
+    obs_dir = repo_root / "conf" / "obs"
+    if not obs_dir.exists():
+        raise KeyError(f"no conf/obs/ directory under {repo_root}")
+    target = name.upper()
+    for yaml_path in sorted(obs_dir.glob("*.yaml")):
+        data = yaml.safe_load(yaml_path.read_text()) or {}
+        if str(data.get("name", "")).upper() == target:
+            blocks = data.get("blocks")
+            if not blocks:
+                raise KeyError(
+                    f"{yaml_path} has no `blocks:` field — cannot resolve {name!r}"
+                )
+            return build_spec_from_block_names(list(blocks))
+    available = sorted(
+        str((yaml.safe_load(p.read_text()) or {}).get("name", ""))
+        for p in obs_dir.glob("*.yaml")
+    )
+    raise KeyError(f"unknown obs spec name {name!r} (known: {available})")
 
 
 def _build_diff(parent: ObsSpec, child: ObsSpec) -> list[ObsBlockDiff]:

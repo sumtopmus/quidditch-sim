@@ -98,6 +98,21 @@ def test_load_run_context_handles_hydra_yaml_with_unresolvable_interpolations(tm
 from scripts._render_model_doc import _section_header
 
 
+_DUEL_V2_BLOCKS = [
+    "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+    "UNIT_TO_GOAL", "VEC_TO_HOOP", "OPP_POS_REL",
+    "OPP_VEL_REL_WORLD", "CLOSING_RATE",
+]
+_DUEL_V1_BLOCKS = [
+    "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+    "UNIT_TO_GOAL", "SIGNED_DIST_NORM", "OPP_POS_REL", "OPP_VEL_REL_BODY",
+]
+_SIMPLE_BLOCKS = [
+    "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+    "UNIT_TO_GOAL", "SIGNED_DIST_NORM",
+]
+
+
 def _ctx_for_section(**overrides) -> dict:
     """Build a baseline ctx covering the union of fields all sections need.
     Tests override just what they care about.
@@ -105,28 +120,29 @@ def _ctx_for_section(**overrides) -> dict:
     cfg = OmegaConf.create({
         "run_name": "ppo_hoop_test",
         "description": "",
-        "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3},
+        "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3, "blocks": _DUEL_V2_BLOCKS},
         "init": {"mode": "scratch", "parent": None},
         "trainer": {"lr": 3e-4, "total_timesteps": 10_000_000,
-                     "n_envs": 8, "batch_size": 256, "n_epochs": 10,
+                     "batch_size": 256, "n_epochs": 10,
                      "gamma": 0.99, "gae_lambda": 0.95, "ent_coef": 0.0,
                      "clip_range": 0.2},
-        "env": {"learner_id": "blue_0",
+        "env": {"learner_id": "blue_0", "n_envs": 8,
                  "team_cfg": {"episode_seconds": 30.0, "tag_radius": 0.3,
                               "crash_vel_thr": 1.0, "midpoint_alpha": 0.5,
                               "crash_aftermath_seconds": 0.0}},
         "opponent": {"_target_": "envs.quidditch.opponents.BeelineRed"},
-        "curriculum": {"name": "fixed_start"},
+        "curriculum": {"randomise_start": False, "episode_seconds": 30.0},
         "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
                     "terms": []},  # empty terms ok for non-reward sections
     })
     ctx = {
         "cfg": cfg,
         "meta": {"git_hash": "abc1234", "final_stats": {
-            "best_eval_reward": 7.91, "best_step": 9_500_000,
-            "completed_steps": 10_000_000, "wall_clock_seconds": 1923.0,
+            "best_eval_reward": 7.91, "peak_eval_step": 9_500_000,
+            "completed_steps": 10_000_000, "wall_time_s": 1923.0,
             "model_kind": "best"}},
-        "hydra_yaml": {"hydra": {"runtime": {"choices": {"reward": "team_v2"}}}},
+        "hydra_yaml": {"hydra": {"runtime": {"choices": {
+            "reward": "team_v2", "curriculum": "fixed_start"}}}},
         "wandb_meta": {"name": "ppo_hoop_test", "version": "v0",
                         "aliases": ["latest", "prod", "ppo_hoop_test"],
                         "entity": "gridcom", "project": "drone-quidditch"},
@@ -224,12 +240,14 @@ def test_section_obs_spec_renders_table_for_known_spec():
     assert "closing_rate" in out
 
 
-def test_section_obs_spec_renders_error_blockquote_for_unknown_spec():
+def test_section_obs_spec_renders_error_blockquote_when_blocks_missing():
+    """Legacy configs without obs.blocks render a warning blockquote pointing
+    at the migration script."""
     ctx = _ctx_for_section()
-    ctx["cfg"].obs.name = "FAKE_NEVER_REGISTERED_OBS"
+    ctx["cfg"].obs.blocks = []
     out = _section_obs_spec(ctx)
-    assert "⚠" in out or "(unknown obs spec" in out
-    assert "FAKE_NEVER_REGISTERED_OBS" in out
+    assert "⚠" in out
+    assert "obs.blocks" in out
 
 
 from scripts._render_model_doc import _section_reward_stack
@@ -315,7 +333,7 @@ def test_section_eval_results_handles_missing_meta():
 
 def test_section_eval_results_omits_best_lines_for_final_kind():
     ctx = _ctx_for_section()
-    ctx["meta"]["final_stats"] = {"completed_steps": 200, "wall_clock_seconds": 5.0,
+    ctx["meta"]["final_stats"] = {"completed_steps": 200, "wall_time_s": 5.0,
                                     "model_kind": "final"}
     out = _section_eval_results(ctx)
     assert "model_kind" in out and "final" in out
@@ -354,25 +372,26 @@ def test_render_model_doc_end_to_end(tmp_path: Path):
             "obs": {"name": "DUEL_V2_WORLD", "n_stack": 3},
             "init": {"mode": "scratch", "parent": None},
             "trainer": {"lr": 3e-4, "total_timesteps": 10_000_000,
-                         "n_envs": 8, "batch_size": 256, "n_epochs": 10,
+                         "batch_size": 256, "n_epochs": 10,
                          "gamma": 0.99, "gae_lambda": 0.95, "ent_coef": 0.0,
                          "clip_range": 0.2},
-            "env": {"learner_id": "blue_0",
+            "env": {"learner_id": "blue_0", "n_envs": 8,
                      "team_cfg": {"episode_seconds": 30.0, "tag_radius": 0.3,
                                   "crash_vel_thr": 1.0, "midpoint_alpha": 0.5,
                                   "crash_aftermath_seconds": 0.0}},
             "opponent": {"_target_": "envs.quidditch.opponents.BeelineRed"},
-            "curriculum": {"name": "fixed_start"},
+            "curriculum": {"randomise_start": False, "episode_seconds": 30.0},
             "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
                         "terms": [{"_target_": "envs.quidditch.rewards.terms.ScoreEvent",
                                     "magnitude": 10.0, "scorer": "red_0",
                                     "zero_sum_opponent": "blue_0"}]},
         },
         meta={"git_hash": "abc1234", "final_stats": {
-            "best_eval_reward": 7.91, "best_step": 9_500_000,
-            "completed_steps": 10_000_000, "wall_clock_seconds": 1923.0,
+            "best_eval_reward": 7.91, "peak_eval_step": 9_500_000,
+            "completed_steps": 10_000_000, "wall_time_s": 1923.0,
             "model_kind": "best"}},
-        hydra_yaml={"hydra": {"runtime": {"choices": {"reward": "team_v2"}}}},
+        hydra_yaml={"hydra": {"runtime": {"choices": {
+            "reward": "team_v2", "curriculum": "fixed_start"}}}},
         wandb_meta={"name": "ppo_hoop_test", "version": "v0",
                      "aliases": ["latest", "prod"],
                      "entity": "gridcom", "project": "drone-quidditch"},
@@ -396,8 +415,8 @@ def test_render_model_doc_isolates_per_section_failures(tmp_path: Path):
             "obs": {"name": "NEVER_REGISTERED", "n_stack": 1},
             "init": {"mode": "scratch"},
             "trainer": {"lr": 1e-3, "total_timesteps": 1000},
-            "env": {"learner_id": "drone_0"},
-            "curriculum": {"name": "fixed_start"},
+            "env": {"learner_id": "drone_0", "n_envs": 1},
+            "curriculum": {"randomise_start": False, "episode_seconds": 30.0},
             "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
                         "terms": []},
         },
@@ -420,8 +439,8 @@ def test_render_model_doc_omits_wandb_section_when_absent(tmp_path: Path):
             "obs": {"name": "SIMPLE_ENV_OBS", "n_stack": 1},
             "init": {"mode": "scratch"},
             "trainer": {"lr": 1e-3, "total_timesteps": 1000},
-            "env": {"learner_id": "drone_0"},
-            "curriculum": {"name": "fixed_start"},
+            "env": {"learner_id": "drone_0", "n_envs": 1},
+            "curriculum": {"randomise_start": False, "episode_seconds": 30.0},
             "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
                         "terms": []},
         },
@@ -446,8 +465,8 @@ def test_cli_writes_model_doc_to_run_dir(tmp_path: Path):
             "obs": {"name": "SIMPLE_ENV_OBS", "n_stack": 1},
             "init": {"mode": "scratch"},
             "trainer": {"lr": 1e-3, "total_timesteps": 1000},
-            "env": {"learner_id": "drone_0"},
-            "curriculum": {"name": "fixed_start"},
+            "env": {"learner_id": "drone_0", "n_envs": 1},
+            "curriculum": {"randomise_start": False, "episode_seconds": 30.0},
             "reward": {"_target_": "envs.quidditch.rewards.stack.RewardStack",
                         "terms": []},
         },

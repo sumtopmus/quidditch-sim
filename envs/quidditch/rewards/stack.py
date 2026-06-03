@@ -67,6 +67,11 @@ class StepState:
     dist_def_to_future_red:      float = 0.0
     dist_def_to_future_red_prev: float = 0.0
 
+    # World-frame hoop centre, snapshotted at step time so reward terms don't
+    # need to import constants.  Team envs populate it from HOOP_CENTER;
+    # single-agent + no-team callers leave it at the zero default (unused).
+    hoop_pos: np.ndarray = field(default_factory=lambda: np.zeros(3))
+
 
 @dataclass
 class RewardStack:

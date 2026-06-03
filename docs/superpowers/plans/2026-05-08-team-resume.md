@@ -6,7 +6,7 @@
 
 **Architecture:** Mirror the existing single-agent resume pattern (`train_ppo.py:264-270, 372-384`). Resume creates a *new* timestamped trial dir under the same `run_name`, loads the SB3 checkpoint, overrides `learning_rate` from config, and trains until the absolute `total_timesteps` target is reached. A `[resume]` block in `info.toml` records the source checkpoint. A new `make resume-team` Makefile target provides the user-facing CLI.
 
-**Tech Stack:** Python 3.11, Stable-Baselines3 PPO, MuJoCo, pytest, Make. The `uav` conda env is the runtime; `KMP_DUPLICATE_LIB_OK=TRUE` is already set on the team scripts to suppress macOS conda libomp duplicate-init aborts.
+**Tech Stack:** Python 3.11, Stable-Baselines3 PPO, MuJoCo, pytest, Make. `KMP_DUPLICATE_LIB_OK=TRUE` is already set on the team scripts to suppress macOS libomp duplicate-init aborts.
 
 **User constraint:** This user runs `git commit` manually for hardware-key signing. Each task ends with a "ready-to-commit command" step — **do not run `git commit` yourself**; print the command for the user to paste.
 
@@ -89,7 +89,7 @@ def test_resume_default_is_none() -> None:
 - [ ] **Step 2: Run the test, verify it fails**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/unit/test_team_resume_args.py -v
+uv run python -m pytest tests/unit/test_team_resume_args.py -v
 ```
 
 Expected: All three tests fail. The first two with `AttributeError: 'Namespace' object has no attribute 'resume'`, the third the same.
@@ -131,7 +131,7 @@ Note `--learner` and `--opponent` become optional — Task 6 reads them from the
 - [ ] **Step 4: Run the test, verify it passes**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/unit/test_team_resume_args.py -v
+uv run python -m pytest tests/unit/test_team_resume_args.py -v
 ```
 
 Expected: All three tests pass.
@@ -139,7 +139,7 @@ Expected: All three tests pass.
 - [ ] **Step 5: Verify nothing else broke**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/unit -v
+uv run python -m pytest tests/unit -v
 ```
 
 Expected: All unit tests pass.
@@ -182,7 +182,7 @@ def test_missing_learner_without_resume_errors_in_main(monkeypatch, capsys) -> N
 - [ ] **Step 2: Run, verify it fails**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/unit/test_team_resume_args.py::test_missing_learner_without_resume_errors_in_main -v
+uv run python -m pytest tests/unit/test_team_resume_args.py::test_missing_learner_without_resume_errors_in_main -v
 ```
 
 Expected: Fails — `main()` will likely raise `KeyError` or pass `learner=None` into the env wiring.
@@ -202,7 +202,7 @@ In `scripts/train_team_ppo.py`, find the `def main()` line and add this guard im
 - [ ] **Step 4: Run, verify it passes**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/unit/test_team_resume_args.py -v
+uv run python -m pytest tests/unit/test_team_resume_args.py -v
 ```
 
 Expected: All four tests pass.
@@ -287,7 +287,7 @@ def test_no_resume_block_when_not_given(tmp_path: Path) -> None:
 - [ ] **Step 2: Run the test, verify it fails**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/unit/test_write_run_info_resume.py -v
+uv run python -m pytest tests/unit/test_write_run_info_resume.py -v
 ```
 
 Expected: First test fails (`write_run_info() got an unexpected keyword argument 'resume'`); second test passes (it doesn't use `resume=`).
@@ -358,7 +358,7 @@ Then in the `content = (...)` literal, insert `f"{resume_block}"` immediately be
 - [ ] **Step 4: Run the test, verify it passes**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/unit/test_write_run_info_resume.py -v
+uv run python -m pytest tests/unit/test_write_run_info_resume.py -v
 ```
 
 Expected: Both tests pass.
@@ -366,7 +366,7 @@ Expected: Both tests pass.
 - [ ] **Step 5: Verify all unit tests still pass**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/unit -v
+uv run python -m pytest tests/unit -v
 ```
 
 Expected: All unit tests pass.
@@ -445,7 +445,7 @@ def test_lookup_returns_none_if_no_info_toml(tmp_path: Path) -> None:
 - [ ] **Step 2: Run, verify it fails**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/unit/test_team_resume_parent_lookup.py -v
+uv run python -m pytest tests/unit/test_team_resume_parent_lookup.py -v
 ```
 
 Expected: Fails with `ImportError: cannot import name '_read_parent_extra' from scripts.train_team_ppo`.
@@ -476,7 +476,7 @@ def _read_parent_extra(checkpoint_path: str) -> tuple[str | None, str | None]:
 - [ ] **Step 4: Run, verify it passes**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/unit/test_team_resume_parent_lookup.py -v
+uv run python -m pytest tests/unit/test_team_resume_parent_lookup.py -v
 ```
 
 Expected: Both tests pass.
@@ -632,7 +632,7 @@ def test_resume_continues_step_counter_and_writes_resume_block(tmp_path: Path) -
 - [ ] **Step 2: Run the test, verify it fails**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/integration/test_team_resume.py -v
+uv run python -m pytest tests/integration/test_team_resume.py -v
 ```
 
 Expected: Fails — the resume subprocess will exit non-zero because `train_team_ppo.py` doesn't yet handle `--resume`.
@@ -785,7 +785,7 @@ and **move it to before the model-construction block** (just after `ppo_kwargs` 
 - [ ] **Step 4: Run the integration test, verify it passes**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest tests/integration/test_team_resume.py -v
+uv run python -m pytest tests/integration/test_team_resume.py -v
 ```
 
 Expected: Test passes. May take 60-120 s.
@@ -793,7 +793,7 @@ Expected: Test passes. May take 60-120 s.
 - [ ] **Step 5: Run the full test suite, verify no regressions**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: All tests pass. Pay attention to:
@@ -907,7 +907,7 @@ git -C "$(git rev-parse --show-toplevel)" commit -m "docs(team-resume): document
 - [ ] **Step 1: Run the full test suite from clean**
 
 ```bash
-conda run --no-capture-output -n uav python -m pytest -v
+uv run python -m pytest -v
 ```
 
 Expected: All tests pass. Note the timing — full suite should be < 5 min.

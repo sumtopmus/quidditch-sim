@@ -18,6 +18,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+# macOS: multiple libomp copies can coexist across Python distributions;
+# suppress the duplicate-init abort.
 os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 import hydra

@@ -92,8 +92,8 @@ The per-step distance penalty provides a dense gradient toward the hoop. The +10
 ## Requirements
 
 - macOS (Apple Silicon tested; Linux should work with minor adjustments)
-- [Conda / Miniforge](https://github.com/conda-forge/miniforge)
-- Python 3.11 (pinned in `environment.yml`)
+- [uv](https://docs.astral.sh/uv/)
+- Python 3.13 (pinned in `.python-version`; uv will download it on first sync)
 
 ---
 
@@ -103,7 +103,7 @@ The per-step distance penalty provides a dense gradient toward the hoop. The +10
 # 1. Clone this repo
 git clone <this-repo-url>
 
-# 2. Create the conda environment (Python 3.11 + MuJoCo via pip + SB3 + imageio)
+# 2. Sync the uv environment (Python 3.13 + MuJoCo + SB3 + imageio)
 make install
 
 # 3. Sanity-check the env
@@ -111,9 +111,9 @@ make check-sim      # headless (fast) — should print "SCORED at step 431 / tot
 make check-gui      # opens MuJoCo viewer for visual inspection
 ```
 
-`make install` is idempotent — it creates the environment on first run and updates it on subsequent runs. It also seeds `config/training.toml` and `config/camera.toml` from `templates/` if those local files don't exist yet.
+`make install` is idempotent — `uv sync` creates `.venv/` on first run and updates it on subsequent runs based on `uv.lock`. It also seeds `config/training.toml` and `config/camera.toml` from `templates/` if those local files don't exist yet.
 
-> **macOS OpenMP:** training spawns multiple SB3 envs via `SubprocVecEnv`, and conda ships multiple copies of `libomp` on Apple Silicon. `train_ppo.py` sets `KMP_DUPLICATE_LIB_OK=TRUE` at import time to suppress the duplicate-init abort. No user action required.
+> **macOS OpenMP:** training spawns multiple SB3 envs via `SubprocVecEnv`; on macOS, multiple copies of `libomp` can coexist across Python distributions and cause a duplicate-init abort. `train_ppo.py` sets `KMP_DUPLICATE_LIB_OK=TRUE` at import time to suppress it. No user action required.
 
 ---
 
@@ -303,15 +303,15 @@ repo/
 ├── models/                     promoted models (tracked in git)
 ├── runs/                       training artifacts (gitignored)
 ├── Makefile
-├── environment.yml
-└── requirements.txt
+├── pyproject.toml
+└── uv.lock
 ```
 
 ---
 
 ## Architecture notes
 
-**Simulator:** [MuJoCo](https://mujoco.org/) (pip `mujoco>=3.0`). Replaced PyFlyt/PyBullet on 2026-04-24 — the new stack has working offscreen rendering on Apple Silicon, ships visual + collision meshes the previous setup never had, and removes the PyBullet conda-binary gotcha entirely.
+**Simulator:** [MuJoCo](https://mujoco.org/) (pip `mujoco>=3.0`). Replaced PyFlyt/PyBullet on 2026-04-24 — the new stack has working offscreen rendering on Apple Silicon and ships visual + collision meshes the previous setup never had.
 
 **Drone model:** Crazyflie 2 (cf2x), 27 g, arm length 0.028 m. Visual meshes vendored from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie)'s `bitcraze_crazyflie_2/` (commit `affef0836947b64cc06c4ab1cbf0152835693374`, Apache 2.0). Inertia tensor adopted from Menagerie (`IXX = IYY = 2.3951e-5`, `IZZ = 3.2347e-5` kg·m²). Motor coefficients (`THRUST_COEF`, `TORQUE_COEF`, `MAX_RPM`) kept from PyFlyt's `cf2x.yaml` because Menagerie's `<motor gear=...>` actuator model doesn't directly map to our PID's RPM-squared thrust formulation — adopting it would require rewriting the controller.
 
@@ -327,7 +327,7 @@ repo/
 
 **Camera:** the fixed scene camera (`eye` + `lookat` in `config/camera.toml`) drives both the live MuJoCo viewer pose and the offscreen renderer used by the per-checkpoint training video callback. `make camera-test` renders a hover flight through this camera to mp4 + a still PNG of the last frame, so iterating on camera angle doesn't require launching a training run.
 
-**macOS OpenMP:** `train_ppo.py` sets `KMP_DUPLICATE_LIB_OK=TRUE` at import time to suppress the libomp double-init abort that conda environments produce on Apple Silicon when SB3's `SubprocVecEnv` spawns workers.
+**macOS OpenMP:** `train_ppo.py` sets `KMP_DUPLICATE_LIB_OK=TRUE` at import time to suppress the libomp double-init abort that can occur on macOS Apple Silicon when SB3's `SubprocVecEnv` spawns workers and multiple `libomp` copies are loaded.
 
 ---
 

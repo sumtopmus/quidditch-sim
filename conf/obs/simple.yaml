@@ -1,3 +1,11 @@
-# Resolves at runtime to envs.quidditch.obs_spec.SIMPLE_ENV_OBS
+# 16-d single-agent obs (envs.quidditch.simple_env).  Slots [0:16] are
+# load-bearing for team-env warm-start surgery — see decisions.md 2026-05-06.
 name: SIMPLE_ENV_OBS
 n_stack: 1
+blocks:
+  - ANG_VEL
+  - ANG_POS
+  - LIN_VEL_BODY
+  - LIN_POS
+  - UNIT_TO_GOAL
+  - SIGNED_DIST_NORM

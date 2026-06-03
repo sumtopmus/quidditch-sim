@@ -54,6 +54,24 @@ def _section_header(ctx: dict[str, Any]) -> str:
     return "\n".join(lines)
 
 
+def _curriculum_choice(hydra_yaml: Any) -> str:
+    """Hydra group choice for `curriculum` (the YAML filename in conf/curriculum/),
+    or '(unknown)' if hydra.yaml is absent.
+
+    The choice lives in `hydra.runtime.choices.curriculum`, not in `cfg.curriculum`
+    (which carries the YAML's contents — `randomise_start`, `episode_seconds` —
+    none of which name the choice).
+    """
+    if hydra_yaml:
+        return (
+            hydra_yaml.get("hydra", {})
+            .get("runtime", {})
+            .get("choices", {})
+            .get("curriculum", "(unknown)")
+        )
+    return "(unknown)"
+
+
 def _section_summary(ctx: dict[str, Any]) -> str:
     cfg = ctx["cfg"]
     hydra_yaml = ctx["hydra_yaml"]
@@ -102,9 +120,7 @@ def _section_summary(ctx: dict[str, Any]) -> str:
 
     total_steps = int(trainer.total_timesteps)
     lr = trainer.lr
-    curriculum = "(unknown)"
-    if hasattr(cfg, "curriculum") and cfg.curriculum is not None and hasattr(cfg.curriculum, "get"):
-        curriculum = cfg.curriculum.get("name", "(unknown)")
+    curriculum = _curriculum_choice(hydra_yaml)
 
     # Opponent shorthand: read `spec` field if present, else _target_ class name.
     opp_short = None
@@ -171,17 +187,18 @@ def _section_lineage(ctx: dict[str, Any]) -> str:
 
 def _section_obs_spec(ctx: dict[str, Any]) -> str:
     cfg = ctx["cfg"]
-    from envs.quidditch.obs_spec import SPEC_BY_NAME
+    from envs.quidditch.obs_spec import build_spec_from_block_names
 
     name = cfg.obs.name
     n_stack = int(cfg.obs.n_stack)
-    spec = SPEC_BY_NAME.get(name)
-    if spec is None:
+    blocks = list(cfg.obs.get("blocks", []) or [])
+    if not blocks:
         return (
             "## Obs spec\n\n"
-            f"> ⚠ unknown obs spec name `{name}` — not in SPEC_BY_NAME registry. "
-            "See `.hydra/config.yaml:obs` for the recorded name."
+            f"> ⚠ legacy config has no `obs.blocks` field for `{name}`. "
+            "See `.hydra/config.yaml:obs` or migrate via tmp_migrate_obs_blocks.py."
         )
+    spec = build_spec_from_block_names(blocks)
 
     header = (
         "## Obs spec\n\n"
@@ -287,15 +304,14 @@ def _opponent_short(cfg) -> str:
 
 def _section_env_config(ctx: dict[str, Any]) -> str:
     cfg = ctx["cfg"]
+    hydra_yaml = ctx["hydra_yaml"]
     learner = "drone_0"
     if hasattr(cfg, "env") and cfg.env is not None and hasattr(cfg.env, "get"):
         learner = cfg.env.get("learner_id", "drone_0")
     team_cfg = None
     if hasattr(cfg, "env") and cfg.env is not None and hasattr(cfg.env, "get"):
         team_cfg = cfg.env.get("team_cfg", None)
-    curriculum = "(unknown)"
-    if hasattr(cfg, "curriculum") and cfg.curriculum is not None and hasattr(cfg.curriculum, "get"):
-        curriculum = cfg.curriculum.get("name", "(unknown)")
+    curriculum = _curriculum_choice(hydra_yaml)
     opp = _opponent_short(cfg)
 
     lines = ["## Env config", ""]
@@ -329,11 +345,14 @@ def _section_hyperparams(ctx: dict[str, Any]) -> str:
             "fields.)_"
         )
     total = int(t.total_timesteps)
+    n_envs: Any = "(unknown)"
+    if hasattr(cfg, "env") and cfg.env is not None and hasattr(cfg.env, "get"):
+        n_envs = cfg.env.get("n_envs", "(unknown)")
     return "\n".join([
         "## Training hyperparams",
         "",
         f"- **Algorithm:** PPO  ·  **lr:** {t.lr}  ·  **total_timesteps:** {total:,}",
-        f"- **n_envs:** {t.get('n_envs', '(unknown)')}  ·  "
+        f"- **n_envs:** {n_envs}  ·  "
         f"**batch_size:** {t.get('batch_size', '(unknown)')}  ·  "
         f"**n_epochs:** {t.get('n_epochs', '(unknown)')}",
         f"- **gamma:** {t.get('gamma', '(unknown)')}  ·  "
@@ -362,13 +381,13 @@ def _section_eval_results(ctx: dict[str, Any]) -> str:
     lines = ["## Eval results", ""]
     if model_kind == "best":
         reward = fs.get("best_eval_reward", "(unknown)")
-        best_step = fs.get("best_step", None)
-        if isinstance(best_step, int):
-            lines.append(f"- **best_eval_reward:** {reward} @ step {best_step:,}")
+        peak_step = fs.get("peak_eval_step", None)
+        if isinstance(peak_step, int):
+            lines.append(f"- **best_eval_reward:** {reward} @ step {peak_step:,}")
         else:
             lines.append(f"- **best_eval_reward:** {reward}")
     completed = fs.get("completed_steps", "(unknown)")
-    wall = fs.get("wall_clock_seconds", None)
+    wall = fs.get("wall_time_s", None)
     wall_str = _format_wall_clock(wall) if isinstance(wall, (int, float)) else "(unknown)"
     completed_str = f"{completed:,}" if isinstance(completed, int) else str(completed)
     lines.append(f"- **completed_steps:** {completed_str}  ·  **wall_clock:** {wall_str}")

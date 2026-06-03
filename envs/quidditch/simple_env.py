@@ -50,7 +50,7 @@ from core.world import World
 from core.quadrotor import Quadrotor
 from core.drone.cf2x import cf2x_assets, cf2x_fragment
 from envs.quidditch import obs_spec
-from envs.quidditch.obs_spec import SIMPLE_ENV_OBS
+from envs.quidditch.obs_spec import ObsSpec
 from envs.quidditch.scene import hoop_fragment, arena_wall_fragment
 from envs.quidditch.scoring import GeomDistanceScorer
 from envs.quidditch.constants import (
@@ -106,15 +106,17 @@ class QuidditchSimpleEnv(gym.Env):
         randomise_start: bool = True,
         episode_seconds: float = EPISODE_SECONDS,
         reward_stack: RewardStack | None = None,
+        spec: ObsSpec | None = None,
     ) -> None:
         super().__init__()
         self.render_mode = render_mode
         self.randomise_start = randomise_start
         self.episode_seconds = float(episode_seconds)
 
-        # Obs layout declared in envs.quidditch.obs_spec.SIMPLE_ENV_OBS.
+        # Obs layout from conf/obs/simple.yaml by default; spec kwarg overrides.
+        self._spec = spec if spec is not None else obs_spec.load_obs_yaml("simple")
         self.observation_space = spaces.Box(
-            low=-np.inf, high=np.inf, shape=(SIMPLE_ENV_OBS.dim,), dtype=np.float32,
+            low=-np.inf, high=np.inf, shape=(self._spec.dim,), dtype=np.float32,
         )
         # 4-dim normalized action
         self.action_space = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
@@ -268,29 +270,33 @@ class QuidditchSimpleEnv(gym.Env):
     def _drone_pos(self) -> np.ndarray:
         return self._q.state()[3].copy()
 
-    def _obs(self) -> np.ndarray:
-        state = self._q.state()  # (4, 3)
-        ang_vel = state[0]
-        ang_pos = state[1]
-        lin_vel = state[2]
-        lin_pos = state[3]
+    def _build_features(self) -> dict[str, np.ndarray]:
+        """Compute every feature simple_env can supply, keyed by canonical block name."""
+        state = self._q.state()
+        ang_vel, ang_pos, lin_vel, lin_pos = state[0], state[1], state[2], state[3]
 
         vec_to_hoop = HOOP_CENTER - lin_pos
         dist = float(np.linalg.norm(vec_to_hoop))
         unit_to_hoop = vec_to_hoop / (dist + 1e-8)
         signed_dist_norm = self._signed_dist(lin_pos) / ARENA_RADIUS
 
-        # NB: Slots [0:16] are contractually frozen — the team env's per-agent obs
-        # uses the SAME encoding for slots 0:15 (and the same signed_dist_norm at
-        # slot 15) so warm_start_ppo_by_spec can copy the input layer by name.
-        return obs_spec.pack(SIMPLE_ENV_OBS, {
+        return {
             "ang_vel":          ang_vel,
             "ang_pos":          ang_pos,
             "lin_vel":          lin_vel,
             "lin_pos":          lin_pos,
             "unit_to_goal":     unit_to_hoop,
-            "signed_dist_norm": [signed_dist_norm],
-        })
+            "signed_dist_norm": np.array([signed_dist_norm], dtype=np.float32),
+        }
+
+    def _obs(self) -> np.ndarray:
+        """Pack obs from feature dict under self._spec.
+
+        Slots [0:16] are contractually frozen — team_env mirrors the same
+        encoding for slots 0:15 (+ signed_dist_norm at slot 15) so
+        warm_start_ppo_by_spec can copy the input layer by name.
+        """
+        return obs_spec.pack(self._spec, self._build_features())
 
     @staticmethod
     def _signed_dist(pos: np.ndarray) -> float:
