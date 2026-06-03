@@ -95,6 +95,24 @@ def test_resolve_trial_unknown_raises(tmp_path: Path) -> None:
         resolve_trial("nope", runs_dir=tmp_path)
 
 
+def test_resolve_trial_exclude_skips_dir(tmp_path: Path) -> None:
+    """exclude= drops a trial from candidates so the latest non-excluded one
+    is picked — used by resume to avoid selecting its own fresh run_dir."""
+    from core.run_listing import resolve_trial
+    _seed_run(tmp_path, "blue_5", ["20260513_120000", "20260515_080000"])
+    excluded = tmp_path / "blue_5" / "20260515_080000"
+    p = resolve_trial("blue_5", runs_dir=tmp_path, exclude=excluded)
+    assert p.name == "20260513_120000"
+
+
+def test_resolve_trial_exclude_no_candidates_raises(tmp_path: Path) -> None:
+    from core.run_listing import resolve_trial
+    _seed_run(tmp_path, "blue_5", ["20260515_080000"])
+    excluded = tmp_path / "blue_5" / "20260515_080000"
+    with pytest.raises(FileNotFoundError):
+        resolve_trial("blue_5", runs_dir=tmp_path, exclude=excluded)
+
+
 def test_resolve_checkpoint_highest_step(tmp_path: Path) -> None:
     from core.run_listing import resolve_checkpoint
     trial = tmp_path / "trial"

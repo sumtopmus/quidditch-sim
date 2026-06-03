@@ -55,6 +55,7 @@ def resolve_trial(
     *,
     trial: str | None = None,
     runs_dir: Path = RUNS_DIR,
+    exclude: Path | None = None,
 ) -> Path:
     run_dir = Path(runs_dir) / run_name
     if not run_dir.exists():
@@ -64,7 +65,11 @@ def resolve_trial(
         if not td.exists():
             raise FileNotFoundError(f"no such trial: {td}")
         return td.resolve()
-    trials = sorted([t for t in run_dir.iterdir() if t.is_dir()])
+    # `exclude` lets a resume skip its own freshly-created run_dir, which Hydra
+    # creates (and which is lex-newest) before the parent trial is resolved.
+    exclude_resolved = exclude.resolve() if exclude is not None else None
+    trials = sorted(t for t in run_dir.iterdir()
+                    if t.is_dir() and t.resolve() != exclude_resolved)
     if not trials:
         raise FileNotFoundError(f"no trials under {run_dir}")
     return trials[-1].resolve()

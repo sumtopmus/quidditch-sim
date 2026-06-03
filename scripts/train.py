@@ -226,16 +226,16 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
         return model, chain_total
 
     if cfg.init.mode == "resume":
-        run_root = Path("runs") / cfg.init.parent_run
-        if not run_root.exists():
-            raise FileNotFoundError(f"init.parent_run={cfg.init.parent_run}: no such dir under runs/")
-        latest_trial = max(run_root.iterdir(), key=lambda p: p.name)
+        from core.run_listing import resolve_checkpoint, resolve_trial
+        # Exclude run_dir: under `dsim resume`, parent_run == run_name, and Hydra
+        # has already created this run's (lex-newest, empty) output dir before we
+        # get here — without the exclude it would be chosen as the parent trial.
+        latest_trial = resolve_trial(cfg.init.parent_run, exclude=run_dir)
         ckpt = cfg.init.parent_checkpoint
         if ckpt is None:
-            ckpts = sorted((latest_trial / "checkpoints").glob("*.zip"))
-            if not ckpts:
-                raise FileNotFoundError(f"No checkpoints in {latest_trial}/checkpoints/")
-            ckpt = str(ckpts[-1])
+            # resolve_checkpoint picks the highest-step .zip (step-aware, not a
+            # lexicographic name sort that mis-orders 1000000 vs 900000).
+            ckpt = str(resolve_checkpoint(latest_trial))
         parent_hydra = latest_trial / ".hydra"
         if parent_hydra.exists():
             _check_obs_compat_from_hydra(parent_hydra, current_spec, frame_stack)
