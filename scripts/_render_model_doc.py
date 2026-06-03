@@ -15,49 +15,12 @@ from typing import Any
 
 from omegaconf import OmegaConf
 
+# Re-export the run-context loader from core/ under its legacy name so the
+# existing call sites in this module keep working.  core.inventory and
+# core.obs_compat reach the same loader via core.run_context.load_run_context.
+from core.run_context import load_run_context as _load_run_context  # noqa: F401
+
 log = logging.getLogger(__name__)
-
-
-def _load_run_context(run_dir: Path) -> dict[str, Any]:
-    """Gather config + meta + hydra-choices + wandb-meta into one dict.
-
-    Required: `.hydra/config.yaml`.  All other inputs optional; missing ones
-    surface as `None` in the returned ctx.
-    """
-    hdir = run_dir / ".hydra"
-    cfg_path = hdir / "config.yaml"
-    if not cfg_path.exists():
-        raise FileNotFoundError(f"required input missing: {cfg_path}")
-    cfg = OmegaConf.load(cfg_path)
-
-    meta_path = hdir / "meta.yaml"
-    meta = (
-        OmegaConf.to_container(OmegaConf.load(meta_path), resolve=True)
-        if meta_path.exists() else None
-    )
-
-    hydra_yaml_path = hdir / "hydra.yaml"
-    # resolve=False: hydra.yaml carries interpolations like `${run_name}` in
-    # hydra.sweep.dir that reference the parent config's scope and fail to
-    # resolve standalone.  The renderer only reads literal fields
-    # (hydra.runtime.choices.*), so no resolution is needed.
-    hydra_yaml = (
-        OmegaConf.to_container(OmegaConf.load(hydra_yaml_path), resolve=False)
-        if hydra_yaml_path.exists() else None
-    )
-
-    wandb_meta_path = run_dir / "_wandb_metadata.json"
-    wandb_meta = (
-        json.loads(wandb_meta_path.read_text()) if wandb_meta_path.exists() else None
-    )
-
-    return {
-        "cfg": cfg,
-        "meta": meta,
-        "hydra_yaml": hydra_yaml,
-        "wandb_meta": wandb_meta,
-        "run_dir": run_dir,
-    }
 
 
 def _section_header(ctx: dict[str, Any]) -> str:

@@ -160,6 +160,8 @@ def _committed_metadata(committed_dir: Path) -> dict | None:
 def resolve_parent(
     uri_or_path: str | Path,
     models_root: Path = Path("models"),
+    *,
+    metadata_only: bool = False,
 ) -> Path:
     """Resolve a parent reference to a local checkpoint Path.
 
@@ -174,10 +176,25 @@ def resolve_parent(
 
     Returns the path to the loadable best_model.zip (or whatever the
     artifact wrapped — convention is best_model.zip).
+
+    When `metadata_only=True`:
+      - For filesystem paths, returns the parent run dir (containing `.hydra/`).
+      - For wandb URIs, downloads ONLY `.hydra/` + `_wandb_metadata.json`
+        (not `best_model.zip`) into `models/.cache/<name>_v<N>_meta/` and
+        returns the run dir.  Used by the obs-preflight path that needs the
+        parent's obs spec without loading weights.
     """
     s = str(uri_or_path)
     if not _is_wandb_uri(s):
-        return Path(s)
+        p = Path(s)
+        if metadata_only:
+            # Normalize "<run_dir>/best_model" (no .zip), "<run_dir>/best_model.zip",
+            # or the run dir itself → run dir.
+            if p.is_file():
+                return p.parent
+            if not p.exists() and p.with_suffix(".zip").is_file():
+                return p.parent
+        return p
 
     parsed = _parse_wandb_uri(s)
     api = wandb.Api()
@@ -198,12 +215,22 @@ def resolve_parent(
     committed = Path(models_root) / parsed.name
     meta = _committed_metadata(committed)
     if meta is not None and meta.get("version") == version and meta.get("name") == parsed.name:
+        if metadata_only and (committed / ".hydra" / "config.yaml").exists():
+            return committed
         cp = committed / "best_model.zip"
         if cp.exists():
-            return cp
+            return cp if not metadata_only else committed
         # Metadata pins but best_model.zip is missing — fall through to download.
 
-    # Download into the gitignored cache.
+    if metadata_only:
+        # Separate cache subdir so a later full download into <name>_<version>/
+        # doesn't get confused with this metadata-only fetch.
+        cache_dir = Path(models_root) / ".cache" / f"{parsed.name}_{version}_meta"
+        # path_prefix limits the download to just .hydra/ contents.
+        art.download(root=str(cache_dir), path_prefix=".hydra")
+        return cache_dir
+
+    # Download into the gitignored cache (full).
     cache_dir = Path(models_root) / ".cache" / f"{parsed.name}_{version}"
     art.download(root=str(cache_dir))
     return cache_dir / "best_model.zip"

@@ -1,0 +1,34 @@
+defaults:
+  - _self_
+candidate: ???
+output_dir: null
+seed: 0
+scenarios:
+  - opponent: zero
+    opponent_model_path: null
+    randomise_start: false
+    n_episodes: 5
+    crash_aftermath_seconds: 0.0
+    deterministic: true
+    learner_id: blue_0
+  - opponent: beeline_red
+    opponent_model_path: null
+    randomise_start: false
+    n_episodes: 10
+    crash_aftermath_seconds: 0.0
+    deterministic: true
+    learner_id: blue_0
+  - opponent: beeline_red
+    opponent_model_path: null
+    randomise_start: true
+    n_episodes: 10
+    crash_aftermath_seconds: 0.0
+    deterministic: true
+    learner_id: blue_0
+  - opponent: intercepter_red:lookahead=0.5
+    opponent_model_path: null
+    randomise_start: true
+    n_episodes: 10
+    crash_aftermath_seconds: 0.0
+    deterministic: true
+    learner_id: blue_0

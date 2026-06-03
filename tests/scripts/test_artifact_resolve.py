@@ -347,6 +347,102 @@ def test_for_api_explicit_uri_qualifiers_override_defaults() -> None:
     assert out == "me/proj/foo:v3"
 
 
+# ── metadata_only — obs-preflight path (no best_model.zip) ──────────────────
+def test_metadata_only_filesystem_file_returns_parent_dir(tmp_path: Path) -> None:
+    """A filesystem path to best_model.zip with metadata_only=True returns the
+    parent dir (which contains .hydra/)."""
+    from scripts._artifact_io import resolve_parent
+    run_dir = tmp_path / "models" / "ppo_hoop_blue_4"
+    run_dir.mkdir(parents=True)
+    target = run_dir / "best_model.zip"
+    target.write_bytes(b"")
+    out = resolve_parent(str(target), metadata_only=True)
+    assert out == run_dir
+
+
+def test_metadata_only_filesystem_path_without_zip_suffix(tmp_path: Path) -> None:
+    """Convention: `models/<run>/best_model` (no .zip) — `best_model.zip`
+    lives alongside it.  metadata_only=True returns the parent dir."""
+    from scripts._artifact_io import resolve_parent
+    run_dir = tmp_path / "models" / "ppo_hoop_blue_4"
+    run_dir.mkdir(parents=True)
+    (run_dir / "best_model.zip").write_bytes(b"")
+    # Pass the path WITHOUT .zip.
+    out = resolve_parent(str(run_dir / "best_model"), metadata_only=True)
+    assert out == run_dir
+
+
+def test_metadata_only_filesystem_dir_returns_dir(tmp_path: Path) -> None:
+    """Path to a dir with metadata_only=True returns the dir as-is."""
+    from scripts._artifact_io import resolve_parent
+    run_dir = tmp_path / "models" / "ppo_hoop_blue_4"
+    run_dir.mkdir(parents=True)
+    out = resolve_parent(str(run_dir), metadata_only=True)
+    assert out == run_dir
+
+
+def test_metadata_only_committed_cache_hit_returns_run_dir(tmp_path: Path) -> None:
+    """metadata_only=True with a version-matched committed dir returns the
+    committed run dir even when only .hydra/ exists (no best_model.zip)."""
+    from scripts._artifact_io import resolve_parent
+    committed = tmp_path / "models" / "ppo_hoop_blue_4"
+    committed.mkdir(parents=True)
+    (committed / ".hydra").mkdir()
+    (committed / ".hydra" / "config.yaml").write_text("run_name: x\n")
+    (committed / "_wandb_metadata.json").write_text(json.dumps({
+        "name": "ppo_hoop_blue_4",
+        "version": "v3",
+    }))
+
+    art = MagicMock()
+    art.version = "v3"
+    art.name = "ppo_hoop_blue_4:v3"
+    api = MagicMock()
+    api.artifact.return_value = art
+
+    with patch("wandb.Api", return_value=api):
+        with patch("wandb.run", None):
+            out = resolve_parent("wandb://ppo_hoop_blue_4:prod",
+                                 models_root=tmp_path / "models",
+                                 metadata_only=True)
+
+    assert out == committed
+    art.download.assert_not_called()
+
+
+def test_metadata_only_download_uses_meta_cache_dir(tmp_path: Path) -> None:
+    """metadata_only=True with no committed hit downloads .hydra/ into
+    <name>_<version>_meta/."""
+    from scripts._artifact_io import resolve_parent
+
+    cache_dir = tmp_path / "models" / ".cache" / "ppo_hoop_red_1_v0_meta"
+
+    def fake_download(root: str, path_prefix: str | None = None) -> str:
+        Path(root).mkdir(parents=True, exist_ok=True)
+        (Path(root) / ".hydra").mkdir(exist_ok=True)
+        (Path(root) / ".hydra" / "config.yaml").write_text("run_name: x\n")
+        return root
+
+    art = MagicMock()
+    art.version = "v0"
+    art.name = "ppo_hoop_red_1:v0"
+    art.download.side_effect = fake_download
+    api = MagicMock()
+    api.artifact.return_value = art
+
+    with patch("wandb.Api", return_value=api):
+        with patch("wandb.run", None):
+            out = resolve_parent("wandb://ppo_hoop_red_1:prod",
+                                 models_root=tmp_path / "models",
+                                 metadata_only=True)
+
+    assert out == cache_dir
+    art.download.assert_called_once()
+    # path_prefix limits the download to just .hydra/
+    _, call_kwargs = art.download.call_args
+    assert call_kwargs.get("path_prefix") == ".hydra"
+
+
 def test_resolve_uses_project_only_form_when_entity_unset(
     tmp_path: Path, monkeypatch,
 ) -> None:

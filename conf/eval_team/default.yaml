@@ -1,0 +1,13 @@
+# Hydra entrypoint config for scripts/eval_team.py.  Enabling this group
+# expects the top-level `learner` and `opponent` groups to be picked at the
+# CLI:
+#
+#   python -m scripts.eval_team +eval_team=default \
+#       learner=blue learner.uri=models/ppo_hoop_blue_4_*/best_model \
+#       opponent=beeline_red eval.gui=true eval.n_episodes=5
+#
+# scripts/eval_team.py reads cfg.eval, cfg.learner, cfg.opponent directly.
+# Only eval_team-specific overrides go here.
+
+# Toggle a per-episode log line in addition to the final summary.
+log_per_episode: false

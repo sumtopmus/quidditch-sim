@@ -171,6 +171,37 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
         ), 0
 
     if cfg.init.mode == "pretrain":
+        # Warn-then-raise: run core.obs_compat.preflight() up front so the user
+        # sees the friendly per-block diff BEFORE the existing strict
+        # check_obs_compat fires its sys.exit(2).  No auto-switch to warm_start
+        # (design decision 2026-05-18: too magical).
+        try:
+            from core.obs_compat import preflight
+            _report = preflight(str(cfg.init.parent),
+                                str(cfg.obs.name), int(frame_stack))
+        except Exception as e:
+            log.warning(
+                "obs-preflight could not be run (%s); falling through to "
+                "load — the existing check_obs_compat will catch any real "
+                "mismatch.", e,
+            )
+            _report = None
+
+        if _report is not None and not _report.compatible:
+            log.warning(
+                "obs-spec preflight WARNING: parent %s x n_stack=%d  ->  "
+                "child %s x n_stack=%d  (surgery_required=%s)",
+                _report.parent_spec_name, _report.parent_n_stack,
+                _report.child_spec_name, _report.child_n_stack,
+                _report.surgery_required,
+            )
+            for d in _report.diff:
+                log.warning("  %-12s dim=%d  parent_frame=%s child_frame=%s  status=%s",
+                            d.block, d.dim, d.parent_frame, d.child_frame, d.status)
+            log.warning("init.mode=pretrain will strict-raise below.  "
+                        "Use init.mode=warm_start to small-init the mismatched "
+                        "columns instead.")
+
         parent = resolve_parent(cfg.init.parent)
         parent_hydra = parent.parent / ".hydra"
         if not parent_hydra.exists() and (parent.parent.parent / ".hydra").exists():

@@ -1,153 +1,59 @@
-"""Promote a training run's best model to canonical / vendored status.
+"""CLI wrapper around core.promote.promote_run / promote_run_dir.
 
-Two-step:
-
-  1. Wandb side: look up the artifact logged by this run, add aliases
-     `prod` and `<run_name>` (mutable aliases that move as new versions
-     get promoted), persist via art.save().
-
-  2. Repo side: copy best_model.zip + .hydra/ → models/<run_name>/, write
-     `_wandb_metadata.json` pinning the IMMUTABLE version (`v3`, not `prod`).
-     Print a hint reminding the user to `git add && git commit` if they
-     want to vendor the checkpoint.
-
-Usage:
-    python -m scripts.promote runs/ppo_hoop_blue_5/20260514_120000
-
-Or via the Makefile:
-    make promote RUN_NAME=ppo_hoop_blue_5
+For new code, prefer:
+    dsim promote <run-name> [--alias prod]
+This script remains for back-compat with `python -m scripts.promote`
+and existing tests that import the lower-level helpers under their
+historical names.
 """
 from __future__ import annotations
 
 import argparse
-import json
-import os
-import shutil
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
-import wandb
-from omegaconf import OmegaConf
+# Re-export legacy names: tests/scripts/test_promote.py imports promote_run_dir,
+# _resolve_entity_project, _find_run_artifact from scripts.promote.  The
+# implementation lives in core.promote now; re-importing here preserves the
+# public surface without duplication.
+from core.promote import (  # noqa: F401
+    PromoteResult,
+    _find_run_artifact,
+    _resolve_entity_project,
+    _resolve_run_name,
+    promote_run,
+    promote_run_dir,
+)
 
 
-def _resolve_run_name(run_dir: Path) -> str:
-    """Read run_name from the run's .hydra/config.yaml."""
-    cfg = OmegaConf.load(run_dir / ".hydra" / "config.yaml")
-    return str(cfg.run_name)
-
-
-def _resolve_entity_project(run_dir: Path) -> tuple[str | None, str]:
-    """Resolve wandb (entity, project) for artifact lookups.
-
-    Without qualification, `wandb.Api().artifact("name:alias")` looks up
-    the user's *default* project (often `uncategorized`), which is NOT
-    where training runs land — they go to cfg.wandb.project.  This helper
-    reads the run's persisted Hydra cfg.wandb block, with env-var
-    overrides (WANDB_ENTITY, WANDB_PROJECT) taking precedence so a user
-    can repoint without editing files.
-    """
-    cfg = OmegaConf.load(run_dir / ".hydra" / "config.yaml")
-    wandb_cfg = cfg.get("wandb") or {}
-    project = (
-        os.environ.get("WANDB_PROJECT")
-        or wandb_cfg.get("project")
-        or "drone-quidditch"
-    )
-    entity = os.environ.get("WANDB_ENTITY") or wandb_cfg.get("entity_override") or None
-    return entity, str(project)
-
-
-def _find_run_artifact(run_name: str, timestamp: str,
-                       entity: str | None, project: str):
-    """Find the wandb artifact logged by run_id=<run_name>_<timestamp>.
-
-    The simple case: `<run_name>:latest` points to the just-finished run
-    (this is the universal case immediately after training completes, since
-    `log_run_artifact` aliases its output as `:latest`).  The qualified
-    path `entity/project/name:alias` is required — without it wandb falls
-    back to the user's default project (`uncategorized`), which never
-    contains training artifacts.
-    """
-    api = wandb.Api()
-    qualified = (
-        f"{entity}/{project}/{run_name}:latest"
-        if entity else f"{project}/{run_name}:latest"
-    )
-    return api.artifact(qualified)
-
-
-def promote_run_dir(run_dir: Path, run_name: str, models_root: Path) -> None:
-    """Two-step promote: alias the artifact, copy + pin into models/."""
-    run_dir = Path(run_dir).resolve()
-    src = run_dir / "best_model.zip"
-    if not src.exists():
-        raise FileNotFoundError(
-            f"{src} not found — was eval triggered, or did training crash early?"
-        )
-
-    timestamp = run_dir.name
-    entity, project = _resolve_entity_project(run_dir)
-    art = _find_run_artifact(run_name, timestamp, entity=entity, project=project)
-
-    # Mutable aliases: add `prod` + `<run_name>` if not present.
-    aliases = list(art.aliases)
-    for alias in ("prod", run_name):
-        if alias not in aliases:
-            aliases.append(alias)
-    art.aliases = aliases
-    art.save()
-
-    # Repo side: copy + pin.
-    dest = Path(models_root) / run_name
-    dest.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(src, dest / "best_model.zip")
-    hydra_src = run_dir / ".hydra"
-    if hydra_src.exists():
-        hydra_dest = dest / ".hydra"
-        if hydra_dest.exists():
-            shutil.rmtree(hydra_dest)
-        shutil.copytree(hydra_src, hydra_dest)
-    src_doc = run_dir / "MODEL.md"
-    if src_doc.exists():
-        shutil.copy2(src_doc, dest / "MODEL.md")
-    def _str_or_none(v):
-        return v if isinstance(v, str) else None
-    metadata = {
-        "name":     run_name,
-        "version":  art.version,
-        "entity":   _str_or_none(getattr(art, "entity", None)),
-        "project":  _str_or_none(getattr(art, "project", None)),
-        "aliases":  list(art.aliases),
-        "logged_by_run_id": f"{run_name}_{timestamp}",
-    }
-    (dest / "_wandb_metadata.json").write_text(json.dumps(metadata, indent=2))
-
-    print(f"")
-    print(f"  Run:      {run_dir}")
-    print(f"  Wandb:    {run_name}:{art.version}  (aliases: {sorted(art.aliases)})")
-    print(f"  Vendored: {dest}")
-    print(f"")
-    print(f"  To use as a pretrain parent in a new experiment YAML:")
-    print(f"    init:")
-    print(f"      parent: wandb://{run_name}:prod")
-    print(f"")
-    print(f"  To vendor this checkpoint into the repo:")
-    print(f"    git add {dest} && git commit -m 'model: promote {run_name}'")
-
-
-def main() -> None:
+def main() -> int:
     p = argparse.ArgumentParser(description="Promote a run's best_model to canonical.")
     p.add_argument("run_dir", help="runs/<run_name>/<timestamp>/")
     p.add_argument("--models-root", default="models", help="defaults to models/")
+    p.add_argument("--alias", default="prod",
+                   help="W&B alias to set (default: prod)")
     args = p.parse_args()
 
     run_dir = Path(args.run_dir).resolve()
-    run_name = _resolve_run_name(run_dir)
-    promote_run_dir(run_dir=run_dir, run_name=run_name,
-                    models_root=Path(args.models_root))
+    result = promote_run(run_dir, alias=args.alias,
+                         models_root=Path(args.models_root))
+
+    print(f"  Run:      {run_dir}")
+    print(f"  Wandb:    {result.run_name}:{result.wandb_version}  "
+          f"(alias: {result.wandb_alias})")
+    print(f"  Vendored: {result.target_dir}")
+    print(f"  Copied:   {', '.join(result.copied_files)}")
+    print("")
+    print("  To use as a pretrain parent in a new experiment YAML:")
+    print(f"    init:")
+    print(f"      parent: wandb://{result.run_name}:prod")
+    print("")
+    print("  To vendor this checkpoint into the repo:")
+    print(f"    git add {result.target_dir} && git commit -m 'model: promote {result.run_name}'")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
