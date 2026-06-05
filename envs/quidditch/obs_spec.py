@@ -125,6 +125,30 @@ OPP_VEL_REL_BODY_EGO = ObsBlock(
           "frame; distinct from OPP_VEL_REL_BODY (body_mixed)",
 )
 
+# ── CTDE actor-view blocks (world-frame, normalized at pack-time) ────────────
+LIN_VEL_WORLD = ObsBlock("lin_vel_world", dim=3, frame="world",
+                         notes="world-frame linear velocity (qvel[dofadr:+3])")
+TIME_REMAINING = ObsBlock("time_remaining", dim=1,
+                          notes="(max_steps - step) / max_steps, in [0,1]")
+
+# ── Critic-only (privileged) blocks — CTDE value head, world frame ───────────
+OPP_NEXT_ACTION = ObsBlock("opp_next_action", dim=4,
+                           notes="opponent's applied action this step (injected)")
+SELF_FUTURE_DISP = ObsBlock("self_future_disp", dim=3, frame="world",
+                            notes="k·v_self_world / arena")
+OPP_FUTURE_REL = ObsBlock("opp_future_rel", dim=3, frame="world",
+                          notes="((opp_pos + k·v_opp) - self_pos)/arena")
+SCORE_PRED = ObsBlock("score_pred", dim=3,
+                      notes="[time_to_plane/Tcap, lateral_miss/arena, approach_align]")
+TAKEDOWN_PRED = ObsBlock("takedown_pred", dim=3,
+                         notes="[time_to_cpa/Tcap, min_sep/arena, imminent_flag]")
+RED_POS_ABS = ObsBlock("red_pos_abs", dim=3, frame="world", notes="red_pos/arena")
+BLUE_POS_ABS = ObsBlock("blue_pos_abs", dim=3, frame="world", notes="blue_pos/arena")
+TAG_STATE_ONEHOT = ObsBlock("tag_state_onehot", dim=2,
+                            notes="[tag_during, tag_cooldown_active]")
+TERMINAL_MARGINS = ObsBlock("terminal_margins", dim=4,
+                            notes="[red_wall, blue_wall, red_floor, blue_floor] margins")
+
 
 # ── Legacy persisted obs-block names ─────────────────────────────────────────
 # Translates pre-2026-05-18 `[obs] slots` entries on read so old run_info.toml
