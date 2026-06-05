@@ -668,6 +668,10 @@ class QuidditchTeamEnv(ParallelEnv):
             "opp_vel_rel_world":      opp_vel_rel_world,
             "opp_vel_rel_body_ego":   obs_spec.world_to_body(opp_vel_rel_world, R_wb),
             "closing_rate":           np.array([closing_rate], dtype=np.float32),
+            "lin_vel_world":          self_vel_world.astype(np.float32),
+            "time_remaining":         np.array(
+                [(self._max_steps - self._step_count) / max(1, self._max_steps)],
+                dtype=np.float32),
         }
 
     def _pack_agent_obs(self, agent_id: str, spec: ObsSpec) -> np.ndarray:

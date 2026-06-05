@@ -43,6 +43,11 @@ CRASH_VEL_THR: float = 1.0             # m/s, |v_rel · contact_normal| threshol
 # (kept in sync visually so a reader sees both numbers next to each other).
 REWARD_LOOKAHEAD_S: float = 0.5
 
+# ── Oracle critic (CTDE) ─────────────────────────────────────────────────────
+ORACLE_HORIZON_S: float = 0.5      # kinematic lookahead for future-position blocks
+ORACLE_TIME_CAP_S: float = 3.0     # cap + normalizer for predicted time-to-event
+TAKEDOWN_CONTACT_DIST: float = 0.3 # m; predicted min-sep below this ⇒ imminent-crash
+
 # Default Blue start (hovering 1 m in front of the hoop, slightly below hoop height).
 BLUE_START_POS = np.array([1.0, 0.0, 1.5], dtype=np.float64)
 BLUE_START_YAW: float = float(np.pi)   # facing arena center (−x direction)
