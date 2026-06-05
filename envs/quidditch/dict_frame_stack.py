@@ -38,6 +38,17 @@ class SelectiveDictFrameStack(VecEnvWrapper):
         obs, rewards, dones, infos = self.venv.step_wait()
         out = dict(obs)
         for key, st in self._stackers.items():
-            stacked, infos = st.update(np.asarray(obs[key]), dones, infos)
+            # The env's terminal_observation is the full Dict; split out this
+            # key's array so the Box sub-stacker sees an array (mirrors SB3's
+            # Dict-level update), then write the stacked terminal back.
+            sub_infos = [
+                {"terminal_observation": info["terminal_observation"][key]}
+                if "terminal_observation" in info else {}
+                for info in infos
+            ]
+            stacked, sub_infos = st.update(np.asarray(obs[key]), dones, sub_infos)
             out[key] = stacked
+            for env_idx, info in enumerate(infos):
+                if "terminal_observation" in info:
+                    info["terminal_observation"][key] = sub_infos[env_idx]["terminal_observation"]
         return out, rewards, dones, infos

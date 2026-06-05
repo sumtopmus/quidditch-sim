@@ -33,3 +33,19 @@ def test_stacks_actor_only():
     obs = vec.reset()
     assert obs["actor"].shape == (1, 6)
     assert obs["critic"].shape == (1, 3)
+
+
+def test_steps_through_done_with_terminal_observation():
+    # Stepping past an episode boundary must split the Dict terminal_observation
+    # per key inside StackedObservations.update without raising.
+    vec = SelectiveDictFrameStack(DummyVecEnv([_DictEnv]), n_stack=3, keys=("actor",))
+    vec.reset()
+    for _ in range(7):                       # _DictEnv terminates at i>=5
+        obs, rewards, dones, infos = vec.step(np.zeros((1, 1), np.float32))
+        assert obs["actor"].shape == (1, 6)
+        assert obs["critic"].shape == (1, 3)
+        if dones[0]:
+            # DummyVecEnv stores the (now-stacked) terminal obs in infos.
+            term = infos[0]["terminal_observation"]
+            assert term["actor"].shape == (6,)
+            assert term["critic"].shape == (3,)
