@@ -105,3 +105,22 @@ def test_critic_obs_does_affect_value():
     v0 = pol.predict_values(base)
     v1 = pol.predict_values(other)
     assert not torch.allclose(v0, v1)
+
+
+from stable_baselines3 import PPO
+
+
+def test_ppo_learns_and_round_trips(tmp_path):
+    env = DummyVecEnv([_MockDictEnv])
+    model = PPO(AsymmetricActorCriticPolicy, env,
+                policy_kwargs=dict(net_arch=[8, 8]),
+                n_steps=32, batch_size=16, n_epochs=1, seed=0, verbose=0)
+    model.learn(total_timesteps=64)
+    p = tmp_path / "m.zip"
+    model.save(str(p))
+    loaded = PPO.load(str(p), env=env)            # reconstructs the custom policy
+    obs = env.reset()
+    a1, _ = model.predict(obs, deterministic=True)
+    a2, _ = loaded.predict(obs, deterministic=True)
+    assert a1.shape == a2.shape
+    np.testing.assert_allclose(a1, a2, atol=1e-5)  # constructor params survived save/load
