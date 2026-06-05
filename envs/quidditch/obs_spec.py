@@ -251,6 +251,21 @@ def load_obs_yaml(stem: str) -> ObsSpec:
     return build_spec_from_block_names(cfg["blocks"])
 
 
+def build_ctde_specs_from_yaml(stem: str) -> tuple[ObsSpec, ObsSpec]:
+    """Load conf/obs/<stem>.yaml and return (actor_spec, critic_spec).
+
+    Requires `actor_blocks:` + `critic_blocks:` (the dual-view schema).
+    Raises KeyError if either is missing."""
+    import yaml
+    repo_root = Path(__file__).resolve().parents[2]
+    cfg = yaml.safe_load((repo_root / "conf" / "obs" / f"{stem}.yaml").read_text())
+    for key in ("actor_blocks", "critic_blocks"):
+        if key not in cfg:
+            raise KeyError(f"conf/obs/{stem}.yaml missing `{key}:` (CTDE dual-view schema)")
+    return (build_spec_from_block_names(cfg["actor_blocks"]),
+            build_spec_from_block_names(cfg["critic_blocks"]))
+
+
 def describe(spec: ObsSpec, name: str | None = None) -> str:
     """Render a human-readable block-by-block layout of one ObsSpec."""
     header = f"{name} ({spec.dim}-d):" if name else f"({spec.dim}-d):"

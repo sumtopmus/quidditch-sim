@@ -40,3 +40,13 @@ def test_plain_pack_unchanged_for_flat_specs():
     spec = build_spec_from_block_names(["LIN_POS"])
     out = obs_spec.pack(spec, {"lin_pos": np.array([3.0, 0.0, 0.0], np.float32)})
     np.testing.assert_allclose(out, [3.0, 0.0, 0.0])
+
+
+from envs.quidditch.obs_spec import build_ctde_specs_from_yaml
+
+
+def test_build_ctde_specs_from_yaml():
+    actor, critic = build_ctde_specs_from_yaml("ctde_v1")
+    assert actor.dim == 23
+    assert critic.dim == 28
+    assert [b.name for b in actor.blocks][:2] == ["ang_vel", "ang_pos"]

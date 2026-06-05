@@ -1,0 +1,26 @@
+# CTDE dual-view obs.  Learner emits Dict({actor, critic}); opponent stays flat.
+# Actor: world-frame, normalized, pruned (23-d). Critic: oracle/future +
+# ground-truth privileged extras (28-d).  See the 2026-06-04 design spec.
+name: CTDE_V1
+obs_mode: dict
+n_stack: 3
+actor_blocks:
+  - ANG_VEL
+  - ANG_POS
+  - LIN_VEL_WORLD
+  - LIN_POS
+  - VEC_TO_HOOP
+  - OPP_POS_REL
+  - OPP_VEL_REL_WORLD
+  - CLOSING_RATE
+  - TIME_REMAINING
+critic_blocks:
+  - OPP_NEXT_ACTION
+  - SELF_FUTURE_DISP
+  - OPP_FUTURE_REL
+  - SCORE_PRED
+  - TAKEDOWN_PRED
+  - RED_POS_ABS
+  - BLUE_POS_ABS
+  - TAG_STATE_ONEHOT
+  - TERMINAL_MARGINS
