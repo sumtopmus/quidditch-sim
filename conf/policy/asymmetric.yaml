@@ -1,0 +1,4 @@
+# CTDE privileged-critic policy (core.policies.asymmetric.AsymmetricActorCriticPolicy).
+policy_class: AsymmetricActorCriticPolicy
+net_arch: [64, 64]
+share_features_extractor: false

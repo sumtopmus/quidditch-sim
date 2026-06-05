@@ -5,6 +5,7 @@ defaults:
   - trainer: ppo
   - env: team
   - obs: duel_v2_world
+  - policy: mlp
   - reward: team_v2
   - opponent: beeline_red
   - eval: default

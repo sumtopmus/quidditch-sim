@@ -104,6 +104,14 @@ class ObsConfig:
 
 
 @dataclass
+class PolicyConfig:
+    """Selects the SB3 policy + arch.  MlpPolicy = flat path; AsymmetricActorCriticPolicy = CTDE."""
+    policy_class: str = "MlpPolicy"
+    net_arch: list[int] = field(default_factory=lambda: [64, 64])
+    share_features_extractor: bool = True
+
+
+@dataclass
 class WandbConfig:
     """W&B integration knobs.
 
@@ -139,6 +147,7 @@ class Config:
     init: InitConfig = field(default_factory=InitConfig)
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
     obs: ObsConfig = field(default_factory=ObsConfig)
+    policy: PolicyConfig = field(default_factory=PolicyConfig)
     wandb: WandbConfig = field(default_factory=WandbConfig)
     env: Any = None
     reward: Any = None
@@ -157,4 +166,5 @@ def register_configs() -> None:
     cs.store(group="init",       name="schema", node=InitConfig)
     cs.store(group="curriculum", name="schema", node=CurriculumConfig)
     cs.store(group="obs",        name="schema", node=ObsConfig)
+    cs.store(group="policy",     name="schema", node=PolicyConfig)
     cs.store(group="wandb",      name="schema", node=WandbConfig)
