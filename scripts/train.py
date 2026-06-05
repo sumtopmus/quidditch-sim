@@ -161,6 +161,29 @@ def _build_or_load_model(cfg: DictConfig, vec_env, run_dir: Path, seed: int):
         "clip_range":    cfg.trainer.clip_range,
         "ent_coef":      cfg.trainer.ent_coef,
     }
+
+    # CTDE (obs_mode=dict): privileged-critic policy, scratch-only.  Resolved
+    # before any cfg.obs.blocks read — the dict obs YAML carries actor_blocks/
+    # critic_blocks, not a flat blocks list.
+    obs_mode = cfg.obs.get("obs_mode", "flat")
+    if obs_mode == "dict":
+        from core.policies.asymmetric import AsymmetricActorCriticPolicy
+        from envs.quidditch.obs_spec import build_ctde_specs_from_yaml
+        net_arch = list(cfg.get("policy", {}).get("net_arch", [64, 64]))
+        # Resolve the obs stem from cfg.obs.name (CTDE_V1 -> ctde_v1) unless an
+        # explicit obs_stem is provided.
+        stem = cfg.obs.get("obs_stem") or str(cfg.obs.name).lower()
+        build_ctde_specs_from_yaml(stem)             # validates the yaml up front
+        if cfg.init.mode != "scratch":
+            raise SystemExit(
+                "CTDE (obs_mode=dict) supports init=scratch only — flat↔dict "
+                "warm-start is not defined.  Set init=scratch.")
+        return PPO(
+            AsymmetricActorCriticPolicy, vec_env,
+            policy_kwargs=dict(net_arch=net_arch),
+            tensorboard_log=None, seed=seed, verbose=0, **ppo_kwargs,
+        ), 0
+
     current_spec = build_spec_from_block_names(cfg.obs.blocks)
     frame_stack = int(cfg.obs.n_stack)
 
