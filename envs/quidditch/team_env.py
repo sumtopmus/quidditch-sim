@@ -701,6 +701,44 @@ class QuidditchTeamEnv(ParallelEnv):
         blue_vel = self._world_vel(self._blue_dofadr)
         cool = (self._tag_blue_on_red.state == _TagState.COOLDOWN)
 
+        learner_pos = blue_pos if agent_id == self._blue_id else red_pos
+        learner_vel = blue_vel if agent_id == self._blue_id else red_vel
+        opp_pos = red_pos if agent_id == self._blue_id else blue_pos
+        opp_vel = red_vel if agent_id == self._blue_id else blue_vel
+
+        k = ORACLE_HORIZON_S
+        self_future_disp = (k * learner_vel) / ARENA_RADIUS
+        opp_future_rel = ((opp_pos + k * opp_vel) - learner_pos) / ARENA_RADIUS
+
+        # score_pred (attacker = red_0): will Red's current trajectory score?
+        n = HOOP_OUTWARD_NORMAL.astype(np.float32)
+        signed = float(np.dot(red_pos - HOOP_CENTER, n))
+        v_n = float(np.dot(red_vel, n))
+        Tcap = ORACLE_TIME_CAP_S
+        if v_n > 1e-4 and signed < 0.0:
+            t_plane = min(-signed / v_n, Tcap)
+        else:
+            t_plane = Tcap
+        crossing = red_pos + t_plane * red_vel
+        lateral = (crossing - HOOP_CENTER) - np.dot(crossing - HOOP_CENTER, n) * n
+        lateral_miss = float(np.clip(np.linalg.norm(lateral) / ARENA_RADIUS, 0.0, 1.0))
+        speed = float(np.linalg.norm(red_vel))
+        approach_align = float(v_n / speed) if speed > 1e-6 else 0.0
+        score_pred = np.array(
+            [t_plane / Tcap, lateral_miss, approach_align], dtype=np.float32)
+
+        # takedown_pred: closest point of approach between the two drones.
+        r = blue_pos - red_pos
+        v = blue_vel - red_vel
+        vv = float(np.dot(v, v))
+        t_cpa = float(np.clip(-np.dot(r, v) / vv, 0.0, Tcap)) if vv > 1e-8 else 0.0
+        min_sep = float(np.linalg.norm(r + t_cpa * v))
+        imminent = 1.0 if (min_sep < TAKEDOWN_CONTACT_DIST
+                           and np.linalg.norm(v) > self.cfg.crash_vel_thr) else 0.0
+        takedown_pred = np.array(
+            [t_cpa / Tcap, float(np.clip(min_sep / ARENA_RADIUS, 0.0, 1.0)), imminent],
+            dtype=np.float32)
+
         # terminal margins (1 = safe, 0 = at boundary), clipped.
         def _wall_margin(p):
             return float(np.clip((ARENA_RADIUS - np.linalg.norm(p[:2])) / ARENA_RADIUS, 0.0, 1.0))
@@ -716,11 +754,10 @@ class QuidditchTeamEnv(ParallelEnv):
             "terminal_margins": np.array(
                 [_wall_margin(red_pos), _wall_margin(blue_pos),
                  _floor_margin(red_pos), _floor_margin(blue_pos)], dtype=np.float32),
-            # Oracle keys filled in Task 2.3:
-            "self_future_disp": np.zeros(3, np.float32),
-            "opp_future_rel":   np.zeros(3, np.float32),
-            "score_pred":       np.zeros(3, np.float32),
-            "takedown_pred":    np.zeros(3, np.float32),
+            "self_future_disp": self_future_disp.astype(np.float32),
+            "opp_future_rel":   opp_future_rel.astype(np.float32),
+            "score_pred":       score_pred,
+            "takedown_pred":    takedown_pred,
         }
 
     def _pack_agent_obs(self, agent_id: str, spec: ObsSpec) -> np.ndarray:
