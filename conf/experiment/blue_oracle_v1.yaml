@@ -1,0 +1,23 @@
+# @package _global_
+# First CTDE run: privileged oracle critic + world-frame actor.  Blue defender
+# vs beeline_red (scripted, always on disk), scratch.  The frozen:red_v1 rung
+# follows once models/ is restored.  See the 2026-06-04 design spec.
+run_name: ppo_hoop_blue_oracle_1
+
+defaults:
+  - override /env: team
+  - override /obs: ctde_v1
+  - override /reward: team_v3_intercept
+  - override /opponent: beeline_red
+  - override /policy: asymmetric
+  - override /init: scratch
+  - override /curriculum: random_start
+
+env:
+  learner_id: blue_0
+
+trainer:
+  lr: 3e-4
+  gamma: 0.9995
+  gae_lambda: 0.98
+  total_timesteps: 10_000_000
