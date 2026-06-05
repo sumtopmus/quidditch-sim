@@ -81,6 +81,42 @@ def pack(spec: ObsSpec, values: dict[str, ArrayLike]) -> np.ndarray:
     return np.concatenate(arrays, dtype=np.float32)
 
 
+ARENA_NORM: float = 3.0       # ARENA_RADIUS; kept local to avoid a constants import cycle
+_VEL_NORM: float = 3.0
+_ANGVEL_NORM: float = 10.0
+
+# Per-block divisors for the CTDE actor view.  Blocks absent from this map are
+# passed through unchanged (scale 1.0) — including all critic blocks, which are
+# normalized at source in team_env._build_critic_features.
+NORM_BY_BLOCK: dict[str, float] = {
+    "ang_vel":            _ANGVEL_NORM,
+    "ang_pos":            float(np.pi),
+    "lin_vel_world":      _VEL_NORM,
+    "lin_pos":            ARENA_NORM,
+    "vec_to_hoop_world":  ARENA_NORM,
+    "opp_pos_rel_world":  ARENA_NORM,
+    "opp_vel_rel_world":  _VEL_NORM,
+    "closing_rate":       _VEL_NORM,
+    "time_remaining":     1.0,
+}
+
+
+def pack_normalized(spec: ObsSpec, values: dict[str, ArrayLike],
+                    norm_by_block: dict[str, float]) -> np.ndarray:
+    """Like pack(), but divide each block by norm_by_block.get(name, 1.0).
+
+    Used only on the CTDE Dict views; the flat path keeps calling pack() so it
+    stays byte-identical."""
+    arrays: list[np.ndarray] = []
+    for block in spec.blocks:
+        v = np.asarray(values[block.name], dtype=np.float32)
+        if v.shape != (block.dim,):
+            raise ValueError(
+                f"pack_normalized: block {block.name!r} expects ({block.dim},), got {v.shape}")
+        arrays.append(v / np.float32(norm_by_block.get(block.name, 1.0)))
+    return np.concatenate(arrays, dtype=np.float32)
+
+
 # ── Canonical ObsBlock constants ─────────────────────────────────────────────
 # Each block's identity is (name, dim, frame).  When the meaning of a block
 # changes in a way that breaks compatibility (e.g., a frame change), declare a
