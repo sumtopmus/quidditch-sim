@@ -111,6 +111,9 @@ def _build_env_factory(cfg: DictConfig):
         env_cfg.pop("team_env_params", None)
         extra["team_cfg"] = _build_team_cfg(cfg)
         extra["opponent_spec"] = _opponent_spec_from_cfg(cfg)
+        if cfg.obs.get("obs_mode", "flat") == "dict":
+            extra["ctde_mode"] = True
+            extra["obs_stem"] = cfg.obs.get("obs_stem") or str(cfg.obs.name).lower()
     return instantiate(env_cfg, **extra)
 
 
@@ -350,18 +353,25 @@ def main(cfg: DictConfig) -> None:
         team_cfg = _build_team_cfg(cfg)
         opp_spec = _opponent_spec_from_cfg(cfg)
         learner = env_factory.learner_id
-        learner_spec = build_spec_from_block_names(cfg.obs.blocks)
         # Must mirror env_factory._make_thunk's wiring: same learner_id +
         # learner_spec (so eval obs shape matches training, including for
-        # DUEL_V2_WORLD / DUEL_V3_BODY_EGO), and the same reward_stack (so
-        # eval rewards use the experiment's intended stack, not team_env's
-        # default fallback to team_v2).
+        # DUEL_V2_WORLD / DUEL_V3_BODY_EGO / CTDE dict), and the same
+        # reward_stack (so eval rewards use the experiment's intended stack,
+        # not team_env's default fallback to team_v2).
+        ctde = (cfg.obs.get("obs_mode", "flat") == "dict")
+        if ctde:
+            from envs.quidditch.obs_spec import build_ctde_specs_from_yaml
+            stem = cfg.obs.get("obs_stem") or str(cfg.obs.name).lower()
+            actor_spec, critic_spec = build_ctde_specs_from_yaml(stem)
+        else:
+            actor_spec = build_spec_from_block_names(cfg.obs.blocks)
+            critic_spec = None
+
         def eval_env_fn():
             team = QuidditchTeamEnv(
-                cfg=team_cfg,
-                reward_stack=env_factory.reward_stack,
-                learner_id=learner,
-                learner_spec=learner_spec,
+                cfg=team_cfg, reward_stack=env_factory.reward_stack,
+                learner_id=learner, learner_spec=actor_spec,
+                ctde_mode=ctde, critic_spec=critic_spec,
             )
             opp = from_spec(opp_spec)
             return OpponentControlledEnv(team, learner_id=learner, opponent=opp)
@@ -383,6 +393,7 @@ def main(cfg: DictConfig) -> None:
         video_env_fn=video_env_fn,
         verbose=0,
         frame_stack=frame_stack,
+        ctde_mode=(cfg.obs.get("obs_mode", "flat") == "dict"),
     )
 
     # Wandb integration:

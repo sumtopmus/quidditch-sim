@@ -4,6 +4,9 @@
 name: CTDE_V1
 obs_mode: dict
 n_stack: 3
+# Empty flat blocks list: dict mode carries actor_blocks/critic_blocks instead,
+# but conf/env/team.yaml interpolates ${obs.blocks} so the key must exist.
+blocks: []
 actor_blocks:
   - ANG_VEL
   - ANG_POS
