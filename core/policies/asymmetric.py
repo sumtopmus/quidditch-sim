@@ -66,3 +66,40 @@ class _AsymmetricMlpExtractor(nn.Module):
 
     def forward_critic(self, features: torch.Tensor) -> torch.Tensor:
         return self.value_net(features)
+
+
+class AsymmetricActorCriticPolicy(MultiInputActorCriticPolicy):
+    """PPO policy whose value net sees more of the Dict obs than the actor.
+
+    actor_key:   the single Dict key the policy network reads.
+    critic_keys: the Dict keys the value network reads (concatenated, in order).
+    """
+
+    def __init__(self, observation_space, action_space, lr_schedule, *args,
+                 actor_key: str = "actor",
+                 critic_keys: tuple[str, ...] = ("actor", "critic"),
+                 **kwargs):
+        self._actor_key = actor_key
+        self._critic_keys = tuple(critic_keys)
+        kwargs["share_features_extractor"] = False
+        super().__init__(observation_space, action_space, lr_schedule, *args, **kwargs)
+
+    def _build_mlp_extractor(self) -> None:
+        # Replace the base class's two identical CombinedExtractors with keyed
+        # ones, then build an MLP extractor with per-head input dims.
+        self.pi_features_extractor = _KeyedExtractor(
+            self.observation_space, (self._actor_key,)).to(self.device)
+        self.vf_features_extractor = _KeyedExtractor(
+            self.observation_space, self._critic_keys).to(self.device)
+        self.mlp_extractor = _AsymmetricMlpExtractor(
+            pi_dim=self.pi_features_extractor.features_dim,
+            vf_dim=self.vf_features_extractor.features_dim,
+            net_arch=self.net_arch,
+            activation_fn=self.activation_fn,
+            device=self.device,
+        )
+
+    def _get_constructor_parameters(self) -> dict:
+        data = super()._get_constructor_parameters()
+        data.update(actor_key=self._actor_key, critic_keys=self._critic_keys)
+        return data
