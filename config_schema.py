@@ -90,10 +90,17 @@ class CurriculumConfig:
 
 @dataclass
 class ObsConfig:
-    """Names a canonical ObsSpec; `blocks` carries the ordered ObsBlock identifiers."""
+    """Names a canonical ObsSpec.
+
+    flat mode: `blocks` carries the ordered ObsBlock identifiers (existing path).
+    dict mode (CTDE): `actor_blocks` + `critic_blocks` carry the dual views.
+    """
     name: str = "DUEL_V2_WORLD"
     n_stack: int = 3
     blocks: list[str] = field(default_factory=list)
+    obs_mode: str = "flat"                       # "flat" | "dict"
+    actor_blocks: list[str] = field(default_factory=list)
+    critic_blocks: list[str] = field(default_factory=list)
 
 
 @dataclass
