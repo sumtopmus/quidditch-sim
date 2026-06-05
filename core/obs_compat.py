@@ -198,3 +198,12 @@ def _build_diff(parent: ObsSpec, child: ObsSpec) -> list[ObsBlockDiff]:
                 status="removed",
             ))
     return out
+
+
+def obs_modes_compatible(parent_mode: str, child_mode: str) -> bool:
+    """flat↔dict is never compatible: a CTDE (dict) run can only init=scratch.
+
+    Same-mode is compatible at this coarse level; block-level compat is still
+    judged by preflight() for flat↔flat, and (future) actor-spec-only for
+    dict↔dict."""
+    return parent_mode == child_mode
