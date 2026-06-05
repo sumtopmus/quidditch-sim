@@ -239,6 +239,7 @@ def build_callbacks(
     video_env_fn: Callable[[], Any] | None = None,
     verbose: int = 0,
     frame_stack: int = 1,
+    ctde_mode: bool = False,
 ) -> list:
     """Build the standard SB3 callback set: checkpoint + eval + (optional) video.
 
@@ -266,7 +267,11 @@ def build_callbacks(
     # Must match the training-env stack depth or SB3 will reject the eval env
     # at EvalCallback construction (obs-space shape mismatch).
     if frame_stack > 1:
-        eval_env = VecFrameStack(eval_env, n_stack=frame_stack)
+        if ctde_mode:
+            from envs.quidditch.dict_frame_stack import SelectiveDictFrameStack
+            eval_env = SelectiveDictFrameStack(eval_env, n_stack=frame_stack, keys=("actor",))
+        else:
+            eval_env = VecFrameStack(eval_env, n_stack=frame_stack)
 
     cbs: list = [
         CheckpointCallback(
