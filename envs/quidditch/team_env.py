@@ -116,6 +116,8 @@ class QuidditchTeamEnv(ParallelEnv):
         reward_stack: RewardStack | None = None,
         learner_id: str | None = None,
         learner_spec: ObsSpec | None = None,
+        ctde_mode: bool = False,
+        critic_spec: ObsSpec | None = None,
     ) -> None:
         super().__init__()
         self.cfg = cfg if cfg is not None else TeamConfig()
@@ -140,15 +142,21 @@ class QuidditchTeamEnv(ParallelEnv):
             learner_spec if learner_spec is not None else _DUEL_V1_BODY
         )
 
+        # CTDE (opt-in): the learner's obs becomes Dict({actor, critic}); the
+        # opponent stays flat.  critic_spec names the privileged value view.
+        self._ctde_mode = bool(ctde_mode)
+        self._critic_spec = critic_spec
+        if self._ctde_mode and critic_spec is None:
+            raise ValueError("ctde_mode=True requires a critic_spec")
+        # Opponent's action this step, computed at obs-build and applied by OCE
+        # (embedded == applied); the act callable is injected by OCE.
+        self._pending_opp_action = np.zeros(4, dtype=np.float32)
+        self._opponent_act = None     # set by OCE; (flat_opp_obs) -> action[4]
+
         # Observation spaces: build per-agent based on its spec.
         act_box = spaces.Box(low=-1.0, high=1.0, shape=(4,), dtype=np.float32)
-        self.observation_spaces: dict[str, spaces.Box] = {
-            agent: spaces.Box(
-                low=-np.inf, high=np.inf,
-                shape=(self._spec_for_agent(agent).dim,),
-                dtype=np.float32,
-            )
-            for agent in self.possible_agents
+        self.observation_spaces: dict[str, spaces.Space] = {
+            agent: self._obs_space_for_agent(agent) for agent in self.possible_agents
         }
         self.action_spaces: dict[str, spaces.Box] = {
             self._red_id:  act_box,
@@ -219,7 +227,18 @@ class QuidditchTeamEnv(ParallelEnv):
             return self._learner_spec
         return _DUEL_V1_BODY
 
-    def observation_space(self, agent: str) -> spaces.Box:
+    def _obs_space_for_agent(self, agent_id: str) -> spaces.Space:
+        if self._ctde_mode and agent_id == self._learner_id:
+            return spaces.Dict({
+                "actor":  spaces.Box(-np.inf, np.inf,
+                                     (self._learner_spec.dim,), np.float32),
+                "critic": spaces.Box(-np.inf, np.inf,
+                                     (self._critic_spec.dim,), np.float32),
+            })
+        return spaces.Box(-np.inf, np.inf,
+                          (self._spec_for_agent(agent_id).dim,), np.float32)
+
+    def observation_space(self, agent: str) -> spaces.Space:
         return self.observation_spaces[agent]
 
     def action_space(self, agent: str) -> spaces.Box:
@@ -613,8 +632,33 @@ class QuidditchTeamEnv(ParallelEnv):
         yaw = float(self._np_random.uniform(-np.pi, np.pi))
         return pos, yaw
 
-    def _build_agent_obs(self, agent_id: str) -> np.ndarray:
+    def _build_agent_obs(self, agent_id: str):
+        if self._ctde_mode and agent_id == self._learner_id:
+            feats = self._build_agent_features(agent_id)
+            actor = obs_spec.pack_normalized(self._learner_spec, feats,
+                                             obs_spec.NORM_BY_BLOCK)
+            opp_a = self._opp_next_action()
+            crit_feats = self._build_critic_features(agent_id, opp_a)
+            critic = obs_spec.pack_normalized(self._critic_spec, crit_feats,
+                                              obs_spec.NORM_BY_BLOCK)
+            return {"actor": actor, "critic": critic}
         return self._pack_agent_obs(agent_id, self._spec_for_agent(agent_id))
+
+    def _opp_next_action(self) -> np.ndarray:
+        """Deterministic opponent action for the current state (or zeros).
+
+        Computed here so it lands in obs_t's critic view; cached so OCE applies
+        the exact same action this step (embedded == applied)."""
+        if self._opponent_act is None:
+            return np.zeros(4, dtype=np.float32)
+        opp_flat = self._pack_agent_obs(self._opponent_id(),
+                                        self._spec_for_agent(self._opponent_id()))
+        a = np.asarray(self._opponent_act(opp_flat), dtype=np.float32).reshape(4)
+        self._pending_opp_action = a
+        return a
+
+    def _opponent_id(self) -> str:
+        return self._blue_id if self._learner_id == self._red_id else self._red_id
 
     def _build_agent_features(self, agent_id: str) -> dict[str, np.ndarray]:
         """Compute every feature this env can supply for one agent.
