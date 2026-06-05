@@ -31,3 +31,18 @@ def test_flat_mode_unchanged():
                                ["ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS"]))
     obs, _ = env.reset(seed=0)
     assert isinstance(obs["blue_0"], np.ndarray)   # still flat
+
+
+from envs.quidditch.opponents import OpponentControlledEnv, BeelineRed
+
+
+def test_oce_ctde_embedded_action_equals_applied():
+    env = _ctde_env()
+    oce = OpponentControlledEnv(env, learner_id="blue_0", opponent=BeelineRed())
+    obs, _ = oce.reset(seed=0)
+    assert set(obs.keys()) == {"actor", "critic"}
+    # opp_next_action is the first 4 dims of the (unnormalized passthrough) critic.
+    embedded = obs["critic"][:4].copy()
+    # Stepping applies env._pending_opp_action; it must equal what was embedded.
+    np.testing.assert_allclose(env._pending_opp_action, embedded, atol=1e-6)
+    oce.step(np.zeros(4, np.float32))

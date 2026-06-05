@@ -274,6 +274,13 @@ class OpponentControlledEnv(gym.Env):
         self.opponent_id = next(a for a in team_env.possible_agents if a != learner_id)
         self.opponent = opponent
 
+        # CTDE: let the team env compute opp_next_action at obs-build time so it
+        # lands in the learner's critic view; we then apply the exact same
+        # cached action (embedded == applied).
+        self._ctde = getattr(team_env, "_ctde_mode", False)
+        if self._ctde:
+            team_env._opponent_act = self.opponent.act
+
         # Pass-through observation/action space — team_env decided the shape.
         self.observation_space = team_env.observation_space(learner_id)
         self.action_space      = team_env.action_space(learner_id)
@@ -294,7 +301,10 @@ class OpponentControlledEnv(gym.Env):
         return obs[self.learner_id], infos[self.learner_id]
 
     def step(self, action):
-        opp_action = self.opponent.act(self._last_opp_obs)
+        if self._ctde:
+            opp_action = self.team_env._pending_opp_action
+        else:
+            opp_action = self.opponent.act(self._last_opp_obs)
         actions = {self.learner_id: action, self.opponent_id: opp_action}
         obs, rew, term, trunc, infos = self.team_env.step(actions)
         self._last_opp_obs = obs[self.opponent_id]
