@@ -26,26 +26,51 @@ class FrameStackWrapper(gym.Wrapper):
     (e.g. the periodic video callback) without obs-shape mismatch.
     """
 
-    def __init__(self, env: gym.Env, n_stack: int) -> None:
+    def __init__(self, env: gym.Env, n_stack: int,
+                 stack_keys: tuple[str, ...] | None = None) -> None:
         super().__init__(env)
         if n_stack < 1:
             raise ValueError(f"n_stack must be ≥ 1, got {n_stack}")
-        single_shape = env.observation_space.shape
+        self.n_stack = n_stack
+        obs_space = env.observation_space
+        self._is_dict = stack_keys is not None and isinstance(obs_space, gym.spaces.Dict)
+        if self._is_dict:
+            # CTDE Dict obs: stack only `stack_keys` (per-key ring buffers);
+            # other keys (the critic view) pass through unstacked.
+            self._stack_keys = tuple(stack_keys)
+            self._dims: dict[str, int] = {}
+            self._buffers: dict[str, np.ndarray] = {}
+            new_spaces: dict = {}
+            for key, sub in obs_space.spaces.items():
+                if key in self._stack_keys:
+                    single = sub.shape[0]
+                    self._dims[key] = single
+                    self._buffers[key] = np.zeros((single * n_stack,), dtype=sub.dtype)
+                    new_spaces[key] = gym.spaces.Box(
+                        low=-np.inf, high=np.inf, shape=(single * n_stack,),
+                        dtype=sub.dtype,
+                    )
+                else:
+                    new_spaces[key] = sub
+            self.observation_space = gym.spaces.Dict(new_spaces)
+            return
+        single_shape = obs_space.shape
         if len(single_shape) != 1:
             raise ValueError(
                 f"FrameStackWrapper expects 1-D obs, got shape {single_shape}"
             )
-        self.n_stack = n_stack
         self._single = single_shape[0]
         new_shape = (self._single * n_stack,)
         self.observation_space = gym.spaces.Box(
             low=-np.inf, high=np.inf, shape=new_shape,
-            dtype=env.observation_space.dtype,
+            dtype=obs_space.dtype,
         )
-        self._frames = np.zeros(new_shape, dtype=env.observation_space.dtype)
+        self._frames = np.zeros(new_shape, dtype=obs_space.dtype)
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
+        if self._is_dict:
+            return self._reset_dict(obs), info
         # Initialise every stack slot to the current obs so the policy never
         # sees an all-zero "history" that wouldn't appear in the vec env.
         for i in range(self.n_stack):
@@ -54,10 +79,30 @@ class FrameStackWrapper(gym.Wrapper):
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
+        if self._is_dict:
+            return self._step_dict(obs), reward, terminated, truncated, info
         # Shift older frames left (drop oldest); append newest at the tail.
         self._frames[: -self._single] = self._frames[self._single :]
         self._frames[-self._single :] = obs
         return self._frames.copy(), reward, terminated, truncated, info
+
+    def _reset_dict(self, obs: dict) -> dict:
+        out = dict(obs)
+        for key, single in self._dims.items():
+            buf = self._buffers[key]
+            for i in range(self.n_stack):
+                buf[i * single : (i + 1) * single] = obs[key]
+            out[key] = buf.copy()
+        return out
+
+    def _step_dict(self, obs: dict) -> dict:
+        out = dict(obs)
+        for key, single in self._dims.items():
+            buf = self._buffers[key]
+            buf[:-single] = buf[single:]
+            buf[-single:] = obs[key]
+            out[key] = buf.copy()
+        return out
 
     # gym.Wrapper.__getattr__ skips underscore-prefixed names, so passthroughs
     # the video callback needs (e.g. env._world.render_cells) won't resolve
