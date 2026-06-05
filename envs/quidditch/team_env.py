@@ -58,6 +58,9 @@ from envs.quidditch.constants import (
     TAG_COOLDOWN_SECONDS,
     CRASH_VEL_THR,
     REWARD_LOOKAHEAD_S,
+    ORACLE_HORIZON_S,
+    ORACLE_TIME_CAP_S,
+    TAKEDOWN_CONTACT_DIST,
 )
 from envs.quidditch.rewards import DEFAULT_MIDPOINT_ALPHA, default_team_stack
 from envs.quidditch.rewards.stack import RewardStack, StepState
@@ -187,6 +190,9 @@ class QuidditchTeamEnv(ParallelEnv):
         # Closing-rate state for the learner (formerly in OCE).
         self._prev_dist_to_opp: float = 0.0
 
+        # CTDE: whether Blue was tagging Red this step (for the critic onehot).
+        self._last_tag_during: bool = False
+
         # Future-red distance cache for InterceptShaping (populated each step
         # when learner_id is set).
         self._dist_def_to_future_red:      float = 0.0
@@ -296,6 +302,7 @@ class QuidditchTeamEnv(ParallelEnv):
         self._red_prev_signed_dist  = self._signed_dist_to_hoop_plane(self._red_pos())
         self._dist_b2r_prev         = float(np.linalg.norm(self._red_pos() - self._blue_pos()))
         self._aftermath_steps_left  = 0
+        self._last_tag_during       = False
 
         # Initialise closing-rate cache (formerly OCE side).
         if self._learner_id is not None:
@@ -380,6 +387,10 @@ class QuidditchTeamEnv(ParallelEnv):
             ts.cooldown_ticks -= 1
             if ts.cooldown_ticks <= 0:
                 ts.state = _TagState.IN_ZONE if in_zone else _TagState.IDLE
+
+        # Cache the finalized tag_during for the CTDE critic onehot (obs is
+        # built at the end of this step, so it reflects this step's tag state).
+        self._last_tag_during = tag_during
 
         # Positions used by tag shaping, distance shaping, OOB, and scoring.
         red_pos  = self._red_pos()
@@ -672,6 +683,44 @@ class QuidditchTeamEnv(ParallelEnv):
             "time_remaining":         np.array(
                 [(self._max_steps - self._step_count) / max(1, self._max_steps)],
                 dtype=np.float32),
+        }
+
+    def _world_vel(self, dofadr: int) -> np.ndarray:
+        return self._world.data.qvel[dofadr:dofadr + 3].copy().astype(np.float32)
+
+    def _build_critic_features(
+        self, agent_id: str, opp_next_action: np.ndarray
+    ) -> dict[str, np.ndarray]:
+        """Privileged (critic-only) features for the learner, normalized at source.
+
+        opp_next_action is injected by the caller (OCE) — the action the
+        opponent applies this step.  All other features are pure functions of
+        physics state.  See the 2026-06-04 design spec §5.2."""
+        red_pos, blue_pos = self._red_pos(), self._blue_pos()
+        red_vel = self._world_vel(self._red_dofadr)
+        blue_vel = self._world_vel(self._blue_dofadr)
+        cool = (self._tag_blue_on_red.state == _TagState.COOLDOWN)
+
+        # terminal margins (1 = safe, 0 = at boundary), clipped.
+        def _wall_margin(p):
+            return float(np.clip((ARENA_RADIUS - np.linalg.norm(p[:2])) / ARENA_RADIUS, 0.0, 1.0))
+        def _floor_margin(p):
+            return float(np.clip(p[2] / ARENA_WALL_HEIGHT, 0.0, 1.0))
+
+        return {
+            "opp_next_action": np.asarray(opp_next_action, np.float32).reshape(4),
+            "red_pos_abs":     (red_pos / ARENA_RADIUS).astype(np.float32),
+            "blue_pos_abs":    (blue_pos / ARENA_RADIUS).astype(np.float32),
+            "tag_state_onehot": np.array(
+                [float(self._last_tag_during), float(cool)], dtype=np.float32),
+            "terminal_margins": np.array(
+                [_wall_margin(red_pos), _wall_margin(blue_pos),
+                 _floor_margin(red_pos), _floor_margin(blue_pos)], dtype=np.float32),
+            # Oracle keys filled in Task 2.3:
+            "self_future_disp": np.zeros(3, np.float32),
+            "opp_future_rel":   np.zeros(3, np.float32),
+            "score_pred":       np.zeros(3, np.float32),
+            "takedown_pred":    np.zeros(3, np.float32),
         }
 
     def _pack_agent_obs(self, agent_id: str, spec: ObsSpec) -> np.ndarray:
