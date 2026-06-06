@@ -8,7 +8,69 @@ from typing import Callable
 
 import numpy as np
 
-from stable_baselines3.common.callbacks import BaseCallback
+from stable_baselines3.common.callbacks import BaseCallback, EvalCallback
+
+
+class SuccessRateEvalCallback(EvalCallback):
+    """EvalCallback that saves best_model by eval/success_rate, not mean reward.
+
+    Stock EvalCallback saves best_model whenever mean reward improves.  With
+    length-confounded shaping rewards, a high-reward *staller* gets saved over a
+    decisive defender (HANDOFF Issue #13).  This variant keys best_model on the
+    tuple ``(success_rate, mean_reward)``: honest prevention rate dominates,
+    reward breaks ties.  When the eval env reports no ``is_success`` (e.g. the
+    single-agent simple env), the success component is a constant ``0.0`` so
+    selection degrades to pure reward selection — parity with stock EvalCallback.
+
+    Implementation: the base ``_on_step`` runs the evaluation and all logging
+    (including ``eval/success_rate`` and ``evaluations.npz``); we call it with
+    ``best_model_save_path`` temporarily nulled to suppress its reward-based
+    save, then make our own decision from the success buffer it populated.  The
+    base call's side effects (updating ``self.best_mean_reward``; an emitted
+    "New best mean reward!" line under verbose) are harmless and unused here.
+    ``callback_on_new_best`` is not supported (we never pass one).
+    """
+
+    def __init__(self, *args, **kwargs) -> None:
+        super().__init__(*args, **kwargs)
+        # (success_rate, mean_reward): success_rate dominates, reward breaks ties.
+        self._best_key: tuple[float, float] = (-np.inf, -np.inf)
+
+    @property
+    def best_success_rate(self) -> float:
+        return self._best_key[0]
+
+    def _on_step(self) -> bool:
+        eval_now = self.eval_freq > 0 and self.n_calls % self.eval_freq == 0
+        real_path = self.best_model_save_path
+        self.best_model_save_path = None  # suppress base reward-based save
+        try:
+            continue_training = super()._on_step()
+        finally:
+            self.best_model_save_path = real_path
+        if eval_now:
+            self._maybe_save_best(real_path)
+        return continue_training
+
+    def _maybe_save_best(self, save_path: str | None) -> bool:
+        """Save best_model iff (success_rate, mean_reward) strictly improves."""
+        success_rate = (
+            float(np.mean(self._is_success_buffer))
+            if len(self._is_success_buffer) > 0
+            else 0.0
+        )
+        key = (success_rate, float(self.last_mean_reward))
+        if key <= self._best_key:
+            return False
+        self._best_key = key
+        if save_path is not None:
+            self.model.save(os.path.join(save_path, "best_model"))
+        if self.verbose >= 1:
+            print(
+                f"New best success rate: {100 * success_rate:.1f}% "
+                f"(mean_reward {self.last_mean_reward:.2f}) — saved best_model"
+            )
+        return True
 
 
 class ResumeProgressCallback(BaseCallback):

@@ -9,7 +9,7 @@ from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
 
 from envs.quidditch.simple_env import QuidditchSimpleEnv
 from scripts._train_common import build_callbacks
-from scripts.callbacks import VideoRecorderCallback
+from scripts.callbacks import SuccessRateEvalCallback, VideoRecorderCallback
 
 
 _BASE_CFG: dict = {
@@ -40,6 +40,20 @@ def test_build_callbacks_without_video(tmp_path: Path) -> None:
     assert any(isinstance(c, CheckpointCallback) for c in cbs)
     assert any(isinstance(c, EvalCallback) for c in cbs)
     assert not any(isinstance(c, VideoRecorderCallback) for c in cbs)
+
+
+def test_eval_callback_is_success_rate_selecting(tmp_path: Path) -> None:
+    """build_callbacks wires the success-rate-selecting eval callback so a
+    high-reward staller can never be saved as best_model (HANDOFF Issue #13)."""
+    cbs = build_callbacks(
+        run_dir=tmp_path,
+        eval_env_fn=lambda: QuidditchSimpleEnv(),
+        config=_BASE_CFG,
+        n_envs=1,
+    )
+    eval_cbs = [c for c in cbs if isinstance(c, EvalCallback)]
+    assert len(eval_cbs) == 1
+    assert isinstance(eval_cbs[0], SuccessRateEvalCallback)
 
 
 def test_build_callbacks_with_video(tmp_path: Path) -> None:

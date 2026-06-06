@@ -16,9 +16,10 @@ import warnings
 from pathlib import Path
 from typing import Any, Callable
 
-from stable_baselines3.common.callbacks import CheckpointCallback, EvalCallback
+from stable_baselines3.common.callbacks import CheckpointCallback
 
 from envs.quidditch.obs_spec import ObsBlock, ObsSpec
+from scripts.callbacks import SuccessRateEvalCallback
 
 
 def _format_slot(block: ObsBlock) -> str:
@@ -288,7 +289,11 @@ def build_callbacks(
         category=UserWarning,
     )
     cbs.append(
-        EvalCallback(
+        # Selects best_model by eval/success_rate (honest prevention), not
+        # mean reward, so a length-confounded-reward staller can't be saved
+        # (HANDOFF Issue #13).  Degrades to reward selection when the eval env
+        # reports no is_success (single-agent simple env).
+        SuccessRateEvalCallback(
             eval_env,
             best_model_save_path=str(run_dir),
             log_path=str(run_dir),
