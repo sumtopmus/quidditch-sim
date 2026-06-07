@@ -11,6 +11,9 @@ defaults:
   - init: scratch
   - curriculum: random_start
   - wandb: default
+  - algo: ppo_rllib                 # RLlib path; ignored by the SB3 trainer
+  - multiagent: red_solo            # RLlib path; ignored by the SB3 trainer
+  - tune: default                   # RLlib path; ignored by the SB3 trainer
   - _self_                          # values below override the group defaults
   - optional local: default         # gitignored; missing-file is silent
 
