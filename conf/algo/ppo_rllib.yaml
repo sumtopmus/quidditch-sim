@@ -1,0 +1,11 @@
+# New-stack PPO hyperparameters. Names map to RLlib's AlgorithmConfig.training().
+lr: 5e-5
+gamma: 0.99
+lambda_: 0.95           # RLlib name for gae_lambda
+clip_param: 0.2         # RLlib name for clip_range
+entropy_coeff: 0.01     # RLlib name for ent_coef
+num_epochs: 6           # SB3 n_epochs
+minibatch_size: 512     # SB3 batch_size
+train_batch_size_per_learner: 8192   # ~ SB3 n_steps(1024) * n_envs(8)
+num_env_runners: 4
+total_timesteps: 20_000_000

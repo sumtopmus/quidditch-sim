@@ -1,0 +1,12 @@
+# Skeleton topology: main_red learns; blue_0 is a frozen hovering script.
+learner_id: red_0
+policies_to_train: [main_red]
+mapping:
+  red_0: main_red
+  blue_0: main_blue
+modules:
+  main_red:
+    kind: learned
+  main_blue:
+    kind: scripted
+    opponent_spec: zero

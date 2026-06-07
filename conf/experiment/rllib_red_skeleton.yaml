@@ -1,0 +1,10 @@
+# @package _global_
+run_name: rllib_red_skeleton
+
+defaults:
+  - override /obs: duel_v1_body_n1
+  - override /reward: team_v4_cone
+
+algo:
+  total_timesteps: 2_000_000
+seed: 42
