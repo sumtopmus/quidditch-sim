@@ -72,9 +72,9 @@ ledger writer and one place to intervene.
 Dispatched one fresh instance per job via the Agent tool.
 
 - **`experiment-analyst`** — reads the full W&B history for the just-finished run
-  + the campaign ledger/frontier, writes a structured **report card**, and
-  proposes & ranks the next 1–3 experiments. Returns structured output
-  (schema below).
+  together with the campaign ledger/frontier, writes a structured **report
+  card**, and proposes & ranks the next 1–3 experiments. Returns structured
+  output (schema below).
 - **`experiment-monitor`** — invoked only for gray-zone kill decisions. Reads
   recent telemetry and returns a verdict (`continue` / `kill` + reason). Hard
   rules do *not* invoke a model.
