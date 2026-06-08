@@ -26,6 +26,21 @@ def test_step_info_exposes_red_hoop_distance():
         env.close()
 
 
+def test_step_info_exposes_blue_distance_to_red():
+    """infos['blue_0']['dist_b2r'] lets the metrics callback track Blue's
+    closest approach to Red (its takedown opportunity)."""
+    env = QuidditchTeamEnv(
+        cfg=TeamConfig(randomise_red_start=False, red_start_pos=(0.5, 0.0, 2.0)))
+    try:
+        env.reset(seed=0)
+        actions = {a: np.zeros(4, dtype=np.float32) for a in env.agents}
+        _, _, _, _, infos = env.step(actions)
+        expected = float(np.linalg.norm(env._red_pos() - env._blue_pos()))
+        assert infos["blue_0"]["dist_b2r"] == expected
+    finally:
+        env.close()
+
+
 def test_progress_reward_matches_red_motion_one_step():
     """reward == scale * (dist_before - dist_after), proving the env feeds the
     previous-step hoop distance (not the default 0.0) into the term."""
