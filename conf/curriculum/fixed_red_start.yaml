@@ -1,0 +1,9 @@
+# Deterministic fixed Red start (no start-disc randomisation).  The spawn point
+# is config-driven via red_start_pos so experiments can dial difficulty without
+# code changes.  Here: (0.5, 0, 2) — on the hoop axis (y=0) at hoop height
+# (z=2), 1.5 m in front of the hoop at (2,0,2) on its -x (approach) side, so a
+# +x flight scores.  Removes start variance from the learning signal.
+randomise_start: false
+episode_seconds: 30.0
+red_start_pos: [0.5, 0.0, 2.0]
+red_start_yaw: 0.0

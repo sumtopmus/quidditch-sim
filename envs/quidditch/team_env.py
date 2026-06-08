@@ -299,6 +299,7 @@ class QuidditchTeamEnv(ParallelEnv):
         self._red_enter_signed_dist = 0.0
         self._red_prev_signed_dist  = self._signed_dist_to_hoop_plane(self._red_pos())
         self._dist_b2r_prev         = float(np.linalg.norm(self._red_pos() - self._blue_pos()))
+        self._dist_red_to_hoop_prev = float(np.linalg.norm(self._red_pos() - HOOP_CENTER))
         self._aftermath_steps_left  = 0
 
         # Initialise closing-rate cache (formerly OCE side).
@@ -458,6 +459,7 @@ class QuidditchTeamEnv(ParallelEnv):
             step_period=self._red.step_period,
             tag_entry=tag_entry, tag_during=tag_during,
             dist_red_to_hoop=dist_red,
+            dist_red_to_hoop_prev=self._dist_red_to_hoop_prev,
             dist_blue_to_midpoint=dist_blue,
             dist_blue_to_hoop=dist_blue_to_hoop,
             scored=scored,
@@ -473,6 +475,7 @@ class QuidditchTeamEnv(ParallelEnv):
         )
         rewards = self._reward_stack.compute_step(reward_state)
         self._dist_b2r_prev = dist_b2r
+        self._dist_red_to_hoop_prev = dist_red
 
         # ── Termination ──────────────────────────────────────────────────────
         any_terminal = (

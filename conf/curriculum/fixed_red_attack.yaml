@@ -1,9 +1,0 @@
-# Deterministic attack run: Red spawns at a fixed point on the far side of the
-# arena (x=-1) at z=0.5 (airborne, avoids the step-0 floor-crash failure mode),
-# yaw 0, and must fly +x across the arena toward the hoop at (2,0,2) past Blue's
-# guard at (1,0,1.5).  Removes start-disc variance so a from-scratch learner
-# sees a constant initial state.
-randomise_start: false
-episode_seconds: 30.0
-red_start_pos: [-1.0, 0.0, 0.5]
-red_start_yaw: 0.0

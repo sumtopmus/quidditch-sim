@@ -92,6 +92,34 @@ class HoopDistancePenalty:
 
 
 @dataclass
+class HoopApproachShaping:
+    """Potential-based progress shaping toward the hoop for one agent.
+
+    `+scale * (dist_red_to_hoop_prev - dist_red_to_hoop)` — positive when the
+    agent closes on the hoop this step, negative when it recedes.  This is the
+    classic potential-based form (Φ = -distance), so it is policy-invariant:
+    circling or camping nets ~zero, and the cumulative reward over an episode
+    telescopes to `scale * (dist_initial - dist_final)`.  That avoids the
+    camping hack a raw proximity bonus would create here (scoring terminates
+    the episode, so a per-step "be near the hoop" reward would pay an agent to
+    hover next to the hoop forever instead of flying through it).
+
+    Reuses StepState.dist_red_to_hoop / dist_red_to_hoop_prev for any agent id
+    (the field names are red-flavored but carry whichever learner's hoop
+    distance the env populates).
+    """
+    scale: float
+    agent: str = "red_0"
+
+    def compute(self, state: StepState) -> dict[str, float]:
+        out: dict[str, float] = {a: 0.0 for a in state.agent_ids}
+        if self.agent in out:
+            progress = state.dist_red_to_hoop_prev - state.dist_red_to_hoop
+            out[self.agent] = self.scale * progress
+        return out
+
+
+@dataclass
 class HoopAnchor:
     """`-(dist_blue_to_hoop / arena_radius) * scale` for each configured agent.
 

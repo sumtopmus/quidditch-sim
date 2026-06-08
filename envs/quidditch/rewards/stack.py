@@ -36,6 +36,7 @@ class StepState:
     dist_b2r_prev: float = 0.0      # previous step's value (for closing velocity)
     step_period: float = 1 / 240.0  # dt
     dist_red_to_hoop: float = 0.0
+    dist_red_to_hoop_prev: float = 0.0   # previous step's value (progress shaping)
     dist_blue_to_midpoint: float = 0.0
     dist_blue_to_hoop: float = 0.0
     dist_drone_to_hoop: float = 0.0  # single-agent only
