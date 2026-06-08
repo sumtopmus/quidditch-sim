@@ -81,6 +81,14 @@ def build_ppo_config(cfg: DictConfig, reward_stack=None) -> PPOConfig:
 
     mapping = OmegaConf.to_container(ma.mapping, resolve=True)
 
+    # entropy_coeff: a schedule [[ts, val], ...] (anneal-to-zero stabilizer)
+    # takes precedence over the scalar when present.
+    if cfg.algo.get("entropy_coeff_schedule") is not None:
+        entropy_coeff = OmegaConf.to_container(
+            cfg.algo.entropy_coeff_schedule, resolve=True)
+    else:
+        entropy_coeff = float(cfg.algo.entropy_coeff)
+
     def policy_mapping_fn(agent_id, episode, **kw):
         return mapping[agent_id]
 
@@ -113,10 +121,11 @@ def build_ppo_config(cfg: DictConfig, reward_stack=None) -> PPOConfig:
             gamma=float(cfg.algo.gamma),
             lambda_=float(cfg.algo.lambda_),
             clip_param=float(cfg.algo.clip_param),
-            entropy_coeff=float(cfg.algo.entropy_coeff),
+            entropy_coeff=entropy_coeff,
             num_epochs=int(cfg.algo.num_epochs),
             minibatch_size=int(cfg.algo.minibatch_size),
             train_batch_size_per_learner=int(cfg.algo.train_batch_size_per_learner),
+            grad_clip=cfg.algo.get("grad_clip"),
         )
         .debugging(seed=int(cfg.seed))
     )

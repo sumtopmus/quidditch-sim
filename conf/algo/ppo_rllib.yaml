@@ -1,11 +1,21 @@
 # New-stack PPO hyperparameters. Names map to RLlib's AlgorithmConfig.training().
-lr: 5e-5
+lr: 3e-5                 # slightly below the original 5e-5 for stability
 gamma: 0.99
 lambda_: 0.95           # RLlib name for gae_lambda
 clip_param: 0.2         # RLlib name for clip_range
-entropy_coeff: 0.01     # RLlib name for ent_coef
+# Entropy bonus ANNEALED to zero. A constant 0.01 drove a policy collapse on
+# the skeleton: once Red found scoring (~33% @ ~700k steps) the entropy bonus
+# kept inflating action entropy (5.8 -> 23.7) and the policy melted back to 0%.
+# Keep exploration through the discovery window, then remove the pressure so the
+# learned scorer holds.  Schedule wins over the entropy_coeff scalar in the
+# builder; the scalar is kept as a no-schedule fallback.
+entropy_coeff: 0.01
+entropy_coeff_schedule: [[0, 0.01], [1_000_000, 0.0]]
+grad_clip: 1.0          # global-norm clip — extra guard against runaway updates
 num_epochs: 6           # SB3 n_epochs
 minibatch_size: 512     # SB3 batch_size
 train_batch_size_per_learner: 8192   # ~ SB3 n_steps(1024) * n_envs(8)
 num_env_runners: 4
 total_timesteps: 20_000_000
+# kl_target left at RLlib's default (0.01) — the entropy bonus, not the KL
+# leash, was the diagnosed driver of the collapse.

@@ -82,3 +82,24 @@ def test_score_metrics_callback_registered():
     from rllib.metrics import ScoreMetricsCallback
     config = build_ppo_config(_cfg())
     assert config.callbacks_class is ScoreMetricsCallback
+
+
+def test_entropy_coeff_scalar_when_no_schedule():
+    config = build_ppo_config(_cfg())
+    assert config.entropy_coeff == 0.01
+
+
+def test_entropy_coeff_schedule_passed_through():
+    """A schedule under algo.entropy_coeff_schedule overrides the scalar and
+    reaches the config as a plain list (anneal-to-zero stabilizer)."""
+    cfg = _cfg()
+    cfg.algo.entropy_coeff_schedule = [[0, 0.01], [1000, 0.0]]
+    config = build_ppo_config(cfg)
+    assert config.entropy_coeff == [[0, 0.01], [1000, 0.0]]
+
+
+def test_grad_clip_passed_when_present():
+    cfg = _cfg()
+    cfg.algo.grad_clip = 1.0
+    config = build_ppo_config(cfg)
+    assert config.grad_clip == 1.0
