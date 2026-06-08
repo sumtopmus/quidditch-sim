@@ -1,0 +1,16 @@
+# Single-stack (n_stack=1) skeleton obs for the RLlib walking skeleton —
+# sidesteps OQ-2 frame-stacking. Identical block set to duel_v1_body; kept as
+# its own file so the skeleton path is self-contained and the legacy obs YAML
+# can evolve independently. OPP_VEL_REL_BODY is the body-mixed opp-velocity
+# block (its ObsBlock.name is "opp_vel_rel_body_mixed").
+name: DUEL_V1_BODY
+n_stack: 1
+blocks:
+  - ANG_VEL
+  - ANG_POS
+  - LIN_VEL_BODY
+  - LIN_POS
+  - UNIT_TO_GOAL
+  - SIGNED_DIST_NORM
+  - OPP_POS_REL
+  - OPP_VEL_REL_BODY

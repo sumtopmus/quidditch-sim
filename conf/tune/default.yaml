@@ -1,0 +1,5 @@
+checkpoint_frequency: 10     # iterations
+checkpoint_at_end: true
+wandb:
+  project: drone-quidditch
+  enabled: true

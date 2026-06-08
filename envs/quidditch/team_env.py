@@ -91,6 +91,10 @@ class TeamConfig:
     crash_vel_thr: float = CRASH_VEL_THR
     walls_collide: bool = True
     randomise_red_start: bool = True
+    # Fixed-start lever (only consulted when randomise_red_start is False).
+    # red_start_pos = explicit [x, y, z] spawn; None → origin (legacy behavior).
+    red_start_pos: tuple[float, float, float] | None = None
+    red_start_yaw: float = 0.0
     episode_seconds: float = EPISODE_SECONDS_DEFAULT
     # Eval-only: when > 0, a drone-drone ram does not terminate immediately.
     # Instead Red's motors are cut and the env keeps stepping for this many
@@ -295,6 +299,7 @@ class QuidditchTeamEnv(ParallelEnv):
         self._red_enter_signed_dist = 0.0
         self._red_prev_signed_dist  = self._signed_dist_to_hoop_plane(self._red_pos())
         self._dist_b2r_prev         = float(np.linalg.norm(self._red_pos() - self._blue_pos()))
+        self._dist_red_to_hoop_prev = float(np.linalg.norm(self._red_pos() - HOOP_CENTER))
         self._aftermath_steps_left  = 0
 
         # Initialise closing-rate cache (formerly OCE side).
@@ -454,6 +459,7 @@ class QuidditchTeamEnv(ParallelEnv):
             step_period=self._red.step_period,
             tag_entry=tag_entry, tag_during=tag_during,
             dist_red_to_hoop=dist_red,
+            dist_red_to_hoop_prev=self._dist_red_to_hoop_prev,
             dist_blue_to_midpoint=dist_blue,
             dist_blue_to_hoop=dist_blue_to_hoop,
             scored=scored,
@@ -469,6 +475,7 @@ class QuidditchTeamEnv(ParallelEnv):
         )
         rewards = self._reward_stack.compute_step(reward_state)
         self._dist_b2r_prev = dist_b2r
+        self._dist_red_to_hoop_prev = dist_red
 
         # ── Termination ──────────────────────────────────────────────────────
         any_terminal = (
@@ -501,6 +508,7 @@ class QuidditchTeamEnv(ParallelEnv):
             "scored": scored, "drone_drone_crash": drone_drone_crash,
             "red_floor": red_floor, "red_wall_crash": red_wall_crash,
             "red_oob": red_oob, "step": self._step_count,
+            "dist_red_to_hoop": dist_red,
         })
         infos[self._blue_id].update({
             "scored": scored, "drone_drone_crash": drone_drone_crash,
@@ -595,7 +603,10 @@ class QuidditchTeamEnv(ParallelEnv):
 
     def _sample_red_start(self) -> tuple[np.ndarray, float]:
         if not self.cfg.randomise_red_start:
-            return np.array([0.0, 0.0, 0.0], dtype=np.float64), 0.0
+            fixed = self.cfg.red_start_pos
+            pos = np.array(fixed if fixed is not None else (0.0, 0.0, 0.0),
+                           dtype=np.float64)
+            return pos, float(self.cfg.red_start_yaw)
         r = START_SAMPLE_RADIUS * float(np.sqrt(self._np_random.uniform(0.0, 1.0)))
         theta = float(self._np_random.uniform(0.0, 2.0 * np.pi))
         pos = np.array([r * np.cos(theta), r * np.sin(theta), 0.0], dtype=np.float64)

@@ -86,6 +86,10 @@ class InitConfig:
 class CurriculumConfig:
     randomise_start: bool = True
     episode_seconds: float = 30.0
+    # Fixed-start lever (only read when randomise_start is False): explicit Red
+    # spawn [x, y, z] and yaw.  None → origin (legacy fixed-start behavior).
+    red_start_pos: list[float] | None = None
+    red_start_yaw: float = 0.0
 
 
 @dataclass

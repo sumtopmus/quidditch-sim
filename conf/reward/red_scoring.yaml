@@ -1,0 +1,23 @@
+# Red-scoring reward for the RLlib skeleton.
+#
+# A dominant DENSE potential-based pull toward the hoop (HoopApproachShaping)
+# gives Red a per-step gradient long before it ever scores — the missing signal
+# that left Red flat under the Blue-centric team_v4_cone stack.  Potential-based
+# (reward = scale * progress toward hoop) rather than a raw proximity bonus, so
+# it can't be farmed by camping next to the hoop (scoring ends the episode).
+# Plus the +10 score payoff and a crash/OOB penalty.  Blue is a frozen hover in
+# the skeleton, so no defender/Blue terms are needed.
+_target_: envs.quidditch.rewards.stack.RewardStack
+terms:
+  - _target_: envs.quidditch.rewards.terms.HoopApproachShaping
+    scale: 2.0
+    agent: red_0
+
+  - _target_: envs.quidditch.rewards.terms.ScoreEvent
+    magnitude: 10.0
+    scorer: red_0
+
+  - _target_: envs.quidditch.rewards.terms.CrashEvent
+    magnitude: -10.0
+    agent_to_crash_flags:
+      red_0: [red_floor, red_wall_crash, red_oob, drone_drone_crash]

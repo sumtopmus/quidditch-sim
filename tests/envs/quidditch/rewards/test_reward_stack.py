@@ -467,6 +467,45 @@ def test_goal_side_cone_does_not_reward_red():
     assert out["red_0"] == 0.0
 
 
+from envs.quidditch.rewards.terms import HoopApproachShaping
+
+
+def test_hoop_approach_shaping_positive_when_closing():
+    """Potential-based progress: reward = scale * (prev_dist - curr_dist)."""
+    term = HoopApproachShaping(scale=2.0, agent="red_0")
+    out = term.compute(_make_state(dist_red_to_hoop=1.5, dist_red_to_hoop_prev=2.0))
+    assert out["red_0"] == 2.0 * (2.0 - 1.5)   # +1.0 for closing 0.5 m
+    assert out["blue_0"] == 0.0
+
+
+def test_hoop_approach_shaping_negative_when_receding():
+    term = HoopApproachShaping(scale=2.0, agent="red_0")
+    out = term.compute(_make_state(dist_red_to_hoop=2.5, dist_red_to_hoop_prev=2.0))
+    assert out["red_0"] == 2.0 * (2.0 - 2.5)   # -1.0 for receding 0.5 m
+    assert out["blue_0"] == 0.0
+
+
+def test_hoop_approach_shaping_zero_when_stationary():
+    """No camping benefit: net-zero when distance is unchanged."""
+    term = HoopApproachShaping(scale=2.0, agent="red_0")
+    out = term.compute(_make_state(dist_red_to_hoop=2.0, dist_red_to_hoop_prev=2.0))
+    assert out == {"red_0": 0.0, "blue_0": 0.0}
+
+
+def test_hoop_approach_shaping_only_configured_agent():
+    """Single-agent reuse: agent='drone_0' rewards only that agent."""
+    term = HoopApproachShaping(scale=1.0, agent="drone_0")
+    out = term.compute(_make_state(
+        agent_ids=("drone_0",), dist_red_to_hoop=1.0, dist_red_to_hoop_prev=1.5))
+    assert out == {"drone_0": 0.5}
+
+
+def test_step_state_dist_red_to_hoop_prev_defaults_to_zero():
+    from envs.quidditch.rewards.stack import StepState
+    state = StepState(agent_ids=("red_0", "blue_0"))
+    assert state.dist_red_to_hoop_prev == 0.0
+
+
 def test_team_v4_cone_stack_composition():
     """conf/reward/team_v4_cone.yaml: adds GoalSideCone to v3_intercept;
     11 terms in the expected order."""
@@ -482,3 +521,20 @@ def test_team_v4_cone_stack_composition():
     cone = next(t for t in stack.terms if type(t).__name__ == "GoalSideCone")
     assert cone.scale == 0.01
     assert cone.defender == "blue_0"
+
+
+def test_red_scoring_stack_composition():
+    """conf/reward/red_scoring.yaml: a dominant dense hoop-approach shaper, the
+    +10 score event, and a crash/OOB penalty.  Red-only (Blue is a frozen
+    hover in the skeleton, so no defender terms)."""
+    from envs.quidditch.rewards import load_reward_stack
+    stack = load_reward_stack("red_scoring")
+    assert [type(t).__name__ for t in stack.terms] == [
+        "HoopApproachShaping", "ScoreEvent", "CrashEvent",
+    ]
+    shaping = stack.terms[0]
+    assert shaping.scale == 2.0
+    assert shaping.agent == "red_0"
+    score = stack.terms[1]
+    assert score.magnitude == 10.0
+    assert score.scorer == "red_0"

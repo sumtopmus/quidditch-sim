@@ -67,6 +67,10 @@ def _build_team_cfg(cfg: DictConfig) -> TeamConfig:
         walls_collide       = p.walls_collide,
         randomise_red_start = cfg.curriculum.randomise_start,
         episode_seconds     = cfg.curriculum.episode_seconds,
+        red_start_pos       = (list(cfg.curriculum.red_start_pos)
+                               if cfg.curriculum.get("red_start_pos") is not None
+                               else None),
+        red_start_yaw       = float(cfg.curriculum.get("red_start_yaw") or 0.0),
     )
 
 
