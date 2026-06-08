@@ -1,6 +1,7 @@
 """Step 2 two-policy self-play: both mains trainable + gradient flow."""
 from __future__ import annotations
 
+import pytest
 from omegaconf import OmegaConf
 
 from rllib.config_builder import build_ppo_config
@@ -54,3 +55,33 @@ def test_selfplay_experiment_composes_two_trainable_policies():
     assert cfg.reward._target_.endswith("RewardStack")
     assert cfg.curriculum.randomise_start is False
     assert list(cfg.curriculum.red_start_pos) == [0.5, 0.0, 2.0]
+
+
+def _flat_params(algo, module_id):
+    import torch
+    sd = algo.get_module(module_id).state_dict()
+    return torch.cat([t.flatten() for t in sd.values() if t.numel() > 0]).clone()
+
+
+@pytest.mark.slow
+def test_both_policies_receive_gradients(tmp_path):
+    """One train iteration changes BOTH main_red and main_blue weights, and the
+    checkpoint round-trips. This is the Step-2 dual-gradient-flow guarantee."""
+    import torch
+    from rllib.config_builder import build_ppo_config
+    from rllib.runtime import ray_init_for_project
+
+    ray_init_for_project()
+    algo = build_ppo_config(_selfplay_cfg()).build_algo()
+    try:
+        before_red = _flat_params(algo, "main_red")
+        before_blue = _flat_params(algo, "main_blue")
+        algo.train()
+        after_red = _flat_params(algo, "main_red")
+        after_blue = _flat_params(algo, "main_blue")
+        assert not torch.allclose(before_red, after_red), "main_red did not update"
+        assert not torch.allclose(before_blue, after_blue), "main_blue did not update"
+        ckpt = algo.save(str(tmp_path / "ckpt")).checkpoint.path
+        algo.restore_from_path(ckpt)
+    finally:
+        algo.stop()
