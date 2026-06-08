@@ -24,11 +24,13 @@ def _ensure_env_registered() -> None:
     register_env(_ENV_NAME, lambda env_config: make_team_env(env_config))
 
 
-def build_ppo_config(cfg: DictConfig) -> PPOConfig:
+def build_ppo_config(cfg: DictConfig, reward_stack=None) -> PPOConfig:
     _ensure_env_registered()
     ma = cfg.multiagent
     obs_blocks = list(cfg.obs.blocks)
-    reward_stack = cfg.get("reward_stack")  # injected by the entrypoint (built dataclass)
+    # reward_stack is a live (instantiated) RewardStack object, passed in by the
+    # entrypoint rather than stuffed into cfg — OmegaConf rejects arbitrary
+    # class instances as config values.
 
     # Per-policy module specs.
     module_specs: dict[str, RLModuleSpec] = {}

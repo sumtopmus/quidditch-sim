@@ -26,11 +26,9 @@ def main(cfg: DictConfig) -> None:
     ray_init_for_project()
 
     reward_stack = instantiate(cfg.reward, _convert_="all") if cfg.get("reward") else None
-    # Stash the built stack so the builder can put it into env_config.
-    cfg_with_reward = cfg.copy()
-    cfg_with_reward.reward_stack = reward_stack  # type: ignore[attr-defined]
-
-    ppo_config = build_ppo_config(cfg_with_reward)
+    # Pass the built stack to the builder directly — OmegaConf is struct-mode and
+    # rejects arbitrary class instances, so it can't ride inside cfg.
+    ppo_config = build_ppo_config(cfg, reward_stack=reward_stack)
 
     callbacks = []
     if cfg.tune.wandb.enabled:
