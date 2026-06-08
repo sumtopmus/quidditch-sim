@@ -16,10 +16,14 @@ os.environ.setdefault("KMP_DUPLICATE_LIB_OK", "TRUE")
 
 _WORKER_ENV_VARS = {
     "KMP_DUPLICATE_LIB_OK": "TRUE",
-    # MuJoCo must render off-screen inside headless workers; keep GL out of
-    # env-runners entirely (rendering happens in a dedicated eval worker).
-    "MUJOCO_GL": os.environ.get("MUJOCO_GL", "egl"),
 }
+# Training env-runners only step physics — they never render — so MuJoCo never
+# needs a GL backend during sampling (rendering happens in a dedicated eval
+# worker). Do NOT default MUJOCO_GL to "egl": EGL is Linux-only and macOS
+# rejects it ("invalid value for environment variable MUJOCO_GL: egl"). Only
+# propagate a backend the driver explicitly chose.
+if "MUJOCO_GL" in os.environ:
+    _WORKER_ENV_VARS["MUJOCO_GL"] = os.environ["MUJOCO_GL"]
 
 
 def ray_init_for_project(**kwargs) -> None:
