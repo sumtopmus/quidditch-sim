@@ -24,6 +24,39 @@ def _ensure_env_registered() -> None:
     register_env(_ENV_NAME, lambda env_config: make_team_env(env_config))
 
 
+def _team_cfg_from(cfg: DictConfig) -> dict:
+    """Assemble TeamConfig overrides from cfg.env.team_env_params + cfg.curriculum.
+
+    Mirrors scripts/train.py:_build_team_cfg for the RLlib path. Returns plain
+    Python values only (the dict crosses Ray's serialization boundary into the
+    env-runner workers). Empty when neither group is composed (the bare
+    unit-test cfg), so make_team_env falls back to TeamConfig defaults.
+    """
+    out: dict = {}
+    env = cfg.get("env")
+    if env is not None and env.get("team_env_params") is not None:
+        p = env.team_env_params
+        out.update(
+            red_prefix=p.red_prefix,
+            blue_prefix=p.blue_prefix,
+            hoop_prefix=p.hoop_prefix,
+            midpoint_alpha=float(p.midpoint_alpha),
+            tag_radius=float(p.tag_radius),
+            tag_cooldown_s=float(p.tag_cooldown_s),
+            crash_vel_thr=float(p.crash_vel_thr),
+            walls_collide=bool(p.walls_collide),
+        )
+    cur = cfg.get("curriculum")
+    if cur is not None:
+        out["randomise_red_start"] = bool(cur.randomise_start)
+        out["episode_seconds"] = float(cur.episode_seconds)
+        rsp = cur.get("red_start_pos")
+        if rsp is not None:
+            out["red_start_pos"] = [float(v) for v in rsp]
+        out["red_start_yaw"] = float(cur.get("red_start_yaw") or 0.0)
+    return out
+
+
 def build_ppo_config(cfg: DictConfig, reward_stack=None) -> PPOConfig:
     _ensure_env_registered()
     ma = cfg.multiagent
@@ -61,7 +94,7 @@ def build_ppo_config(cfg: DictConfig, reward_stack=None) -> PPOConfig:
             env_config={
                 "learner_id": ma.learner_id,
                 "obs_blocks": obs_blocks,
-                "team_cfg": {},
+                "team_cfg": _team_cfg_from(cfg),
                 "reward_stack": reward_stack,
             },
         )

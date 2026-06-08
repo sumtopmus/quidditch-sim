@@ -91,6 +91,10 @@ class TeamConfig:
     crash_vel_thr: float = CRASH_VEL_THR
     walls_collide: bool = True
     randomise_red_start: bool = True
+    # Fixed-start lever (only consulted when randomise_red_start is False).
+    # red_start_pos = explicit [x, y, z] spawn; None → origin (legacy behavior).
+    red_start_pos: tuple[float, float, float] | None = None
+    red_start_yaw: float = 0.0
     episode_seconds: float = EPISODE_SECONDS_DEFAULT
     # Eval-only: when > 0, a drone-drone ram does not terminate immediately.
     # Instead Red's motors are cut and the env keeps stepping for this many
@@ -595,7 +599,10 @@ class QuidditchTeamEnv(ParallelEnv):
 
     def _sample_red_start(self) -> tuple[np.ndarray, float]:
         if not self.cfg.randomise_red_start:
-            return np.array([0.0, 0.0, 0.0], dtype=np.float64), 0.0
+            fixed = self.cfg.red_start_pos
+            pos = np.array(fixed if fixed is not None else (0.0, 0.0, 0.0),
+                           dtype=np.float64)
+            return pos, float(self.cfg.red_start_yaw)
         r = START_SAMPLE_RADIUS * float(np.sqrt(self._np_random.uniform(0.0, 1.0)))
         theta = float(self._np_random.uniform(0.0, 2.0 * np.pi))
         pos = np.array([r * np.cos(theta), r * np.sin(theta), 0.0], dtype=np.float64)

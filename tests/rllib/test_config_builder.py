@@ -49,3 +49,30 @@ def test_built_algo_constructs():
         assert mod is not None
     finally:
         algo.stop()
+
+
+def test_team_cfg_threaded_from_curriculum_and_env():
+    """cfg.curriculum + cfg.env.team_env_params reach env_config['team_cfg']."""
+    cfg = _cfg()
+    cfg.curriculum = {
+        "randomise_start": False,
+        "episode_seconds": 30.0,
+        "red_start_pos": [-1.0, 0.0, 0.5],
+        "red_start_yaw": 0.0,
+    }
+    cfg.env = {"team_env_params": {
+        "red_prefix": "red_0", "blue_prefix": "blue_0", "hoop_prefix": "hoop_0",
+        "midpoint_alpha": 0.3, "tag_radius": 0.3, "tag_cooldown_s": 1.0,
+        "crash_vel_thr": 1.0, "walls_collide": True,
+    }}
+    config = build_ppo_config(cfg)
+    tc = config.env_config["team_cfg"]
+    assert tc["randomise_red_start"] is False
+    assert list(tc["red_start_pos"]) == [-1.0, 0.0, 0.5]
+    assert tc["tag_radius"] == 0.3
+
+
+def test_team_cfg_empty_when_no_env_or_curriculum():
+    """Bare cfg (the unit-test shape) yields no overrides → TeamConfig defaults."""
+    config = build_ppo_config(_cfg())
+    assert config.env_config["team_cfg"] == {}

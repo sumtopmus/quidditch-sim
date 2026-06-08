@@ -4,6 +4,7 @@ run_name: rllib_red_skeleton
 defaults:
   - override /obs: duel_v1_body_n1
   - override /reward: team_v4_cone
+  - override /curriculum: fixed_red_attack
 
 algo:
   total_timesteps: 2_000_000
