@@ -508,6 +508,7 @@ class QuidditchTeamEnv(ParallelEnv):
             "scored": scored, "drone_drone_crash": drone_drone_crash,
             "red_floor": red_floor, "red_wall_crash": red_wall_crash,
             "red_oob": red_oob, "step": self._step_count,
+            "dist_red_to_hoop": dist_red,
         })
         infos[self._blue_id].update({
             "scored": scored, "drone_drone_crash": drone_drone_crash,

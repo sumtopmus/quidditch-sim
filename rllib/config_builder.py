@@ -16,6 +16,7 @@ from ray.tune.registry import register_env
 
 from envs.quidditch.rllib_env import make_team_env
 from envs.quidditch.rllib_modules import ScriptedRLModule
+from rllib.metrics import ScoreMetricsCallback
 
 _ENV_NAME = "quidditch_team"
 
@@ -99,6 +100,7 @@ def build_ppo_config(cfg: DictConfig, reward_stack=None) -> PPOConfig:
             },
         )
         .framework("torch")
+        .callbacks(ScoreMetricsCallback)
         .env_runners(num_env_runners=int(cfg.algo.num_env_runners))
         .multi_agent(
             policies=set(ma.modules.keys()),

@@ -76,3 +76,9 @@ def test_team_cfg_empty_when_no_env_or_curriculum():
     """Bare cfg (the unit-test shape) yields no overrides → TeamConfig defaults."""
     config = build_ppo_config(_cfg())
     assert config.env_config["team_cfg"] == {}
+
+
+def test_score_metrics_callback_registered():
+    from rllib.metrics import ScoreMetricsCallback
+    config = build_ppo_config(_cfg())
+    assert config.callbacks_class is ScoreMetricsCallback
