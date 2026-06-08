@@ -39,3 +39,18 @@ def test_both_mains_are_trainable_and_routed():
     assert sorted(config.policies_to_train) == ["main_blue", "main_red"]
     assert config.policy_mapping_fn("red_0", None) == "main_red"
     assert config.policy_mapping_fn("blue_0", None) == "main_blue"
+
+
+def test_selfplay_experiment_composes_two_trainable_policies():
+    from hydra import initialize, compose
+    from config_schema import register_configs
+
+    register_configs()
+    with initialize(version_base=None, config_path="../../conf"):
+        cfg = compose(config_name="config",
+                      overrides=["+experiment=rllib_selfplay"])
+    assert sorted(cfg.multiagent.policies_to_train) == ["main_blue", "main_red"]
+    assert cfg.multiagent.modules.main_blue.kind == "learned"
+    assert cfg.reward._target_.endswith("RewardStack")
+    assert cfg.curriculum.randomise_start is False
+    assert list(cfg.curriculum.red_start_pos) == [0.5, 0.0, 2.0]
