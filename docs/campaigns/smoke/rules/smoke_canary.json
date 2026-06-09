@@ -1,0 +1,8 @@
+{
+  "rules": [
+    {"type": "nan", "metrics": ["train/loss", "rollout/ep_rew_mean"]},
+    {"type": "floor_at_step", "metric": "eval/success_rate", "min": 0.02, "at_step": 150000},
+    {"type": "budget", "max_step": 200000, "max_wallclock_s": 1800}
+  ],
+  "baseline_runs": []
+}

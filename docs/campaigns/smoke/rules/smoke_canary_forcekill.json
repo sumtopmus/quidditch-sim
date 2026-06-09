@@ -1,0 +1,7 @@
+{
+  "_comment": "Validation-only: an impossibly high success-rate floor that gates at the first eval, so dsim campaign-status returns kill:true once any eval point >= 50k is logged. Use this to prove the kill path; do NOT use it to judge a real run.",
+  "rules": [
+    {"type": "floor_at_step", "metric": "eval/success_rate", "min": 0.95, "at_step": 50000}
+  ],
+  "baseline_runs": []
+}

@@ -1,0 +1,30 @@
+# @package _global_
+# Smoke-validation experiment for the run-campaign loop.  A real (but tiny)
+# single-agent fly-through-the-hoop training run: same group choices as
+# canary_single, but ~200k steps with video disabled so it logs a handful of
+# eval/success_rate points cheaply and headless-safe.  NOT a pinned canary —
+# edit freely; the run-campaign controller may also clone+tweak it per iteration.
+
+run_name: _smoke_canary
+
+defaults:
+  - override /env: simple
+  - override /obs: simple
+  - override /reward: single_agent
+  - override /opponent: none
+  - override /eval: default
+  - override /init: scratch
+  - override /curriculum: fixed_start
+
+env:
+  n_envs: 4
+
+trainer:
+  total_timesteps: 200_000
+  lr: 5e-5
+
+eval:
+  eval_freq_steps: 50_000     # ~4 eval points within the 200k cap
+  n_eval_episodes: 20         # fast; de-noise harder for real campaigns
+  video:
+    enabled: false            # no GL/video in the smoke (headless-safe + faster)
