@@ -17,8 +17,9 @@ step gate, collapse-vs-baseline, budget) are already handled by
 - The current best frontier value.
 
 ## Procedure
-1. Run `dsim campaign-status <run_path>` to get the latest telemetry JSON.
-   (Read-only; runs `uv run` under the hood.)
+1. Run `uv run python -m dsim campaign-status <run_path>` to get the latest
+   telemetry JSON. (Read-only. This repo sets `package = false`, so `dsim` is
+   invoked as `python -m dsim`, not a bare `dsim` script.)
 2. Judge against these project-specific lessons:
    - Judge defenders on honest `eval/success_rate`, de-noised over ≥100
      episodes — never length-confounded reward.

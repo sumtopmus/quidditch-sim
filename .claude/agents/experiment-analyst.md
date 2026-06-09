@@ -15,8 +15,9 @@ ranked set of next experiments.
 
 ## Procedure
 1. Read `docs/campaigns/<name>/goal.md`, `ledger.md`, and `frontier.md` in full.
-2. Run `dsim campaign-status <run_path>` for the latest metrics; read more W&B
-   history detail if needed via the same command on related runs.
+2. Run `uv run python -m dsim campaign-status <run_path>` for the latest metrics;
+   read more W&B history detail if needed via the same command on related runs.
+   (This repo sets `package = false`, so `dsim` is invoked as `python -m dsim`.)
 3. Inspect the experiment's config (the `conf/experiment/*.yaml` and any Hydra
    overrides; `.hydra/config.yaml` under the run dir if present).
 4. Judge results on honest `eval/success_rate`, de-noised over ≥100 episodes.

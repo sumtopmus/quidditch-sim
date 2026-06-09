@@ -32,15 +32,18 @@ subagents so your own context stays lean across many iterations.
 3. **Write the experiment config** under `conf/experiment/<exp>.yaml` (or assemble
    Hydra overrides) and the kill-rules JSON under
    `docs/campaigns/<name>/rules/<exp>.json`.
-4. **Pre-flight:** run `uv run dsim obs-preflight` for the config. Abort the
-   iteration on failure (record why).
+4. **Pre-flight:** for a `pretrain`/`warm_start` init, run
+   `uv run python -m dsim obs-preflight` for the config and abort the iteration
+   on failure (record why). Skip for `scratch` inits — there is no parent to
+   check. (Note: this repo sets `package = false`, so `dsim` is invoked as
+   `python -m dsim`, not a bare `dsim` script.)
 5. **Launch** training in the background:
    `uv run make train EXP=<exp>` (or `uv run python -m scripts.train …`),
    started with run_in_background. Capture the W&B run path from its early
    output.
 6. **Monitor.** On a cadence (ScheduleWakeup, e.g. every few minutes early, then
    coarser), run
-   `uv run dsim campaign-status <run> --rules docs/campaigns/<name>/rules/<exp>.json`.
+   `uv run python -m dsim campaign-status <run> --rules docs/campaigns/<name>/rules/<exp>.json`.
    - If `kill` is true → terminate the background run (record the reason).
    - At coarser intervals, or when telemetry looks ambiguous, dispatch
      `experiment-monitor`; kill if its verdict is "kill" with high confidence.
