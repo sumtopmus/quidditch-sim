@@ -146,7 +146,7 @@ Three command surfaces, by purpose:
 
 | Purpose | Surface | Examples |
 |---|---|---|
-| Inspection / read-only / one-shot dispatch | **`dsim`** (Typer) | `dsim inventory`, `dsim obs-preflight --parent X --child-obs Y`, `dsim lineage --target ...`, `dsim list-runs`, `dsim resume <run-name>`, `dsim promote <run-name>`, `dsim describe-run <run-name>`, `dsim obs-specs`, `dsim sweep create <name>` |
+| Inspection / read-only / one-shot dispatch | **`dsim`** (Typer) | `dsim inventory`, `dsim obs-preflight --parent X --child-obs Y`, `dsim lineage --target ...`, `dsim list-runs`, `dsim campaign-status <wandb-run>`, `dsim resume <run-name>`, `dsim promote <run-name>`, `dsim describe-run <run-name>`, `dsim obs-specs`, `dsim sweep create <name>` |
 | Composable runs (training, eval, battery, sweep) | **Hydra apps** (`python -m scripts.X`) | `python -m scripts.train +experiment=blue_v5`, `python -m scripts.eval_team +eval_team=default +learner=blue learner.uri=<uri> opponent=beeline_red`, `python -m scripts.eval_battery +eval_battery=default eval_battery.candidate=<uri>`, `python -m scripts.eval_solo +eval_solo=default eval_solo.model_uri=<uri>` |
 | Chores (install, test, train one-off, TUI) | **`make`** | `make install`, `make test`, `make test-fast`, `make test-warm MODEL=<x>`, `make train EXP=blue_v5`, `make tui` |
 
@@ -227,6 +227,7 @@ dsim describe-run <run-name>   # render a run's MODEL.md spec sheet
 dsim obs-specs                 # block-by-block layout of every named obs spec
 dsim obs-preflight --parent <uri> --child-obs <name>   # will a load/surgery succeed?
 dsim lineage --target <path-or-uri>                    # walk the parent chain
+dsim campaign-status <wandb-run> [--rules rules.json]  # read-only W&B telemetry + kill-rule verdict (JSON)
 dsim resume <run-name>         # continue an interrupted run
 dsim promote <run-name>        # promote a run's best_model into models/ + alias the W&B artifact
 dsim sweep create <name>       # create a W&B sweep controller from sweeps/<name>.yaml
