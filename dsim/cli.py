@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import typer
 
+from dsim.commands import campaign_status as _campaign_status_cmd
 from dsim.commands import describe_run as _describe_run_cmd
 from dsim.commands import inventory as _inventory_cmd
 from dsim.commands import lineage as _lineage_cmd
@@ -31,6 +32,7 @@ app = typer.Typer(
 
 # Single-command modules: register via app.command(name=...).
 app.command(name="inventory")(_inventory_cmd.run)
+app.command(name="campaign-status")(_campaign_status_cmd.run)
 app.command(name="obs-preflight")(_obs_preflight_cmd.run)
 app.command(name="obs-specs")(_obs_specs_cmd.run)
 app.command(name="describe-run")(_describe_run_cmd.run)
