@@ -1,0 +1,14 @@
+# @package _global_
+# RLlib migration Step 2: two-policy naive self-play. main_red vs main_blue,
+# both trainable, on the fixed-start scoring scenario from the skeleton.
+run_name: rllib_selfplay
+
+defaults:
+  - override /obs: duel_v1_body_n1
+  - override /reward: team_selfplay_v1
+  - override /curriculum: fixed_red_start
+  - override /multiagent: red_blue_selfplay
+
+algo:
+  total_timesteps: 2_000_000
+seed: 42

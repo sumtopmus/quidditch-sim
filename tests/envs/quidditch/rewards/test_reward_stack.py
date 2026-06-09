@@ -538,3 +538,21 @@ def test_red_scoring_stack_composition():
     score = stack.terms[1]
     assert score.magnitude == 10.0
     assert score.scorer == "red_0"
+
+
+def test_team_selfplay_v1_stack_composition():
+    """conf/reward/team_selfplay_v1.yaml: Red dense-approach + zero-sum score;
+    Blue anchor + takedown; both crash-penalised. No InterceptShaping (needs
+    defender-aware env plumbing not present until Step 3)."""
+    from envs.quidditch.rewards import load_reward_stack
+    stack = load_reward_stack("team_selfplay_v1")
+    assert [type(t).__name__ for t in stack.terms] == [
+        "HoopApproachShaping", "ScoreEvent", "HoopAnchor", "TakeDown", "CrashEvent",
+    ]
+    shaping = stack.terms[0]
+    assert shaping.scale == 2.0 and shaping.agent == "red_0"
+    score = stack.terms[1]
+    assert score.magnitude == 10.0
+    assert score.scorer == "red_0"
+    assert score.zero_sum_opponent == "blue_0"   # Blue loses 10 when Red scores
+    assert "InterceptShaping" not in [type(t).__name__ for t in stack.terms]
