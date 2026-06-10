@@ -1,0 +1,13 @@
+# Step-3 snapshot-population league knobs.
+#   snapshot_threshold:          win-rate (red_score_rate / blue_prevention_rate)
+#                                a main must clear to freeze a snapshot.
+#   min_iters_between_snapshots: cooldown so a main doesn't snapshot every iter.
+#   population_cap:              max frozen members per side (stop when full;
+#                                pruning is Step 4).
+#   live_fraction:               P(main-vs-main episode); rest splits 50/50 into
+#                                red/blue exploits a uniform frozen opponent.
+enabled: true
+snapshot_threshold: 0.7
+min_iters_between_snapshots: 20
+population_cap: 5
+live_fraction: 0.5

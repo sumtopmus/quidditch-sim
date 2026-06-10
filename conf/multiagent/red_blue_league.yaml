@@ -1,0 +1,15 @@
+# Step-3 league topology: same two trainable mains as red_blue_selfplay, but
+# config_builder installs the league policy_mapping_fn + LeagueCallback (which
+# grow frozen red_pop_v*/blue_pop_v* members) because cfg.league.enabled is set.
+# Populations start empty -> identical to naive self-play until the first
+# snapshot fires.
+learner_id: red_0
+policies_to_train: [main_red, main_blue]
+mapping:
+  red_0: main_red
+  blue_0: main_blue
+modules:
+  main_red:
+    kind: learned
+  main_blue:
+    kind: learned
