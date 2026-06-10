@@ -1,0 +1,17 @@
+# @package _global_
+# RLlib migration Step 3: snapshot-population self-play league. Two trainable
+# mains bootstrap main-vs-main (as Step 2); frozen snapshots accumulate as each
+# main clears the win-rate threshold, then get mixed in as uniform opponents.
+# Uses the defender-aware team_selfplay_v1 reward (InterceptShaping active).
+run_name: rllib_league
+
+defaults:
+  - override /obs: duel_v1_body_n1
+  - override /reward: team_selfplay_v1
+  - override /curriculum: fixed_red_start
+  - override /multiagent: red_blue_league
+  - override /league: default
+
+algo:
+  total_timesteps: 5_000_000
+seed: 42

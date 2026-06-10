@@ -17,6 +17,7 @@ from ray.tune.registry import register_env
 from envs.quidditch.rllib_env import make_team_env
 from envs.quidditch.rllib_modules import ScriptedRLModule
 from rllib.metrics import ScoreMetricsCallback
+from rllib.league import LeagueCallback, make_league_mapping_fn
 
 _ENV_NAME = "quidditch_team"
 
@@ -89,8 +90,20 @@ def build_ppo_config(cfg: DictConfig, reward_stack=None) -> PPOConfig:
     else:
         entropy_coeff = float(cfg.algo.entropy_coeff)
 
-    def policy_mapping_fn(agent_id, episode, **kw):
-        return mapping[agent_id]
+    league_cfg = cfg.get("league")
+    league_on = bool(league_cfg is not None and league_cfg.get("enabled"))
+    if league_on:
+        league_dict = OmegaConf.to_container(league_cfg, resolve=True)
+        # Populations start empty: only the two mains exist at build time.
+        policy_mapping_fn = make_league_mapping_fn(set(ma.modules.keys()), league_dict)
+        callbacks = [ScoreMetricsCallback, LeagueCallback]
+    else:
+        league_dict = None
+
+        def policy_mapping_fn(agent_id, episode, **kw):
+            return mapping[agent_id]
+
+        callbacks = ScoreMetricsCallback
 
     config = (
         PPOConfig()
@@ -105,10 +118,11 @@ def build_ppo_config(cfg: DictConfig, reward_stack=None) -> PPOConfig:
                 "obs_blocks": obs_blocks,
                 "team_cfg": _team_cfg_from(cfg),
                 "reward_stack": reward_stack,
+                "league": league_dict,
             },
         )
         .framework("torch")
-        .callbacks(ScoreMetricsCallback)
+        .callbacks(callbacks)
         .env_runners(num_env_runners=int(cfg.algo.num_env_runners))
         .multi_agent(
             policies=set(ma.modules.keys()),
