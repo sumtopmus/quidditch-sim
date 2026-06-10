@@ -514,6 +514,7 @@ class QuidditchTeamEnv(ParallelEnv):
             "scored": scored, "drone_drone_crash": drone_drone_crash,
             "blue_floor": blue_floor, "blue_wall_crash": blue_wall_crash,
             "blue_oob": blue_oob, "step": self._step_count,
+            "dist_b2r": dist_b2r,
         })
 
         return self._all_obs(), rewards, terminations, truncations, infos

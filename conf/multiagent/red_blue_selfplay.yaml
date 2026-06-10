@@ -1,0 +1,15 @@
+# Two-policy self-play topology (RLlib migration Step 2): red_0 and blue_0 are
+# BOTH learned, trainable policies, training live against each other every
+# iteration.  No frozen populations yet (Step 3).  learner_id stays red_0 only
+# to select which agent the env feeds the (here identical) learner obs spec to;
+# both agents use DUEL_V1_BODY so it is immaterial.
+learner_id: red_0
+policies_to_train: [main_red, main_blue]
+mapping:
+  red_0: main_red
+  blue_0: main_blue
+modules:
+  main_red:
+    kind: learned
+  main_blue:
+    kind: learned

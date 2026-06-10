@@ -16,6 +16,7 @@ import math
 from ray.rllib.callbacks.callbacks import RLlibCallback
 
 _LEARNER = "red_0"
+_BLUE = "blue_0"
 
 
 # ── Pure aggregation ────────────────────────────────────────────────────────
@@ -41,6 +42,28 @@ def episode_metrics(acc: dict) -> dict:
     return out
 
 
+# ── Blue (defender) aggregation ─────────────────────────────────────────────
+# Self-play (Step 2) wants Blue's defense legible too: how often it prevents a
+# score, and how close it gets to Red (its takedown opportunity).
+def init_blue_acc() -> dict:
+    return {"scored": False, "min_dist_to_red": math.inf}
+
+
+def update_blue_acc(acc: dict, blue_info: dict) -> None:
+    dist = blue_info.get("dist_b2r")
+    if dist is not None:
+        acc["min_dist_to_red"] = min(acc["min_dist_to_red"], float(dist))
+    if blue_info.get("scored"):
+        acc["scored"] = True
+
+
+def blue_episode_metrics(acc: dict) -> dict:
+    out: dict[str, float] = {"blue_prevention_rate": 0.0 if acc["scored"] else 1.0}
+    if math.isfinite(acc["min_dist_to_red"]):
+        out["blue_min_dist_to_red"] = acc["min_dist_to_red"]
+    return out
+
+
 # ── RLlib wiring ────────────────────────────────────────────────────────────
 def _red_info(episode) -> dict | None:
     """Extract red_0's latest info dict, tolerating both return shapes of
@@ -51,24 +74,37 @@ def _red_info(episode) -> dict | None:
     return info if isinstance(info, dict) else None
 
 
+def _blue_info(episode) -> dict | None:
+    info = episode.get_infos(-1, _BLUE)
+    if isinstance(info, dict) and _BLUE in info and isinstance(info[_BLUE], dict):
+        info = info[_BLUE]
+    return info if isinstance(info, dict) else None
+
+
 class ScoreMetricsCallback(RLlibCallback):
-    """Logs red_score_rate (mean over the metrics window → score fraction) and
-    red_min_dist_to_hoop (mean of per-episode closest approach)."""
+    """Logs Red offense (red_score_rate, red_min_dist_to_hoop) and Blue defense
+    (blue_prevention_rate, blue_min_dist_to_red), each a mean over the metrics
+    window."""
 
     def on_episode_start(self, *, episode, **kwargs) -> None:
         episode.custom_data["score_acc"] = init_episode_acc()
+        episode.custom_data["blue_acc"] = init_blue_acc()
 
     def on_episode_step(self, *, episode, **kwargs) -> None:
-        acc = episode.custom_data.get("score_acc")
-        if acc is None:
-            acc = episode.custom_data["score_acc"] = init_episode_acc()
-        info = _red_info(episode)
-        if info is not None:
-            update_episode_acc(acc, info)
+        red_acc = episode.custom_data.setdefault("score_acc", init_episode_acc())
+        blue_acc = episode.custom_data.setdefault("blue_acc", init_blue_acc())
+        red = _red_info(episode)
+        if red is not None:
+            update_episode_acc(red_acc, red)
+        blue = _blue_info(episode)
+        if blue is not None:
+            update_blue_acc(blue_acc, blue)
 
     def on_episode_end(self, *, episode, metrics_logger=None, **kwargs) -> None:
-        acc = episode.custom_data.get("score_acc") or init_episode_acc()
         if metrics_logger is None:
             return
-        for key, value in episode_metrics(acc).items():
+        red_acc = episode.custom_data.get("score_acc") or init_episode_acc()
+        blue_acc = episode.custom_data.get("blue_acc") or init_blue_acc()
+        metrics = {**episode_metrics(red_acc), **blue_episode_metrics(blue_acc)}
+        for key, value in metrics.items():
             metrics_logger.log_value(key, value, reduce="mean")

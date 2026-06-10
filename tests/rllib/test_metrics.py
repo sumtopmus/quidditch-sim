@@ -4,6 +4,9 @@ from __future__ import annotations
 import math
 
 from rllib.metrics import episode_metrics, init_episode_acc, update_episode_acc
+from rllib.metrics import (
+    blue_episode_metrics, init_blue_acc, update_blue_acc,
+)
 
 
 def test_init_acc_starts_empty():
@@ -54,3 +57,19 @@ def test_episode_metrics_omits_min_dist_when_never_seen():
     m = episode_metrics(init_episode_acc())
     assert m["red_score_rate"] == 0.0
     assert "red_min_dist_to_hoop" not in m
+
+
+def test_blue_acc_tracks_min_dist_to_red_and_prevention():
+    acc = init_blue_acc()
+    update_blue_acc(acc, {"dist_b2r": 1.2, "scored": False})
+    update_blue_acc(acc, {"dist_b2r": 0.3, "scored": False})
+    m = blue_episode_metrics(acc)
+    assert m["blue_min_dist_to_red"] == 0.3
+    assert m["blue_prevention_rate"] == 1.0   # Red did not score this episode
+
+
+def test_blue_prevention_rate_zero_when_red_scores():
+    acc = init_blue_acc()
+    update_blue_acc(acc, {"dist_b2r": 0.8, "scored": True})
+    m = blue_episode_metrics(acc)
+    assert m["blue_prevention_rate"] == 0.0
