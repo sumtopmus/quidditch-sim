@@ -117,20 +117,31 @@ class _FakeAlgo:
         self.config = types.SimpleNamespace(env_config={"league": league_cfg})
         self.learner_group = _FakeLearnerGroup()
         self.env_runner_group = _FakeEnvRunnerGroup()
+        # The MultiRLModule (population store) lives on the local env runner.
+        self.env_runner = types.SimpleNamespace(module=self._module)
         self.added = []
+        self.set_states = []
     def get_module(self, module_id=None):
-        return self._module
+        if module_id is None:
+            return self._module  # the MultiRLModule (has .keys())
+        # A single sub-module: only get_state() is exercised by _snapshot.
+        return types.SimpleNamespace(get_state=lambda mid=module_id: {"weights": mid})
     def add_module(self, *, module_id, module_spec, new_should_module_be_updated,
                    new_agent_to_module_mapping_fn, **kw):
         self.added.append(module_id)
         self._module._ids.add(module_id)  # reflect the new member
+    def set_state(self, state):
+        self.set_states.append(state)
 
 
 _LEAGUE_CFG = {"snapshot_threshold": 0.7, "min_iters_between_snapshots": 20,
                "population_cap": 5, "live_fraction": 0.5}
 
 
-def test_callback_snapshots_red_when_threshold_cleared():
+def test_callback_snapshots_red_when_threshold_cleared(monkeypatch):
+    # Cloning a real RLModule spec needs a live module; the fake add_module
+    # ignores the spec, so stub the spec builder with a sentinel.
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
     cb = L.LeagueCallback()
     algo = _FakeAlgo({"main_red", "main_blue"}, iteration=25, league_cfg=_LEAGUE_CFG)
     cb.on_algorithm_init(algorithm=algo)            # baselines cooldown at iter 25
@@ -140,7 +151,9 @@ def test_callback_snapshots_red_when_threshold_cleared():
                                                "blue_prevention_rate": 0.1}})
     assert "red_pop_v1" in algo.added
     assert "blue_pop_v1" not in algo.added           # blue below threshold
-    assert algo.env_runner_group.synced == [["red_pop_v1"]]
+    # Snapshot weights are pushed to the learner + all env runners via set_state.
+    pushed = algo.set_states[-1]["learner_group"]["learner"]["rl_module"]
+    assert "red_pop_v1" in pushed
 
 
 def test_callback_respects_cooldown():

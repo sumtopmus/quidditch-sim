@@ -122,6 +122,35 @@ def _refresh_mapping_fn(algorithm, mapping_fn) -> None:
     algorithm.env_runner_group.foreach_env_runner(_set, local_env_runner=True)
 
 
+def _algo_module_ids(algorithm) -> set[str]:
+    """Ids of the modules in the local MultiRLModule — the league population
+    store. (Algorithm.get_module(id) returns a single sub-module, defaulting to
+    'default_policy' which doesn't exist in a multi-agent setup; the
+    MultiRLModule whose keys ARE the population lives on the local env runner,
+    with the learner group as a fallback when there is no local env runner.)
+    """
+    runner = getattr(algorithm, "env_runner", None)
+    module = getattr(runner, "module", None) if runner is not None else None
+    if module is None:
+        return set(
+            algorithm.learner_group.foreach_learner(
+                lambda lrnr: list(lrnr.module.keys())
+            )[0]
+        )
+    return set(module.keys())
+
+
+def _snapshot_spec(algorithm, main_id):
+    """RLModuleSpec mirroring the live main, for add_module at runtime.
+
+    A bare RLModuleSpec() carries no module_class (the MultiRLModuleSpec fills
+    that in at config-build time, not for a runtime add_module), so it raises
+    'RLModule class is not set.' when the learner tries to build it. Cloning the
+    main's spec via from_module is the canonical RLlib self-play pattern.
+    """
+    return RLModuleSpec.from_module(algorithm.get_module(main_id))
+
+
 _SIDES = (
     ("red", "red_score_rate", "main_red", RED_POP_RE),
     ("blue", "blue_prevention_rate", "main_blue", BLUE_POP_RE),
@@ -146,7 +175,7 @@ class LeagueCallback(RLlibCallback):
         self._cfg = self._league_cfg(algorithm)
         it = int(algorithm.iteration)
         self._last_snapshot_iter = {"red": it, "blue": it}
-        module_ids = set(algorithm.get_module().keys())
+        module_ids = _algo_module_ids(algorithm)
         _refresh_mapping_fn(algorithm, make_league_mapping_fn(module_ids, self._cfg))
 
     def on_train_result(self, *, algorithm, result, **kwargs) -> None:
@@ -157,7 +186,7 @@ class LeagueCallback(RLlibCallback):
             metric = read_metric(result, metric_name)
             if metric is None:
                 continue
-            module_ids = set(algorithm.get_module().keys())
+            module_ids = _algo_module_ids(algorithm)
             if should_snapshot(
                 metric=metric,
                 threshold=float(self._cfg["snapshot_threshold"]),
@@ -175,23 +204,29 @@ class LeagueCallback(RLlibCallback):
             else f"blue_pop_v{next_version(module_ids, regex)}"
         )
         new_mapping_fn = make_league_mapping_fn(module_ids | {new_id}, self._cfg)
-        # Add a fresh (default-arch) module, kept out of the gradient update, and
+        # Add a fresh (main-arch) module, kept out of the gradient update, and
         # refresh the mapping fn across the env-runner group in the same call.
         algorithm.add_module(
             module_id=new_id,
-            module_spec=RLModuleSpec(),
+            module_spec=_snapshot_spec(algorithm, main_id),
             new_should_module_be_updated=["main_red", "main_blue"],
             new_agent_to_module_mapping_fn=new_mapping_fn,
         )
-        # Copy the live main's weights into the frozen snapshot on the learner(s)...
-        algorithm.learner_group.foreach_learner(
-            lambda lrnr, m=main_id, n=new_id: lrnr.module[n].set_state(
-                lrnr.module[m].get_state()
-            )
+        # Copy the live main's weights into the frozen snapshot on the learner —
+        # the authoritative copy, excluded from the gradient update — via the
+        # canonical RLlib self-play set_state path.
+        main_state = algorithm.get_module(main_id).get_state()
+        algorithm.set_state(
+            {"learner_group": {"learner": {"rl_module": {new_id: main_state}}}}
         )
-        # ...then push the snapshot's weights out to all env runners.
-        algorithm.env_runner_group.sync_weights(
-            policies=[new_id],
-            from_worker_or_learner_group=algorithm.learner_group,
-            inference_only=True,
+        # set_state's learner->env-runner sync is inference-only and lands on the
+        # *next* iteration, so the freshly-added env-runner module would serve the
+        # frozen opponent with random weights for one iteration. Copy main->snap
+        # directly on every env runner (incl. the local one) so the opponent has
+        # the main's weights from its very next episode.
+        def _seed_snapshot(runner, m=main_id, n=new_id):
+            runner.module[n].set_state(runner.module[m].get_state())
+
+        algorithm.env_runner_group.foreach_env_runner(
+            _seed_snapshot, local_env_runner=True
         )

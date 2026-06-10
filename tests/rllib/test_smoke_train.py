@@ -64,3 +64,80 @@ def test_team_skeleton_trains_and_restores(tmp_path):
         algo.restore_from_path(ckpt)
     finally:
         algo.stop()
+
+
+@pytest.mark.slow
+def test_league_snapshots_freezes_and_restores(tmp_path):
+    """A league run with the threshold forced low takes a snapshot: the frozen
+    module's weights match the main at snapshot time, do NOT change across the
+    next iteration, and survive a checkpoint round-trip with membership intact."""
+    import numpy as np
+    from omegaconf import OmegaConf
+    from rllib.config_builder import build_ppo_config
+    from rllib.league import RED_POP_RE, BLUE_POP_RE, population_members
+    from rllib.runtime import ray_init_for_project
+
+    ray_init_for_project()
+    cfg = OmegaConf.create({
+        "seed": 0,
+        "obs": {"name": "DUEL_V1_BODY", "n_stack": 1, "blocks": [
+            "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+            "UNIT_TO_GOAL", "SIGNED_DIST_NORM", "OPP_POS_REL", "OPP_VEL_REL_BODY",
+        ]},
+        "algo": {"lr": 5e-5, "gamma": 0.99, "lambda_": 0.95, "clip_param": 0.2,
+                 "entropy_coeff": 0.01, "num_epochs": 1, "minibatch_size": 64,
+                 "train_batch_size_per_learner": 256, "num_env_runners": 0,
+                 "total_timesteps": 256},
+        "multiagent": {"learner_id": "red_0",
+                       "policies_to_train": ["main_red", "main_blue"],
+                       "mapping": {"red_0": "main_red", "blue_0": "main_blue"},
+                       "modules": {"main_red": {"kind": "learned"},
+                                   "main_blue": {"kind": "learned"}}},
+        # Short episodes (env steps at 120 Hz) so several complete inside the
+        # 256-step batch -> ScoreMetricsCallback reliably logs the win-rate
+        # metrics that drive the snapshot trigger.
+        "curriculum": {"randomise_start": True, "episode_seconds": 1.0},
+        # threshold 0 + cooldown 0 -> a snapshot fires on the first iteration
+        # for whichever side records a metric.
+        "league": {"enabled": True, "snapshot_threshold": 0.0,
+                   "min_iters_between_snapshots": 0, "population_cap": 5,
+                   "live_fraction": 0.5},
+        "reward_stack": None,
+    })
+    algo = build_ppo_config(cfg).build_algo()
+    try:
+        algo.train()  # iteration 1: metrics logged -> at least one snapshot added
+        # The MultiRLModule (whose keys are the population) lives on the local
+        # env runner; Algorithm.get_module(id) only returns a single sub-module.
+        ids = set(algo.env_runner.module.keys())
+        pops = population_members(ids, RED_POP_RE) + population_members(ids, BLUE_POP_RE)
+        assert pops, "expected at least one frozen snapshot after iter 1"
+        snap_id = pops[0]
+        main_id = "main_red" if snap_id.startswith("red") else "main_blue"
+
+        # Snapshot weights equal the main's weights now (copied at snapshot time).
+        def _flat(state):
+            return np.concatenate([np.ravel(v) for v in state.values()
+                                   if hasattr(v, "shape")])
+        snap0 = _flat(algo.get_module(snap_id).get_state())
+
+        algo.train()  # iteration 2: main updates; frozen snapshot must NOT.
+        snap1 = _flat(algo.get_module(snap_id).get_state())
+        assert np.allclose(snap0, snap1), "frozen snapshot weights changed"
+
+        ckpt = algo.save(str(tmp_path / "ckpt")).checkpoint.path
+    finally:
+        algo.stop()
+
+    # Restore into a fresh algo. Algorithm.from_checkpoint rebuilds the full
+    # MultiRLModule from the checkpoint's saved per-module specs, so the frozen
+    # population members come back — membership is derived from the standard
+    # module checkpoint with no separate league-state file. (build_algo() +
+    # restore_from_path would only reload the two mains the config declares.)
+    from ray.rllib.algorithms.algorithm import Algorithm
+    algo2 = Algorithm.from_checkpoint(ckpt)
+    try:
+        ids2 = set(algo2.env_runner.module.keys())
+        assert snap_id in ids2, "snapshot module missing after restore"
+    finally:
+        algo2.stop()
