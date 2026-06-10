@@ -18,9 +18,10 @@ class SuccessRateEvalCallback(EvalCallback):
     length-confounded shaping rewards, a high-reward *staller* gets saved over a
     decisive defender (HANDOFF Issue #13).  This variant keys best_model on the
     tuple ``(success_rate, mean_reward)``: honest prevention rate dominates,
-    reward breaks ties.  When the eval env reports no ``is_success`` (e.g. the
-    single-agent simple env), the success component is a constant ``0.0`` so
-    selection degrades to pure reward selection — parity with stock EvalCallback.
+    reward breaks ties.  When the eval env reports no ``is_success``, the success
+    component is a constant ``0.0`` so selection degrades to pure reward selection
+    — parity with stock EvalCallback.  (The single-agent simple env now mirrors
+    its ``scored`` flag into ``is_success``, so it logs honest success rates.)
 
     Implementation: the base ``_on_step`` runs the evaluation and all logging
     (including ``eval/success_rate`` and ``evaluations.npz``); we call it with

@@ -44,6 +44,21 @@ def read_telemetry(
         api_factory = wandb.Api
     api = api_factory()
     run = api.run(run_path)
-    rows = [dict(r) for r in run.history(keys=list(keys), pandas=False)]
+
+    # wandb's run.history(keys=...) returns ZERO rows if ANY requested key was
+    # never logged by the run (e.g. rollout/ep_rew_mean for an env that only
+    # logs rollout/success_rate), or if the requested metrics never co-occur at
+    # a single step (eval/* and train/* land on disjoint steps).  Either case
+    # silently blinds the monitor — every kill-rule then evaluates against an
+    # empty row list and returns a vacuous kill:false.  Fetch each metric key
+    # independently and merge by _step so one absent/disjoint metric can't zero
+    # out the whole fetch.  (_step/_runtime ride along with every call.)
+    metric_keys = [k for k in keys if k not in ("_step", "_runtime")]
+    merged: dict[Any, Row] = {}
+    for mk in metric_keys:
+        for r in run.history(keys=[mk, "_step", "_runtime"], pandas=False):
+            row = merged.setdefault(r.get("_step"), {})
+            row.update({k: v for k, v in r.items() if v is not None})
+    rows = [merged[s] for s in sorted(merged, key=lambda s: (s is None, s))]
     summary = dict(run.summary)
     return CampaignTelemetry(rows=rows, summary=summary)

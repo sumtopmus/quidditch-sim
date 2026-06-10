@@ -241,6 +241,10 @@ class QuidditchSimpleEnv(gym.Env):
 
         info = {
             "scored": scored,
+            # SB3 EvalCallback logs eval/success_rate only when info carries
+            # "is_success"; mirror "scored" so the metric (campaign objective)
+            # is actually produced for the single-agent env.
+            "is_success": bool(scored),
             "dist_to_hoop": dist,
             "step": self._step_count,
         }

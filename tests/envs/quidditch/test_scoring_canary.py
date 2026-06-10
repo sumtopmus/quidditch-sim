@@ -68,6 +68,8 @@ def test_scripted_flyaway_scores_through_hoop() -> None:
 
             if info.get("scored"):
                 scored_at_step = step
+                # is_success mirrors scored so SB3 logs eval/success_rate.
+                assert info["is_success"] is True
                 break
 
             if terminated or truncated:
