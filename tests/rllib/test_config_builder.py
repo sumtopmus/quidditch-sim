@@ -103,3 +103,58 @@ def test_grad_clip_passed_when_present():
     cfg.algo.grad_clip = 1.0
     config = build_ppo_config(cfg)
     assert config.grad_clip == 1.0
+
+
+def _league_cfg():
+    from omegaconf import OmegaConf
+    return OmegaConf.create({
+        "seed": 0,
+        "obs": {"name": "DUEL_V1_BODY", "n_stack": 1, "blocks": [
+            "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+            "UNIT_TO_GOAL", "SIGNED_DIST_NORM", "OPP_POS_REL", "OPP_VEL_REL_BODY",
+        ]},
+        "algo": {"lr": 5e-5, "gamma": 0.99, "lambda_": 0.95, "clip_param": 0.2,
+                 "entropy_coeff": 0.01, "num_epochs": 1, "minibatch_size": 64,
+                 "train_batch_size_per_learner": 256, "num_env_runners": 0,
+                 "total_timesteps": 256},
+        "multiagent": {"learner_id": "red_0",
+                       "policies_to_train": ["main_red", "main_blue"],
+                       "mapping": {"red_0": "main_red", "blue_0": "main_blue"},
+                       "modules": {"main_red": {"kind": "learned"},
+                                   "main_blue": {"kind": "learned"}}},
+        "league": {"enabled": True, "snapshot_threshold": 0.7,
+                   "min_iters_between_snapshots": 20, "population_cap": 5,
+                   "live_fraction": 0.5},
+    })
+
+
+def test_league_callback_and_mapping_wired_when_enabled():
+    from rllib.config_builder import build_ppo_config
+    from rllib.league import LeagueCallback
+    cfg = _league_cfg()
+    config = build_ppo_config(cfg)
+    # LeagueCallback is among the registered callbacks.
+    cbs = config.callbacks_class
+    classes = cbs if isinstance(cbs, (list, tuple)) else [cbs]
+    assert LeagueCallback in classes
+    # The league knobs are stashed in env_config for the callback to read.
+    assert config.env_config["league"]["snapshot_threshold"] == 0.7
+    # The mapping fn routes the two mains live when populations are empty.
+    import types
+    fn = config.policy_mapping_fn
+    ep = types.SimpleNamespace(id_=7)
+    assert fn("red_0", ep) == "main_red"
+    assert fn("blue_0", ep) == "main_blue"
+
+
+def test_no_league_callback_when_league_absent():
+    """Step-2 configs (no `league` group) keep the static mapping + score-only
+    callback — league wiring is opt-in."""
+    from rllib.config_builder import build_ppo_config
+    from rllib.league import LeagueCallback
+    cfg = _league_cfg()
+    del cfg["league"]
+    config = build_ppo_config(cfg)
+    cbs = config.callbacks_class
+    classes = cbs if isinstance(cbs, (list, tuple)) else [cbs]
+    assert LeagueCallback not in classes
