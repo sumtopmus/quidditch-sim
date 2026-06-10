@@ -85,3 +85,79 @@ def test_mapping_empty_pop_falls_back_to_live():
         red, blue = fn("red_0", ep), fn("blue_0", ep)
         assert blue == "main_blue"                 # blue never frozen (no blue_pop)
         assert red in ("main_red", "red_pop_v1")   # live or blue-exploits
+
+
+class _FakeModule:
+    def __init__(self, ids):
+        self._ids = set(ids)
+    def keys(self):
+        return set(self._ids)
+
+
+class _FakeLearnerGroup:
+    def foreach_learner(self, fn):
+        return []
+
+
+class _FakeEnvRunnerGroup:
+    def __init__(self):
+        self.synced = []
+        self.refreshed = 0
+    def sync_weights(self, **kw):
+        self.synced.append(kw.get("policies"))
+    def foreach_env_runner(self, fn, **kw):
+        self.refreshed += 1
+        return []
+
+
+class _FakeAlgo:
+    def __init__(self, ids, iteration, league_cfg):
+        self._module = _FakeModule(ids)
+        self.iteration = iteration
+        self.config = types.SimpleNamespace(env_config={"league": league_cfg})
+        self.learner_group = _FakeLearnerGroup()
+        self.env_runner_group = _FakeEnvRunnerGroup()
+        self.added = []
+    def get_module(self, module_id=None):
+        return self._module
+    def add_module(self, *, module_id, module_spec, new_should_module_be_updated,
+                   new_agent_to_module_mapping_fn, **kw):
+        self.added.append(module_id)
+        self._module._ids.add(module_id)  # reflect the new member
+
+
+_LEAGUE_CFG = {"snapshot_threshold": 0.7, "min_iters_between_snapshots": 20,
+               "population_cap": 5, "live_fraction": 0.5}
+
+
+def test_callback_snapshots_red_when_threshold_cleared():
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue"}, iteration=25, league_cfg=_LEAGUE_CFG)
+    cb.on_algorithm_init(algorithm=algo)            # baselines cooldown at iter 25
+    algo.iteration = 50                              # 25 iters later (> cooldown)
+    cb.on_train_result(algorithm=algo,
+                       result={"env_runners": {"red_score_rate": 0.8,
+                                               "blue_prevention_rate": 0.1}})
+    assert "red_pop_v1" in algo.added
+    assert "blue_pop_v1" not in algo.added           # blue below threshold
+    assert algo.env_runner_group.synced == [["red_pop_v1"]]
+
+
+def test_callback_respects_cooldown():
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue"}, iteration=10, league_cfg=_LEAGUE_CFG)
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 19                               # < cooldown (20)
+    cb.on_train_result(algorithm=algo,
+                       result={"env_runners": {"red_score_rate": 0.95}})
+    assert algo.added == []
+
+
+def test_callback_reconstructs_membership_and_refreshes_on_init():
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "red_pop_v1", "red_pop_v2"},
+                     iteration=100, league_cfg=_LEAGUE_CFG)
+    cb.on_algorithm_init(algorithm=algo)
+    assert algo.env_runner_group.refreshed == 1       # mapping fn reinstalled
+    # next red snapshot would be v3 (derived from restored module ids)
+    assert L.next_version(algo.get_module().keys(), L.RED_POP_RE) == 3
