@@ -52,3 +52,48 @@ def should_snapshot(
 ) -> bool:
     """Snapshot iff metric clears threshold, cooldown elapsed, and room remains."""
     return metric >= threshold and iters_since_last >= cooldown and pop_size < cap
+
+
+def _episode_rng_roll(episode) -> tuple[float, float]:
+    """Two deterministic [0,1) draws keyed on the episode id, so both agents in
+    one episode see the same matchup (zlib.crc32 is stable across processes,
+    unlike hash() under PYTHONHASHSEED)."""
+    seed = zlib.crc32(str(getattr(episode, "id_", episode)).encode())
+    roll_mode = (seed % 1_000_003) / 1_000_003
+    roll_side = ((seed // 1_000_003) % 1_000_003) / 1_000_003
+    return roll_mode, roll_side
+
+
+def make_league_mapping_fn(module_ids: Iterable[str], league_cfg: dict):
+    """Build the per-episode matchup fn (uniform sampling, Step 3).
+
+    With prob `live_fraction`: main_red vs main_blue (both learn). Otherwise
+    split 50/50: 'red exploits' (main_red vs uniform blue_pop member) or
+    'blue exploits' (uniform red_pop member vs main_blue). An empty opposite
+    population makes that exploit mode fall back to live. Closes over plain
+    lists/floats only, so it pickles across the Ray boundary.
+    """
+    red_pop = population_members(module_ids, RED_POP_RE)
+    blue_pop = population_members(module_ids, BLUE_POP_RE)
+    live_fraction = float(league_cfg.get("live_fraction", 0.5))
+
+    def league_mapping_fn(agent_id, episode, **kw):
+        roll_mode, roll_side = _episode_rng_roll(episode)
+        mode = "live"
+        if roll_mode >= live_fraction:
+            if roll_side < 0.5:
+                mode = "red_exploits" if blue_pop else "live"
+            else:
+                mode = "blue_exploits" if red_pop else "live"
+        if mode == "live":
+            return "main_red" if agent_id == "red_0" else "main_blue"
+        if mode == "red_exploits":
+            if agent_id == "red_0":
+                return "main_red"
+            return blue_pop[int(roll_side * 2 * len(blue_pop)) % len(blue_pop)]
+        # blue_exploits
+        if agent_id == "red_0":
+            return red_pop[int(roll_side * 2 * len(red_pop)) % len(red_pop)]
+        return "main_blue"
+
+    return league_mapping_fn

@@ -34,3 +34,54 @@ def test_should_snapshot_threshold_cooldown_and_cap():
     # population full -> False
     assert not L.should_snapshot(
         metric=0.9, iters_since_last=20, threshold=0.7, cooldown=20, pop_size=5, cap=5)
+
+
+import types
+
+
+def _episode(eid):
+    return types.SimpleNamespace(id_=eid)
+
+
+def test_mapping_is_live_when_populations_empty():
+    fn = L.make_league_mapping_fn({"main_red", "main_blue"}, {"live_fraction": 0.5})
+    for eid in range(50):
+        ep = _episode(eid)
+        assert fn("red_0", ep) == "main_red"
+        assert fn("blue_0", ep) == "main_blue"
+
+
+def test_mapping_both_agents_coherent_per_episode():
+    ids = {"main_red", "main_blue", "red_pop_v1", "blue_pop_v1"}
+    fn = L.make_league_mapping_fn(ids, {"live_fraction": 0.0})  # always exploit
+    for eid in range(50):
+        ep = _episode(eid)
+        red, blue = fn("red_0", ep), fn("blue_0", ep)
+        # Exactly one side is a frozen pop member; the other is its live main.
+        red_exploits = red == "main_red" and blue == "blue_pop_v1"
+        blue_exploits = red == "red_pop_v1" and blue == "main_blue"
+        assert red_exploits or blue_exploits
+
+
+def test_mapping_respects_live_fraction():
+    ids = {"main_red", "main_blue", "red_pop_v1", "blue_pop_v1"}
+    fn = L.make_league_mapping_fn(ids, {"live_fraction": 0.5})
+    n = 4000
+    live = sum(
+        1 for eid in range(n)
+        if fn("red_0", _episode(eid)) == "main_red"
+        and fn("blue_0", _episode(eid)) == "main_blue"
+    )
+    assert 0.40 < live / n < 0.60   # ~0.5 within tolerance
+
+
+def test_mapping_empty_pop_falls_back_to_live():
+    # Only red_pop exists -> "red exploits" (needs blue_pop) can't happen;
+    # blue can still exploit red_pop. Never routes to a nonexistent member.
+    ids = {"main_red", "main_blue", "red_pop_v1"}
+    fn = L.make_league_mapping_fn(ids, {"live_fraction": 0.0})
+    for eid in range(50):
+        ep = _episode(eid)
+        red, blue = fn("red_0", ep), fn("blue_0", ep)
+        assert blue == "main_blue"                 # blue never frozen (no blue_pop)
+        assert red in ("main_red", "red_pop_v1")   # live or blue-exploits
