@@ -3,10 +3,9 @@
 # Red (attacker): the dense potential-based hoop pull from the skeleton
 # (HoopApproachShaping) + the +10 score, made ZERO-SUM so Blue is penalised -10
 # whenever Red scores -> Blue has a direct incentive to prevent.
-# Blue (defender): HoopAnchor keeps it near the hoop; TakeDown rewards ramming
-# Red out of the sky.  (InterceptShaping is intentionally omitted: its StepState
-# inputs are only populated for a single env learner_id, which two-policy
-# self-play does not have -- deferred to Step 3 with a defender-aware refactor.)
+# Blue (defender): HoopAnchor keeps it near the hoop; InterceptShaping rewards
+# closing on Red's predicted position near the hoop; TakeDown rewards ramming
+# Red out of the sky.
 # Both: CrashEvent for floor/wall/OOB.
 _target_: envs.quidditch.rewards.stack.RewardStack
 terms:
@@ -22,6 +21,12 @@ terms:
   - _target_: envs.quidditch.rewards.terms.HoopAnchor
     scale: 0.005
     agents: [blue_0]
+
+  - _target_: envs.quidditch.rewards.terms.InterceptShaping
+    scale: 0.05
+    lookahead_s: 0.5
+    activation_dist: 1.5
+    defender: blue_0
 
   - _target_: envs.quidditch.rewards.terms.TakeDown
     aggressor_reward: 20.0
