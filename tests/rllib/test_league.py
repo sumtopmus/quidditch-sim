@@ -43,6 +43,16 @@ def _episode(eid):
     return types.SimpleNamespace(id_=eid)
 
 
+def test_episode_roll_deterministic_salted_and_bounded():
+    ep = _episode("abc")
+    r = L._episode_roll(ep, "mode")
+    assert r == L._episode_roll(ep, "mode")          # deterministic
+    assert 0.0 <= r < 1.0
+    # different salts and different episode ids give different draws
+    assert r != L._episode_roll(ep, "member")
+    assert r != L._episode_roll(_episode("xyz"), "mode")
+
+
 def test_mapping_is_live_when_populations_empty():
     fn = L.make_league_mapping_fn({"main_red", "main_blue"}, {"live_fraction": 0.5})
     for eid in range(50):
