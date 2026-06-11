@@ -56,7 +56,7 @@ Replaces `_episode_rng_roll` (two coupled draws) with independent salted draws, 
 - Modify: `rllib/league.py` (replace `_episode_rng_roll`, rewrite `make_league_mapping_fn` internals)
 - Test: `tests/rllib/test_league.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Append to `tests/rllib/test_league.py` (the `_episode` helper already exists there):
 
@@ -71,12 +71,12 @@ def test_episode_roll_deterministic_salted_and_bounded():
     assert r != L._episode_roll(_episode("xyz"), "mode")
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `uv run pytest tests/rllib/test_league.py::test_episode_roll_deterministic_salted_and_bounded -v`
 Expected: FAIL — `AttributeError: module 'rllib.league' has no attribute '_episode_roll'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `rllib/league.py`, replace the whole `_episode_rng_roll` function with:
 
@@ -113,12 +113,12 @@ and rewrite the inner `league_mapping_fn` in `make_league_mapping_fn` to use it 
         return "main_blue"
 ```
 
-- [ ] **Step 4: Run the league unit tests**
+- [x] **Step 4: Run the league unit tests**
 
 Run: `uv run pytest tests/rllib/test_league.py -v`
 Expected: ALL PASS (the distribution-based mapping tests tolerate the new draw values).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add rllib/league.py tests/rllib/test_league.py
@@ -131,7 +131,7 @@ git commit -m "refactor(rllib): salted per-episode rolls for the league mapping 
 - Modify: `rllib/league.py`
 - Test: `tests/rllib/test_league.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_pfsp_weights_prioritizes_hard_opponents():
@@ -157,12 +157,12 @@ def test_pfsp_weights_empty():
     assert L.pfsp_weights({}, exponent=2.0, floor=0.1) == {}
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run pytest tests/rllib/test_league.py -k pfsp_weights -v`
 Expected: FAIL — `AttributeError: ... no attribute 'pfsp_weights'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `rllib/league.py` (below `next_version`):
 
@@ -189,12 +189,12 @@ def pfsp_weights(
     return {m: (1.0 - floor) * v / total + floor / n for m, v in raw.items()}
 ```
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run: `uv run pytest tests/rllib/test_league.py -k pfsp_weights -v`
 Expected: 4 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add rllib/league.py tests/rllib/test_league.py
@@ -207,7 +207,7 @@ git commit -m "feat(rllib): PFSP sampling-weight helper (exponent + uniform floo
 - Modify: `rllib/league.py`
 - Test: `tests/rllib/test_league.py`
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 ```python
 def test_weighted_pick_respects_cumulative_probs():
@@ -220,12 +220,12 @@ def test_weighted_pick_respects_cumulative_probs():
     assert L.weighted_pick(items, probs, 1.0) == "b"
 ```
 
-- [ ] **Step 2: Run it to verify it fails**
+- [x] **Step 2: Run it to verify it fails**
 
 Run: `uv run pytest tests/rllib/test_league.py::test_weighted_pick_respects_cumulative_probs -v`
 Expected: FAIL — `AttributeError: ... no attribute 'weighted_pick'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `rllib/league.py` (below `pfsp_weights`):
 
@@ -240,12 +240,12 @@ def weighted_pick(items: list[str], probs: dict[str, float], roll: float) -> str
     return items[-1]   # roll == 1.0 or float round-off past the total
 ```
 
-- [ ] **Step 4: Run it to verify it passes**
+- [x] **Step 4: Run it to verify it passes**
 
 Run: `uv run pytest tests/rllib/test_league.py::test_weighted_pick_respects_cumulative_probs -v`
 Expected: PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add rllib/league.py tests/rllib/test_league.py
@@ -260,7 +260,7 @@ The factory gains an optional `winrates` param. `None`/missing entries default t
 - Modify: `rllib/league.py:make_league_mapping_fn`
 - Test: `tests/rllib/test_league.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_mapping_pfsp_concentrates_on_hard_opponents():
@@ -283,12 +283,12 @@ def test_mapping_without_winrates_is_uniform():
     assert 0.4 < frozen.count("blue_pop_v1") / len(frozen) < 0.6
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run pytest tests/rllib/test_league.py -k "pfsp_concentrates or without_winrates" -v`
 Expected: FAIL — `TypeError: make_league_mapping_fn() got an unexpected keyword argument 'winrates'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Replace `make_league_mapping_fn` in `rllib/league.py` with:
 
@@ -342,12 +342,12 @@ def make_league_mapping_fn(
     return league_mapping_fn
 ```
 
-- [ ] **Step 4: Run the full league test file**
+- [x] **Step 4: Run the full league test file**
 
 Run: `uv run pytest tests/rllib/test_league.py -v`
 Expected: ALL PASS (Step-3 mapping tests exercise the `winrates=None` uniform path).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add rllib/league.py tests/rllib/test_league.py
@@ -362,7 +362,7 @@ git commit -m "feat(rllib): PFSP-weighted opponent sampling in the league mappin
 - Modify: `rllib/league.py`
 - Test: `tests/rllib/test_league.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_matchup_outcome_main_vs_frozen():
@@ -420,12 +420,12 @@ def test_on_episode_end_skips_live_and_unaccumulated_episodes():
     assert logger.logged == []
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run pytest tests/rllib/test_league.py -k "matchup_outcome or on_episode_end" -v`
 Expected: FAIL — `AttributeError: ... no attribute 'matchup_outcome'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `rllib/league.py` (below `weighted_pick`):
 
@@ -485,12 +485,12 @@ and add the hook to `LeagueCallback`:
                 key, win, reduce="mean", window=WINRATE_WINDOW)
 ```
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run: `uv run pytest tests/rllib/test_league.py -v`
 Expected: ALL PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add rllib/league.py tests/rllib/test_league.py
@@ -505,7 +505,7 @@ git commit -m "feat(rllib): per-matchup winrate logging on episode end"
 - Modify: `rllib/league.py` (`collect_winrates`, `report_league`, `LeagueCallback.on_train_result`, `LeagueCallback._refresh`)
 - Test: `tests/rllib/test_league.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_collect_winrates_reads_only_population_keys():
@@ -539,12 +539,12 @@ def test_on_train_result_refreshes_mapping_fn_every_iteration():
     assert algo.env_runner_group.refreshed > before   # PFSP weights reinstalled
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run pytest tests/rllib/test_league.py -k "collect_winrates or report_league or refreshes_mapping" -v`
 Expected: FAIL — `AttributeError: ... no attribute 'collect_winrates'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `rllib/league.py` (below `matchup_outcome`):
 
@@ -616,12 +616,12 @@ Replace `LeagueCallback.on_train_result` with (and add `_refresh`):
             algorithm, make_league_mapping_fn(module_ids, self._cfg, winrates))
 ```
 
-- [ ] **Step 4: Run the full league test file**
+- [x] **Step 4: Run the full league test file**
 
 Run: `uv run pytest tests/rllib/test_league.py -v`
 Expected: ALL PASS (the Step-3 callback tests tolerate the extra refresh + result mutation).
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add rllib/league.py tests/rllib/test_league.py
@@ -634,7 +634,7 @@ git commit -m "feat(rllib): per-iteration PFSP weight refresh + league diagnosti
 - Modify: `rllib/league.py`
 - Test: `tests/rllib/test_league.py`
 
-- [ ] **Step 1: Write the failing tests**
+- [x] **Step 1: Write the failing tests**
 
 ```python
 def test_prune_candidate_picks_most_dominated():
@@ -649,12 +649,12 @@ def test_prune_candidate_none_when_population_still_challenging():
     assert L.prune_candidate(pop, wr, threshold=0.8) is None
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run pytest tests/rllib/test_league.py -k prune_candidate -v`
 Expected: FAIL — `AttributeError: ... no attribute 'prune_candidate'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 Add to `rllib/league.py` (below `collect_winrates`):
 
@@ -672,12 +672,12 @@ def prune_candidate(
     return max(dominated)[1] if dominated else None
 ```
 
-- [ ] **Step 4: Run them to verify they pass**
+- [x] **Step 4: Run them to verify they pass**
 
 Run: `uv run pytest tests/rllib/test_league.py -k prune_candidate -v`
 Expected: 2 PASS
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add rllib/league.py tests/rllib/test_league.py
@@ -692,7 +692,7 @@ The callback gains pending-removal state and a per-side version floor. At cap, a
 - Modify: `rllib/league.py` (`LeagueCallback.__init__`, `on_algorithm_init`, `on_train_result`, `_snapshot`, new `_process_pending_removals`)
 - Test: `tests/rllib/test_league.py` (extend `_FakeAlgo` + `_LEAGUE_CFG`)
 
-- [ ] **Step 1: Extend the fakes and write the failing tests**
+- [x] **Step 1: Extend the fakes and write the failing tests**
 
 In `tests/rllib/test_league.py`, add to `_FakeAlgo.__init__`: `self.removed = []`, and add the method:
 
@@ -786,12 +786,12 @@ def test_snapshot_version_never_reused_after_prune(monkeypatch):
     assert "blue_pop_v1" not in algo.added
 ```
 
-- [ ] **Step 2: Run them to verify they fail**
+- [x] **Step 2: Run them to verify they fail**
 
 Run: `uv run pytest tests/rllib/test_league.py -k "prunes_most_dominated or pending_removal or no_snapshot_at_cap or never_reused" -v`
 Expected: FAIL — `AttributeError: 'LeagueCallback' object has no attribute '_pending_removal'` (and `test_callback_prunes_most_dominated_at_cap` sees no snapshot added because the pop is at cap).
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 In `rllib/league.py`, update `LeagueCallback.__init__`:
 
@@ -927,12 +927,12 @@ Replace `on_train_result` and `_snapshot`, and add `_process_pending_removals`:
 
 (The `_snapshot` body below `new_mapping_fn` is unchanged from Step 3 — only the signature, the version-floor id computation, and the comment above `new_mapping_fn` are new.)
 
-- [ ] **Step 4: Run the full league test file**
+- [x] **Step 4: Run the full league test file**
 
 Run: `uv run pytest tests/rllib/test_league.py -v`
 Expected: ALL PASS. Note `test_callback_snapshots_red_when_threshold_cleared` (Step 3) still passes: empty pop → no victim → version floor 0 → `red_pop_v1` as before.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add rllib/league.py tests/rllib/test_league.py
@@ -946,7 +946,7 @@ git commit -m "feat(rllib): prune-at-cap with two-phase removal + version floor"
 
 (No schema change needed — the `league` group is plain YAML read via `league_cfg.get(...)`; `config_schema.py` doesn't cover it.)
 
-- [ ] **Step 1: Update the YAML**
+- [x] **Step 1: Update the YAML**
 
 Replace the full contents of `conf/league/default.yaml` with:
 
@@ -983,7 +983,7 @@ prune_winrate_threshold: 0.8
 prune_grace_iters: 2
 ```
 
-- [ ] **Step 2: Sanity-check composition + fast suite**
+- [x] **Step 2: Sanity-check composition + fast suite**
 
 Run: `uv run python -c "from omegaconf import OmegaConf; c = OmegaConf.load('conf/league/default.yaml'); print(dict(c))"`
 Expected: dict with all 9 keys.
@@ -991,7 +991,7 @@ Expected: dict with all 9 keys.
 Run: `uv run pytest tests/rllib -m "not slow" -v`
 Expected: ALL PASS
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add conf/league/default.yaml
@@ -1005,7 +1005,7 @@ A few-iteration real run, `@pytest.mark.slow`, mirroring Step 3's `test_league_s
 **Files:**
 - Modify: `tests/rllib/test_smoke_train.py`
 
-- [ ] **Step 1: Write the test**
+- [x] **Step 1: Write the test**
 
 Append to `tests/rllib/test_smoke_train.py`:
 
@@ -1085,17 +1085,17 @@ def test_league_pfsp_prunes_and_restores(tmp_path):
         algo2.stop()
 ```
 
-- [ ] **Step 2: Run it**
+- [x] **Step 2: Run it**
 
 Run: `uv run pytest tests/rllib/test_smoke_train.py::test_league_pfsp_prunes_and_restores -v`
 Expected: PASS (takes a few minutes — three training iterations + a restore). If `remove_module` misbehaves on this Ray version, this test is the gate (see Risks).
 
-- [ ] **Step 3: Run the Step-3 slow tests to confirm no regression**
+- [x] **Step 3: Run the Step-3 slow tests to confirm no regression**
 
 Run: `uv run pytest tests/rllib/test_smoke_train.py -v`
 Expected: ALL PASS (4 tests).
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add tests/rllib/test_smoke_train.py
@@ -1104,7 +1104,7 @@ git commit -m "test(rllib): integration smoke — PFSP league prunes and restore
 
 ### Task 11: Full verification + brain update
 
-- [ ] **Step 1: Full fast suite**
+- [x] **Step 1: Full fast suite**
 
 Run from the worktree root: `make test-fast`
 Expected: ALL PASS (the 5 macOS-render failures only appear in non-GUI shells and are environmental).
