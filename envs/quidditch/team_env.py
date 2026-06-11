@@ -302,28 +302,20 @@ class QuidditchTeamEnv(ParallelEnv):
         self._dist_red_to_hoop_prev = float(np.linalg.norm(self._red_pos() - HOOP_CENTER))
         self._aftermath_steps_left  = 0
 
-        # Initialise closing-rate cache (formerly OCE side).
+        # Closing-rate OBS cache stays learner-gated (obs path unchanged).
         if self._learner_id is not None:
             learner_pos = (self._blue_pos() if self._learner_id == self._blue_id
                             else self._red_pos())
             opp_pos = (self._red_pos() if self._learner_id == self._blue_id
                         else self._blue_pos())
             self._prev_dist_to_opp = float(np.linalg.norm(opp_pos - learner_pos))
-            # Initialise future-red distance cache.
-            red_vel_world = self._world.data.qvel[
-                self._red_dofadr : self._red_dofadr + 3
-            ].copy()
-            future_red = self._red_pos() + REWARD_LOOKAHEAD_S * red_vel_world
-            defender_pos = (self._blue_pos() if self._learner_id == self._blue_id
-                             else self._red_pos())
-            self._dist_def_to_future_red_prev = float(
-                np.linalg.norm(defender_pos - future_red)
-            )
-            self._dist_def_to_future_red = self._dist_def_to_future_red_prev
         else:
             self._prev_dist_to_opp = 0.0
-            self._dist_def_to_future_red      = 0.0
-            self._dist_def_to_future_red_prev = 0.0
+
+        # Intercept-shaping REWARD cache: defender is always blue_0, populated
+        # regardless of learner_id (Step-3 defender-aware refactor).
+        self._dist_def_to_future_red_prev = self._dist_blue_to_future_red()
+        self._dist_def_to_future_red = self._dist_def_to_future_red_prev
 
         if self.render_mode == "human":
             time.sleep(1)
@@ -439,18 +431,9 @@ class QuidditchTeamEnv(ParallelEnv):
         dist_blue = float(np.linalg.norm(blue_pos - self._midpoint()))
         dist_blue_to_hoop = float(np.linalg.norm(blue_pos - HOOP_CENTER))
 
-        # ── InterceptShaping inputs (when a learner is configured) ──────────
-        if self._learner_id is not None:
-            red_vel_world = self._world.data.qvel[
-                self._red_dofadr : self._red_dofadr + 3
-            ].copy()
-            future_red = red_pos + REWARD_LOOKAHEAD_S * red_vel_world
-            defender_pos = (blue_pos if self._learner_id == self._blue_id
-                             else red_pos)
-            self._dist_def_to_future_red_prev = self._dist_def_to_future_red
-            self._dist_def_to_future_red = float(
-                np.linalg.norm(defender_pos - future_red)
-            )
+        # ── InterceptShaping inputs (defender = blue_0, always populated) ────
+        self._dist_def_to_future_red_prev = self._dist_def_to_future_red
+        self._dist_def_to_future_red = self._dist_blue_to_future_red()
 
         reward_state = StepState(
             agent_ids=(self._red_id, self._blue_id),
@@ -593,6 +576,19 @@ class QuidditchTeamEnv(ParallelEnv):
 
     def _blue_pos(self) -> np.ndarray:
         return self._blue.state()[3].copy()
+
+    def _dist_blue_to_future_red(self) -> float:
+        """Distance from the defender (blue_0) to Red's short-horizon predicted
+        position: future_red = red_pos + REWARD_LOOKAHEAD_S * red_vel_world.
+
+        Defender-aware: always blue-based and independent of learner_id, so
+        InterceptShaping returns a real signal in two-policy self-play.
+        """
+        red_vel_world = self._world.data.qvel[
+            self._red_dofadr : self._red_dofadr + 3
+        ].copy()
+        future_red = self._red_pos() + REWARD_LOOKAHEAD_S * red_vel_world
+        return float(np.linalg.norm(self._blue_pos() - future_red))
 
     @staticmethod
     def _signed_dist_to_hoop_plane(pos: np.ndarray) -> float:
