@@ -54,6 +54,16 @@ def pfsp_weights(
     return {m: (1.0 - floor) * v / total + floor / n for m, v in raw.items()}
 
 
+def weighted_pick(items: list[str], probs: dict[str, float], roll: float) -> str:
+    """Pick the item whose cumulative-probability bucket contains `roll`."""
+    acc = 0.0
+    for item in items:
+        acc += probs[item]
+        if roll < acc:
+            return item
+    return items[-1]   # roll == 1.0 or float round-off past the total
+
+
 def read_metric(result: dict, name: str) -> Optional[float]:
     """Recursively find `name` anywhere in the (nested) train result dict.
 

@@ -66,6 +66,16 @@ def test_pfsp_weights_empty():
     assert L.pfsp_weights({}, exponent=2.0, floor=0.1) == {}
 
 
+def test_weighted_pick_respects_cumulative_probs():
+    items, probs = ["a", "b"], {"a": 0.25, "b": 0.75}
+    assert L.weighted_pick(items, probs, 0.0) == "a"
+    assert L.weighted_pick(items, probs, 0.24) == "a"
+    assert L.weighted_pick(items, probs, 0.25) == "b"
+    assert L.weighted_pick(items, probs, 0.999) == "b"
+    # float-accumulation guard: a roll at/above the total still returns an item
+    assert L.weighted_pick(items, probs, 1.0) == "b"
+
+
 def test_episode_roll_deterministic_salted_and_bounded():
     ep = _episode("abc")
     r = L._episode_roll(ep, "mode")
