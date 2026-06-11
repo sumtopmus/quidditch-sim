@@ -125,6 +125,19 @@ def collect_winrates(result: dict, module_ids: Iterable[str]) -> dict[str, float
     return out
 
 
+def prune_candidate(
+    pop: list[str], winrates: dict[str, float], threshold: float
+) -> Optional[str]:
+    """The most-dominated member — highest main-winrate among those clearing
+    `threshold` — or None when every member still puts up a fight (then the
+    population is full of useful opponents and Step-3 stop-at-cap applies)."""
+    dominated = [
+        (winrates.get(m, WINRATE_DEFAULT), m) for m in pop
+        if winrates.get(m, WINRATE_DEFAULT) >= threshold
+    ]
+    return max(dominated)[1] if dominated else None
+
+
 def report_league(
     result: dict, module_ids: Iterable[str],
     winrates: dict[str, float], league_cfg: dict,

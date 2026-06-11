@@ -287,6 +287,18 @@ def test_on_train_result_refreshes_mapping_fn_every_iteration():
     assert algo.env_runner_group.refreshed > before   # PFSP weights reinstalled
 
 
+def test_prune_candidate_picks_most_dominated():
+    pop = ["red_pop_v1", "red_pop_v2", "red_pop_v3"]
+    wr = {"red_pop_v1": 0.95, "red_pop_v2": 0.85, "red_pop_v3": 0.4}
+    assert L.prune_candidate(pop, wr, threshold=0.8) == "red_pop_v1"
+
+
+def test_prune_candidate_none_when_population_still_challenging():
+    pop = ["red_pop_v1", "red_pop_v2"]
+    wr = {"red_pop_v1": 0.6}   # v2 unseen -> WINRATE_DEFAULT (0.5)
+    assert L.prune_candidate(pop, wr, threshold=0.8) is None
+
+
 def test_callback_snapshots_red_when_threshold_cleared(monkeypatch):
     # Cloning a real RLModule spec needs a live module; the fake add_module
     # ignores the spec, so stub the spec builder with a sentinel.
