@@ -1,6 +1,8 @@
 """Step-3 snapshot-population league: pure helpers + mapping fn + callback."""
 from __future__ import annotations
 
+import math
+
 import rllib.league as L
 
 
@@ -413,3 +415,30 @@ def test_callback_reconstructs_membership_and_refreshes_on_init():
     assert algo.env_runner_group.refreshed == 1       # mapping fn reinstalled
     # next red snapshot would be v3 (derived from restored module ids)
     assert L.next_version(algo.get_module().keys(), L.RED_POP_RE) == 3
+
+
+def test_read_metric_ignores_non_finite_values():
+    # RLlib's windowed metrics emit NaN when a matchup's window drains (no
+    # recent episodes) — those must read as "no data", not as a winrate.
+    nan = float("nan")
+    assert L.read_metric({"env_runners": {"league_wr_vs_blue_pop_v1": nan}},
+                         "league_wr_vs_blue_pop_v1") is None
+    assert L.read_metric({"x": float("inf")}, "x") is None
+    assert L.read_metric({"a": {"x": nan}, "x": 0.3}, "x") == 0.3
+
+
+def test_collect_winrates_omits_nan_members():
+    ids = {"main_red", "main_blue", "blue_pop_v1", "blue_pop_v2"}
+    result = {"env_runners": {"league_wr_vs_blue_pop_v1": float("nan"),
+                              "league_wr_vs_blue_pop_v2": 0.4}}
+    assert L.collect_winrates(result, ids) == {"blue_pop_v2": 0.4}
+
+
+def test_pfsp_weights_treats_non_finite_winrate_as_default():
+    # Defense in depth: a NaN that slips through must not poison every
+    # probability (NaN cum-probs make weighted_pick always return the LAST
+    # member, silently collapsing the league to a single opponent).
+    probs = L.pfsp_weights({"a": float("nan"), "b": 0.5}, exponent=2.0, floor=0.0)
+    assert all(math.isfinite(p) for p in probs.values())
+    assert abs(sum(probs.values()) - 1.0) < 1e-9
+    assert probs["a"] == probs["b"]   # NaN -> WINRATE_DEFAULT (= b's 0.5)

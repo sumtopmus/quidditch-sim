@@ -9,6 +9,7 @@ factory + the LeagueCallback that drives snapshotting on on_train_result.
 """
 from __future__ import annotations
 
+import math
 import re
 import zlib
 from typing import Iterable, Optional
@@ -46,7 +47,14 @@ def pfsp_weights(
     """
     if not winrates:
         return {}
-    raw = {m: (1.0 - min(max(w, 0.0), 1.0)) ** exponent for m, w in winrates.items()}
+    # Non-finite winrates (NaN from a drained metric window) count as no-data:
+    # a single NaN would otherwise poison every probability, and NaN cum-probs
+    # make weighted_pick always return the last member (league collapse).
+    raw = {
+        m: (1.0 - min(max(w if math.isfinite(w) else WINRATE_DEFAULT, 0.0), 1.0))
+        ** exponent
+        for m, w in winrates.items()
+    }
     total = sum(raw.values())
     n = len(raw)
     if total <= 0.0:
@@ -101,8 +109,16 @@ def read_metric(result: dict, name: str) -> Optional[float]:
     ScoreMetricsCallback logs red_score_rate / blue_prevention_rate via the
     MetricsLogger, which nests them under the env-runner results subtree; a
     recursive search avoids hard-coding a version-specific key path.
+
+    Non-finite values read as absent: RLlib's windowed metrics emit NaN once a
+    key's window drains (e.g. a matchup with no recent episodes), and a NaN
+    winrate must mean "no data", not a number.
     """
-    if name in result and isinstance(result[name], (int, float)):
+    if (
+        name in result
+        and isinstance(result[name], (int, float))
+        and math.isfinite(result[name])
+    ):
         return float(result[name])
     for v in result.values():
         if isinstance(v, dict):
