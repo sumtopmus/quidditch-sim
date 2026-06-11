@@ -112,6 +112,37 @@ def read_metric(result: dict, name: str) -> Optional[float]:
     return None
 
 
+def collect_winrates(result: dict, module_ids: Iterable[str]) -> dict[str, float]:
+    """Current winrate estimate per frozen member, read off the train result.
+    Members whose matchup has no logged data yet are omitted (callers default
+    them to WINRATE_DEFAULT)."""
+    out: dict[str, float] = {}
+    for regex in (RED_POP_RE, BLUE_POP_RE):
+        for opp in population_members(module_ids, regex):
+            value = read_metric(result, winrate_key(opp))
+            if value is not None:
+                out[opp] = value
+    return out
+
+
+def report_league(
+    result: dict, module_ids: Iterable[str],
+    winrates: dict[str, float], league_cfg: dict,
+) -> None:
+    """Write league diagnostics into the train result (surfaces in Tune/W&B):
+    per-member winrate estimates and the PFSP probabilities actually in force."""
+    league = result.setdefault("league", {})
+    exponent = float(league_cfg.get("pfsp_exponent", 2.0))
+    floor = float(league_cfg.get("pfsp_uniform_floor", 0.1))
+    for regex in (RED_POP_RE, BLUE_POP_RE):
+        pop = population_members(module_ids, regex)
+        probs = pfsp_weights(
+            {m: winrates.get(m, WINRATE_DEFAULT) for m in pop}, exponent, floor)
+        for m in pop:
+            league[f"wr_vs_{m}"] = winrates.get(m, WINRATE_DEFAULT)
+            league[f"pfsp_p_{m}"] = probs[m]
+
+
 def should_snapshot(
     *, metric: float, threshold: float, iters_since_last: int,
     cooldown: int, pop_size: int, cap: int,
@@ -278,21 +309,33 @@ class LeagueCallback(RLlibCallback):
         if not self._cfg:
             self._cfg = self._league_cfg(algorithm)
         it = int(algorithm.iteration)
+        active_ids = _algo_module_ids(algorithm)
+        winrates = collect_winrates(result, active_ids)
         for side, metric_name, main_id, regex in _SIDES:
             metric = read_metric(result, metric_name)
             if metric is None:
                 continue
-            module_ids = _algo_module_ids(algorithm)
             if should_snapshot(
                 metric=metric,
                 threshold=float(self._cfg["snapshot_threshold"]),
                 iters_since_last=it - self._last_snapshot_iter[side],
                 cooldown=int(self._cfg["min_iters_between_snapshots"]),
-                pop_size=len(population_members(module_ids, regex)),
+                pop_size=len(population_members(active_ids, regex)),
                 cap=int(self._cfg["population_cap"]),
             ):
-                self._snapshot(algorithm, main_id, regex, module_ids)
+                self._snapshot(algorithm, main_id, regex, active_ids)
                 self._last_snapshot_iter[side] = it
+                active_ids = _algo_module_ids(algorithm)
+        # PFSP weights move every iteration -> rebuild + reinstall the mapping
+        # fn each time (the same cheap config overwrite the restore path uses).
+        # This also supersedes the uniform fn add_module just installed when a
+        # snapshot fired above.
+        self._refresh(algorithm, active_ids, winrates)
+        report_league(result, active_ids, winrates, self._cfg)
+
+    def _refresh(self, algorithm, module_ids, winrates) -> None:
+        _refresh_mapping_fn(
+            algorithm, make_league_mapping_fn(module_ids, self._cfg, winrates))
 
     def _snapshot(self, algorithm, main_id, regex, module_ids) -> None:
         new_id = (

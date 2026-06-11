@@ -256,6 +256,37 @@ _LEAGUE_CFG = {"snapshot_threshold": 0.7, "min_iters_between_snapshots": 20,
                "population_cap": 5, "live_fraction": 0.5}
 
 
+def test_collect_winrates_reads_only_population_keys():
+    ids = {"main_red", "main_blue", "red_pop_v1", "blue_pop_v1"}
+    result = {"env_runners": {"league_wr_vs_red_pop_v1": 0.8, "noise": 1.0}}
+    assert L.collect_winrates(result, ids) == {"red_pop_v1": 0.8}
+
+
+def test_report_league_writes_winrates_and_pfsp_probs():
+    result = {}
+    ids = {"main_red", "main_blue", "blue_pop_v1", "blue_pop_v2"}
+    L.report_league(result, ids, {"blue_pop_v1": 0.9},
+                    {"pfsp_exponent": 2.0, "pfsp_uniform_floor": 0.0})
+    league = result["league"]
+    assert league["wr_vs_blue_pop_v1"] == 0.9
+    assert league["wr_vs_blue_pop_v2"] == L.WINRATE_DEFAULT   # unseen
+    total = league["pfsp_p_blue_pop_v1"] + league["pfsp_p_blue_pop_v2"]
+    assert abs(total - 1.0) < 1e-9
+    assert league["pfsp_p_blue_pop_v2"] > league["pfsp_p_blue_pop_v1"]
+
+
+def test_on_train_result_refreshes_mapping_fn_every_iteration():
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "blue_pop_v1"},
+                     iteration=5, league_cfg=_LEAGUE_CFG)
+    cb.on_algorithm_init(algorithm=algo)
+    before = algo.env_runner_group.refreshed
+    cb.on_train_result(algorithm=algo,
+                       result={"env_runners": {"red_score_rate": 0.0,
+                                               "blue_prevention_rate": 0.0}})
+    assert algo.env_runner_group.refreshed > before   # PFSP weights reinstalled
+
+
 def test_callback_snapshots_red_when_threshold_cleared(monkeypatch):
     # Cloning a real RLModule spec needs a live module; the fake add_module
     # ignores the spec, so stub the spec builder with a sentinel.
