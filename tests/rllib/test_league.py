@@ -130,6 +130,26 @@ def test_mapping_empty_pop_falls_back_to_live():
         assert red in ("main_red", "red_pop_v1")   # live or blue-exploits
 
 
+def test_mapping_pfsp_concentrates_on_hard_opponents():
+    ids = {"main_red", "main_blue", "blue_pop_v1", "blue_pop_v2"}
+    cfg = {"live_fraction": 0.0, "pfsp_exponent": 2.0, "pfsp_uniform_floor": 0.0}
+    # main_red dominates v1 (wr 0.9) and struggles vs v2 (wr 0.1)
+    fn = L.make_league_mapping_fn(
+        ids, cfg, winrates={"blue_pop_v1": 0.9, "blue_pop_v2": 0.1})
+    picks = [fn("blue_0", _episode(eid)) for eid in range(4000)]
+    frozen = [p for p in picks if p != "main_blue"]
+    assert frozen, "expected red-exploits episodes"
+    assert frozen.count("blue_pop_v2") / len(frozen) > 0.9   # ~0.988 expected
+
+
+def test_mapping_without_winrates_is_uniform():
+    ids = {"main_red", "main_blue", "blue_pop_v1", "blue_pop_v2"}
+    fn = L.make_league_mapping_fn(ids, {"live_fraction": 0.0})
+    picks = [fn("blue_0", _episode(eid)) for eid in range(4000)]
+    frozen = [p for p in picks if p != "main_blue"]
+    assert 0.4 < frozen.count("blue_pop_v1") / len(frozen) < 0.6
+
+
 class _FakeModule:
     def __init__(self, ids):
         self._ids = set(ids)

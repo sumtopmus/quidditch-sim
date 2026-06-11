@@ -98,18 +98,32 @@ def _episode_roll(episode, salt: str) -> float:
     return zlib.crc32(f"{eid}:{salt}".encode()) / 2**32
 
 
-def make_league_mapping_fn(module_ids: Iterable[str], league_cfg: dict):
-    """Build the per-episode matchup fn (uniform sampling, Step 3).
+def make_league_mapping_fn(
+    module_ids: Iterable[str],
+    league_cfg: dict,
+    winrates: Optional[dict[str, float]] = None,
+):
+    """Build the per-episode matchup fn (PFSP sampling, Step 4).
 
     With prob `live_fraction`: main_red vs main_blue (both learn). Otherwise
-    split 50/50: 'red exploits' (main_red vs uniform blue_pop member) or
-    'blue exploits' (uniform red_pop member vs main_blue). An empty opposite
-    population makes that exploit mode fall back to live. Closes over plain
-    lists/floats only, so it pickles across the Ray boundary.
+    split 50/50: 'red exploits' (main_red vs a blue_pop member) or 'blue
+    exploits' (a red_pop member vs main_blue). Frozen members are drawn PFSP:
+    P(o) ∝ (1 − winrate_vs_o)^pfsp_exponent + uniform floor; opponents with no
+    win-rate data yet weigh in at WINRATE_DEFAULT, so winrates=None degrades to
+    uniform (the Step-3 behavior). An empty opposite population makes that
+    exploit mode fall back to live. Closes over plain lists/floats/dicts only,
+    so it pickles across the Ray boundary.
     """
     red_pop = population_members(module_ids, RED_POP_RE)
     blue_pop = population_members(module_ids, BLUE_POP_RE)
     live_fraction = float(league_cfg.get("live_fraction", 0.5))
+    exponent = float(league_cfg.get("pfsp_exponent", 2.0))
+    floor = float(league_cfg.get("pfsp_uniform_floor", 0.1))
+    wr = winrates or {}
+    red_probs = pfsp_weights(
+        {m: wr.get(m, WINRATE_DEFAULT) for m in red_pop}, exponent, floor)
+    blue_probs = pfsp_weights(
+        {m: wr.get(m, WINRATE_DEFAULT) for m in blue_pop}, exponent, floor)
 
     def league_mapping_fn(agent_id, episode, **kw):
         mode = "live"
@@ -124,10 +138,10 @@ def make_league_mapping_fn(module_ids: Iterable[str], league_cfg: dict):
         if mode == "red_exploits":
             if agent_id == "red_0":
                 return "main_red"
-            return blue_pop[int(member * len(blue_pop)) % len(blue_pop)]
+            return weighted_pick(blue_pop, blue_probs, member)
         # blue_exploits
         if agent_id == "red_0":
-            return red_pop[int(member * len(red_pop)) % len(red_pop)]
+            return weighted_pick(red_pop, red_probs, member)
         return "main_blue"
 
     return league_mapping_fn
