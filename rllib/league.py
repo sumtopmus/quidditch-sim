@@ -64,6 +64,37 @@ def weighted_pick(items: list[str], probs: dict[str, float], roll: float) -> str
     return items[-1]   # roll == 1.0 or float round-off past the total
 
 
+# Rolling window for the per-matchup winrate means. More responsive than the
+# MetricsLogger default lifetime EMA (coeff 0.01), which would take hundreds of
+# episodes per matchup to move off its initial value. A module constant (not a
+# league_cfg knob) because on_episode_end runs on env runners, where the
+# callback never sees on_algorithm_init / the league cfg.
+WINRATE_WINDOW = 100
+
+
+def winrate_key(opponent_id: str) -> str:
+    """Metric key carrying the main's winrate vs one frozen opponent. The main
+    is implied by the population the opponent belongs to (main_red plays
+    blue_pop members, main_blue plays red_pop members)."""
+    return f"league_wr_vs_{opponent_id}"
+
+
+def matchup_outcome(
+    red_module: Optional[str], blue_module: Optional[str], scored: bool
+) -> Optional[tuple[str, float]]:
+    """(winrate metric key, main's win 1.0/0.0) for a main-vs-frozen episode.
+
+    Red main wins when it scores; Blue main wins when it prevents the score
+    (the same semantics as red_score_rate / blue_prevention_rate). Live
+    main-vs-main episodes carry no PFSP signal -> None.
+    """
+    if red_module == "main_red" and blue_module and BLUE_POP_RE.match(blue_module):
+        return winrate_key(blue_module), 1.0 if scored else 0.0
+    if blue_module == "main_blue" and red_module and RED_POP_RE.match(red_module):
+        return winrate_key(red_module), 0.0 if scored else 1.0
+    return None
+
+
 def read_metric(result: dict, name: str) -> Optional[float]:
     """Recursively find `name` anywhere in the (nested) train result dict.
 
@@ -222,6 +253,26 @@ class LeagueCallback(RLlibCallback):
         self._last_snapshot_iter = {"red": it, "blue": it}
         module_ids = _algo_module_ids(algorithm)
         _refresh_mapping_fn(algorithm, make_league_mapping_fn(module_ids, self._cfg))
+
+    def on_episode_end(self, *, episode, metrics_logger=None, **kwargs) -> None:
+        """Log the main's win vs the specific frozen opponent it faced, feeding
+        the PFSP winrate estimates. Reuses ScoreMetricsCallback's score_acc
+        (always installed alongside this callback by config_builder); episodes
+        without it are skipped rather than guessed at."""
+        if metrics_logger is None:
+            return
+        acc = episode.custom_data.get("score_acc")
+        if acc is None:
+            return
+        outcome = matchup_outcome(
+            episode.module_for("red_0"),
+            episode.module_for("blue_0"),
+            bool(acc["scored"]),
+        )
+        if outcome is not None:
+            key, win = outcome
+            metrics_logger.log_value(
+                key, win, reduce="mean", window=WINRATE_WINDOW)
 
     def on_train_result(self, *, algorithm, result, **kwargs) -> None:
         if not self._cfg:

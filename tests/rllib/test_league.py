@@ -150,6 +150,61 @@ def test_mapping_without_winrates_is_uniform():
     assert 0.4 < frozen.count("blue_pop_v1") / len(frozen) < 0.6
 
 
+def test_matchup_outcome_main_vs_frozen():
+    # red main vs frozen blue: red's win = it scored
+    assert L.matchup_outcome("main_red", "blue_pop_v1", scored=True) == (
+        "league_wr_vs_blue_pop_v1", 1.0)
+    assert L.matchup_outcome("main_red", "blue_pop_v1", scored=False) == (
+        "league_wr_vs_blue_pop_v1", 0.0)
+    # blue main vs frozen red: blue's win = it prevented the score
+    assert L.matchup_outcome("red_pop_v3", "main_blue", scored=False) == (
+        "league_wr_vs_red_pop_v3", 1.0)
+    assert L.matchup_outcome("red_pop_v3", "main_blue", scored=True) == (
+        "league_wr_vs_red_pop_v3", 0.0)
+
+
+def test_matchup_outcome_live_episode_is_none():
+    assert L.matchup_outcome("main_red", "main_blue", scored=True) is None
+
+
+class _FakeMetricsLogger:
+    def __init__(self):
+        self.logged = []
+
+    def log_value(self, key, value, **kw):
+        self.logged.append((key, value))
+
+
+def _ended_episode(red_mod, blue_mod, scored):
+    mapping = {"red_0": red_mod, "blue_0": blue_mod}
+    return types.SimpleNamespace(
+        id_="ep1",
+        custom_data={"score_acc": {"scored": scored, "min_dist": 1.0}},
+        module_for=lambda aid, m=mapping: m[aid],
+    )
+
+
+def test_on_episode_end_logs_main_vs_frozen_winrate():
+    cb = L.LeagueCallback()
+    logger = _FakeMetricsLogger()
+    cb.on_episode_end(
+        episode=_ended_episode("main_red", "blue_pop_v1", scored=True),
+        metrics_logger=logger)
+    assert ("league_wr_vs_blue_pop_v1", 1.0) in logger.logged
+
+
+def test_on_episode_end_skips_live_and_unaccumulated_episodes():
+    cb = L.LeagueCallback()
+    logger = _FakeMetricsLogger()
+    cb.on_episode_end(
+        episode=_ended_episode("main_red", "main_blue", scored=True),
+        metrics_logger=logger)
+    ep = _ended_episode("main_red", "blue_pop_v1", scored=True)
+    ep.custom_data = {}   # ScoreMetricsCallback absent -> no acc -> skip
+    cb.on_episode_end(episode=ep, metrics_logger=logger)
+    assert logger.logged == []
+
+
 class _FakeModule:
     def __init__(self, ids):
         self._ids = set(ids)
