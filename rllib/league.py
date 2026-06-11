@@ -287,6 +287,16 @@ class LeagueCallback(RLlibCallback):
         super().__init__()
         self._cfg: dict = {}
         self._last_snapshot_iter = {"red": 0, "blue": 0}
+        # Two-phase pruning: victim module id -> iteration it was marked. A
+        # pending member is out of the mapping fn immediately but only
+        # physically removed after the grace period, because in-flight episodes
+        # keep their old agent->module mapping until they end (RLlib contract)
+        # and would KeyError on a module yanked mid-episode.
+        self._pending_removal: dict[str, int] = {}
+        # Highest snapshot version ever issued per side this run; prevents a
+        # pruned id from being recycled (which would inherit the stale metric
+        # window of the dead policy).
+        self._version_floor = {"red": 0, "blue": 0}
 
     def _league_cfg(self, algorithm) -> dict:
         return dict(algorithm.config.env_config.get("league", {}))
@@ -295,7 +305,17 @@ class LeagueCallback(RLlibCallback):
         self._cfg = self._league_cfg(algorithm)
         it = int(algorithm.iteration)
         self._last_snapshot_iter = {"red": it, "blue": it}
+        # Restore note: pending removals and the version floor reset here. A
+        # victim checkpointed mid-grace rejoins the active population (one
+        # member over cap until the next prune) and a pruned max-version id can
+        # be reused across a restore — both bounded, same class as the
+        # cooldown reset.
+        self._pending_removal = {}
         module_ids = _algo_module_ids(algorithm)
+        self._version_floor = {
+            "red": next_version(module_ids, RED_POP_RE) - 1,
+            "blue": next_version(module_ids, BLUE_POP_RE) - 1,
+        }
         _refresh_mapping_fn(algorithm, make_league_mapping_fn(module_ids, self._cfg))
 
     def on_episode_end(self, *, episode, metrics_logger=None, **kwargs) -> None:
@@ -322,39 +342,66 @@ class LeagueCallback(RLlibCallback):
         if not self._cfg:
             self._cfg = self._league_cfg(algorithm)
         it = int(algorithm.iteration)
-        active_ids = _algo_module_ids(algorithm)
+        self._process_pending_removals(algorithm, it)
+        active_ids = _algo_module_ids(algorithm) - set(self._pending_removal)
         winrates = collect_winrates(result, active_ids)
         for side, metric_name, main_id, regex in _SIDES:
             metric = read_metric(result, metric_name)
             if metric is None:
                 continue
+            pop = population_members(active_ids, regex)
+            victim = None
+            if len(pop) >= int(self._cfg["population_cap"]):
+                victim = prune_candidate(
+                    pop, winrates,
+                    float(self._cfg.get("prune_winrate_threshold", 0.8)))
             if should_snapshot(
                 metric=metric,
                 threshold=float(self._cfg["snapshot_threshold"]),
                 iters_since_last=it - self._last_snapshot_iter[side],
                 cooldown=int(self._cfg["min_iters_between_snapshots"]),
-                pop_size=len(population_members(active_ids, regex)),
+                pop_size=len(pop) - (1 if victim else 0),
                 cap=int(self._cfg["population_cap"]),
             ):
-                self._snapshot(algorithm, main_id, regex, active_ids)
+                if victim is not None:
+                    self._pending_removal[victim] = it
+                    active_ids = active_ids - {victim}
+                self._snapshot(algorithm, main_id, side, regex, active_ids)
                 self._last_snapshot_iter[side] = it
-                active_ids = _algo_module_ids(algorithm)
+                active_ids = _algo_module_ids(algorithm) - set(self._pending_removal)
         # PFSP weights move every iteration -> rebuild + reinstall the mapping
         # fn each time (the same cheap config overwrite the restore path uses).
         # This also supersedes the uniform fn add_module just installed when a
-        # snapshot fired above.
+        # snapshot fired above, and drops pending victims from new matchups.
         self._refresh(algorithm, active_ids, winrates)
         report_league(result, active_ids, winrates, self._cfg)
+        result["league"]["pending_removals"] = len(self._pending_removal)
 
     def _refresh(self, algorithm, module_ids, winrates) -> None:
         _refresh_mapping_fn(
             algorithm, make_league_mapping_fn(module_ids, self._cfg, winrates))
 
-    def _snapshot(self, algorithm, main_id, regex, module_ids) -> None:
-        new_id = (
-            f"red_pop_v{next_version(module_ids, regex)}" if regex is RED_POP_RE
-            else f"blue_pop_v{next_version(module_ids, regex)}"
-        )
+    def _process_pending_removals(self, algorithm, it: int) -> None:
+        """Physically remove victims whose grace period has elapsed. By now no
+        env runner routes new episodes to them (excluded from the mapping fn
+        since mark time) and in-flight episodes from before the mark have ended
+        (grace_iters x batch >= episode length — see conf/league/default.yaml)."""
+        grace = int(self._cfg.get("prune_grace_iters", 2))
+        due = [m for m, marked in self._pending_removal.items()
+               if it - marked >= grace]
+        for victim in due:
+            algorithm.remove_module(
+                module_id=victim,
+                new_should_module_be_updated=["main_red", "main_blue"],
+            )
+            del self._pending_removal[victim]
+
+    def _snapshot(self, algorithm, main_id, side, regex, module_ids) -> None:
+        ver = max(next_version(module_ids, regex), self._version_floor[side] + 1)
+        self._version_floor[side] = ver
+        new_id = f"{side}_pop_v{ver}"
+        # Uniform fn at add time is fine — the trailing _refresh in
+        # on_train_result reinstalls the PFSP-weighted fn in the same call.
         new_mapping_fn = make_league_mapping_fn(module_ids | {new_id}, self._cfg)
         # Add a fresh (main-arch) module, kept out of the gradient update, and
         # refresh the mapping fn across the env-runner group in the same call.

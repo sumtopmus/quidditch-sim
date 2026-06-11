@@ -239,6 +239,7 @@ class _FakeAlgo:
         self.env_runner = types.SimpleNamespace(module=self._module)
         self.added = []
         self.set_states = []
+        self.removed = []
     def get_module(self, module_id=None):
         if module_id is None:
             return self._module  # the MultiRLModule (has .keys())
@@ -250,10 +251,15 @@ class _FakeAlgo:
         self._module._ids.add(module_id)  # reflect the new member
     def set_state(self, state):
         self.set_states.append(state)
+    def remove_module(self, module_id, **kw):
+        self.removed.append(module_id)
+        self._module._ids.discard(module_id)
 
 
 _LEAGUE_CFG = {"snapshot_threshold": 0.7, "min_iters_between_snapshots": 20,
-               "population_cap": 5, "live_fraction": 0.5}
+               "population_cap": 5, "live_fraction": 0.5,
+               "pfsp_exponent": 2.0, "pfsp_uniform_floor": 0.1,
+               "prune_winrate_threshold": 0.8, "prune_grace_iters": 2}
 
 
 def test_collect_winrates_reads_only_population_keys():
@@ -325,6 +331,78 @@ def test_callback_respects_cooldown():
     cb.on_train_result(algorithm=algo,
                        result={"env_runners": {"red_score_rate": 0.95}})
     assert algo.added == []
+
+
+def _prune_cfg(**over):
+    return {**_LEAGUE_CFG, "population_cap": 1,
+            "min_iters_between_snapshots": 0, **over}
+
+
+def test_callback_prunes_most_dominated_at_cap(monkeypatch):
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "blue_pop_v1"},
+                     iteration=0, league_cfg=_prune_cfg())
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 1
+    cb.on_train_result(algorithm=algo, result={"env_runners": {
+        "blue_prevention_rate": 0.9,        # blue snapshot due, blue_pop at cap
+        "red_score_rate": 0.0,              # red side quiet
+        "league_wr_vs_blue_pop_v1": 0.95,   # v1 dominated -> prunable
+    }})
+    assert "blue_pop_v2" in algo.added                  # snapshot proceeded
+    assert "blue_pop_v1" in cb._pending_removal         # victim marked...
+    assert algo.removed == []                           # ...not yet removed
+
+
+def test_pending_removal_executes_after_grace(monkeypatch):
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "blue_pop_v1"},
+                     iteration=0, league_cfg=_prune_cfg(prune_grace_iters=2))
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 1
+    cb.on_train_result(algorithm=algo, result={"env_runners": {
+        "blue_prevention_rate": 0.9, "red_score_rate": 0.0,
+        "league_wr_vs_blue_pop_v1": 0.95}})
+    quiet = {"env_runners": {"blue_prevention_rate": 0.0, "red_score_rate": 0.0}}
+    algo.iteration = 2
+    cb.on_train_result(algorithm=algo, result=dict(quiet))   # grace not elapsed
+    assert algo.removed == []
+    algo.iteration = 3
+    cb.on_train_result(algorithm=algo, result=dict(quiet))   # 3 - 1 >= 2 -> due
+    assert algo.removed == ["blue_pop_v1"]
+    assert "blue_pop_v1" not in cb._pending_removal
+
+
+def test_no_snapshot_at_cap_when_no_member_is_dominated(monkeypatch):
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "blue_pop_v1"},
+                     iteration=0, league_cfg=_prune_cfg())
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 1
+    cb.on_train_result(algorithm=algo, result={"env_runners": {
+        "blue_prevention_rate": 0.9, "red_score_rate": 0.0,
+        "league_wr_vs_blue_pop_v1": 0.4}})   # still challenging -> keep
+    assert algo.added == []                  # Step-3 stop-at-cap preserved
+    assert cb._pending_removal == {}
+
+
+def test_snapshot_version_never_reused_after_prune(monkeypatch):
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "blue_pop_v1"},
+                     iteration=0, league_cfg=_prune_cfg())
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 1
+    cb.on_train_result(algorithm=algo, result={"env_runners": {
+        "blue_prevention_rate": 0.9, "red_score_rate": 0.0,
+        "league_wr_vs_blue_pop_v1": 0.95}})
+    # the active pop at snapshot time was empty (v1 pending), yet the version
+    # floor prevents recycling v1 for a brand-new policy
+    assert "blue_pop_v2" in algo.added
+    assert "blue_pop_v1" not in algo.added
 
 
 def test_callback_reconstructs_membership_and_refreshes_on_init():
