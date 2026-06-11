@@ -43,6 +43,29 @@ def _episode(eid):
     return types.SimpleNamespace(id_=eid)
 
 
+def test_pfsp_weights_prioritizes_hard_opponents():
+    probs = L.pfsp_weights({"a": 0.9, "b": 0.1}, exponent=2.0, floor=0.0)
+    assert abs(sum(probs.values()) - 1.0) < 1e-9
+    # raw weights (1-0.9)^2 = 0.01 vs (1-0.1)^2 = 0.81 -> b gets ~98.8%
+    assert probs["b"] > 0.95 > probs["a"] > 0.0
+
+
+def test_pfsp_weights_uniform_floor_is_anti_forgetting():
+    probs = L.pfsp_weights({"a": 1.0, "b": 0.0}, exponent=2.0, floor=0.2)
+    # 'a' is fully dominated; the floor still guarantees it floor/N mass
+    assert abs(probs["a"] - 0.1) < 1e-9
+    assert abs(probs["b"] - 0.9) < 1e-9
+
+
+def test_pfsp_weights_all_dominated_falls_back_to_uniform():
+    assert L.pfsp_weights({"a": 1.0, "b": 1.0}, exponent=2.0, floor=0.0) == {
+        "a": 0.5, "b": 0.5}
+
+
+def test_pfsp_weights_empty():
+    assert L.pfsp_weights({}, exponent=2.0, floor=0.1) == {}
+
+
 def test_episode_roll_deterministic_salted_and_bounded():
     ep = _episode("abc")
     r = L._episode_roll(ep, "mode")

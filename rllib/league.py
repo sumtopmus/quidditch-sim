@@ -32,6 +32,28 @@ def next_version(module_ids: Iterable[str], regex: re.Pattern) -> int:
     return (max(versions) + 1) if versions else 1
 
 
+WINRATE_DEFAULT = 0.5   # assumed winrate vs an opponent with no data yet
+
+
+def pfsp_weights(
+    winrates: dict[str, float], exponent: float, floor: float
+) -> dict[str, float]:
+    """Normalized PFSP sampling probabilities over frozen opponents.
+
+    P(o) ∝ (1 − winrate_vs_o)^exponent — concentrate on opponents the main
+    struggles against — mixed with a uniform floor so dominated opponents keep
+    nonzero mass (anti-forgetting). All-dominated (Σ raw = 0) → uniform.
+    """
+    if not winrates:
+        return {}
+    raw = {m: (1.0 - min(max(w, 0.0), 1.0)) ** exponent for m, w in winrates.items()}
+    total = sum(raw.values())
+    n = len(raw)
+    if total <= 0.0:
+        return {m: 1.0 / n for m in raw}
+    return {m: (1.0 - floor) * v / total + floor / n for m, v in raw.items()}
+
+
 def read_metric(result: dict, name: str) -> Optional[float]:
     """Recursively find `name` anywhere in the (nested) train result dict.
 
