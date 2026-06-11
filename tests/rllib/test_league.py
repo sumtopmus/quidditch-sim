@@ -43,6 +43,49 @@ def _episode(eid):
     return types.SimpleNamespace(id_=eid)
 
 
+def test_pfsp_weights_prioritizes_hard_opponents():
+    probs = L.pfsp_weights({"a": 0.9, "b": 0.1}, exponent=2.0, floor=0.0)
+    assert abs(sum(probs.values()) - 1.0) < 1e-9
+    # raw weights (1-0.9)^2 = 0.01 vs (1-0.1)^2 = 0.81 -> b gets ~98.8%
+    assert probs["b"] > 0.95 > probs["a"] > 0.0
+
+
+def test_pfsp_weights_uniform_floor_is_anti_forgetting():
+    probs = L.pfsp_weights({"a": 1.0, "b": 0.0}, exponent=2.0, floor=0.2)
+    # 'a' is fully dominated; the floor still guarantees it floor/N mass
+    assert abs(probs["a"] - 0.1) < 1e-9
+    assert abs(probs["b"] - 0.9) < 1e-9
+
+
+def test_pfsp_weights_all_dominated_falls_back_to_uniform():
+    assert L.pfsp_weights({"a": 1.0, "b": 1.0}, exponent=2.0, floor=0.0) == {
+        "a": 0.5, "b": 0.5}
+
+
+def test_pfsp_weights_empty():
+    assert L.pfsp_weights({}, exponent=2.0, floor=0.1) == {}
+
+
+def test_weighted_pick_respects_cumulative_probs():
+    items, probs = ["a", "b"], {"a": 0.25, "b": 0.75}
+    assert L.weighted_pick(items, probs, 0.0) == "a"
+    assert L.weighted_pick(items, probs, 0.24) == "a"
+    assert L.weighted_pick(items, probs, 0.25) == "b"
+    assert L.weighted_pick(items, probs, 0.999) == "b"
+    # float-accumulation guard: a roll at/above the total still returns an item
+    assert L.weighted_pick(items, probs, 1.0) == "b"
+
+
+def test_episode_roll_deterministic_salted_and_bounded():
+    ep = _episode("abc")
+    r = L._episode_roll(ep, "mode")
+    assert r == L._episode_roll(ep, "mode")          # deterministic
+    assert 0.0 <= r < 1.0
+    # different salts and different episode ids give different draws
+    assert r != L._episode_roll(ep, "member")
+    assert r != L._episode_roll(_episode("xyz"), "mode")
+
+
 def test_mapping_is_live_when_populations_empty():
     fn = L.make_league_mapping_fn({"main_red", "main_blue"}, {"live_fraction": 0.5})
     for eid in range(50):
@@ -87,6 +130,81 @@ def test_mapping_empty_pop_falls_back_to_live():
         assert red in ("main_red", "red_pop_v1")   # live or blue-exploits
 
 
+def test_mapping_pfsp_concentrates_on_hard_opponents():
+    ids = {"main_red", "main_blue", "blue_pop_v1", "blue_pop_v2"}
+    cfg = {"live_fraction": 0.0, "pfsp_exponent": 2.0, "pfsp_uniform_floor": 0.0}
+    # main_red dominates v1 (wr 0.9) and struggles vs v2 (wr 0.1)
+    fn = L.make_league_mapping_fn(
+        ids, cfg, winrates={"blue_pop_v1": 0.9, "blue_pop_v2": 0.1})
+    picks = [fn("blue_0", _episode(eid)) for eid in range(4000)]
+    frozen = [p for p in picks if p != "main_blue"]
+    assert frozen, "expected red-exploits episodes"
+    assert frozen.count("blue_pop_v2") / len(frozen) > 0.9   # ~0.988 expected
+
+
+def test_mapping_without_winrates_is_uniform():
+    ids = {"main_red", "main_blue", "blue_pop_v1", "blue_pop_v2"}
+    fn = L.make_league_mapping_fn(ids, {"live_fraction": 0.0})
+    picks = [fn("blue_0", _episode(eid)) for eid in range(4000)]
+    frozen = [p for p in picks if p != "main_blue"]
+    assert 0.4 < frozen.count("blue_pop_v1") / len(frozen) < 0.6
+
+
+def test_matchup_outcome_main_vs_frozen():
+    # red main vs frozen blue: red's win = it scored
+    assert L.matchup_outcome("main_red", "blue_pop_v1", scored=True) == (
+        "league_wr_vs_blue_pop_v1", 1.0)
+    assert L.matchup_outcome("main_red", "blue_pop_v1", scored=False) == (
+        "league_wr_vs_blue_pop_v1", 0.0)
+    # blue main vs frozen red: blue's win = it prevented the score
+    assert L.matchup_outcome("red_pop_v3", "main_blue", scored=False) == (
+        "league_wr_vs_red_pop_v3", 1.0)
+    assert L.matchup_outcome("red_pop_v3", "main_blue", scored=True) == (
+        "league_wr_vs_red_pop_v3", 0.0)
+
+
+def test_matchup_outcome_live_episode_is_none():
+    assert L.matchup_outcome("main_red", "main_blue", scored=True) is None
+
+
+class _FakeMetricsLogger:
+    def __init__(self):
+        self.logged = []
+
+    def log_value(self, key, value, **kw):
+        self.logged.append((key, value))
+
+
+def _ended_episode(red_mod, blue_mod, scored):
+    mapping = {"red_0": red_mod, "blue_0": blue_mod}
+    return types.SimpleNamespace(
+        id_="ep1",
+        custom_data={"score_acc": {"scored": scored, "min_dist": 1.0}},
+        module_for=lambda aid, m=mapping: m[aid],
+    )
+
+
+def test_on_episode_end_logs_main_vs_frozen_winrate():
+    cb = L.LeagueCallback()
+    logger = _FakeMetricsLogger()
+    cb.on_episode_end(
+        episode=_ended_episode("main_red", "blue_pop_v1", scored=True),
+        metrics_logger=logger)
+    assert ("league_wr_vs_blue_pop_v1", 1.0) in logger.logged
+
+
+def test_on_episode_end_skips_live_and_unaccumulated_episodes():
+    cb = L.LeagueCallback()
+    logger = _FakeMetricsLogger()
+    cb.on_episode_end(
+        episode=_ended_episode("main_red", "main_blue", scored=True),
+        metrics_logger=logger)
+    ep = _ended_episode("main_red", "blue_pop_v1", scored=True)
+    ep.custom_data = {}   # ScoreMetricsCallback absent -> no acc -> skip
+    cb.on_episode_end(episode=ep, metrics_logger=logger)
+    assert logger.logged == []
+
+
 class _FakeModule:
     def __init__(self, ids):
         self._ids = set(ids)
@@ -121,6 +239,7 @@ class _FakeAlgo:
         self.env_runner = types.SimpleNamespace(module=self._module)
         self.added = []
         self.set_states = []
+        self.removed = []
     def get_module(self, module_id=None):
         if module_id is None:
             return self._module  # the MultiRLModule (has .keys())
@@ -132,10 +251,58 @@ class _FakeAlgo:
         self._module._ids.add(module_id)  # reflect the new member
     def set_state(self, state):
         self.set_states.append(state)
+    def remove_module(self, module_id, **kw):
+        self.removed.append(module_id)
+        self._module._ids.discard(module_id)
 
 
 _LEAGUE_CFG = {"snapshot_threshold": 0.7, "min_iters_between_snapshots": 20,
-               "population_cap": 5, "live_fraction": 0.5}
+               "population_cap": 5, "live_fraction": 0.5,
+               "pfsp_exponent": 2.0, "pfsp_uniform_floor": 0.1,
+               "prune_winrate_threshold": 0.8, "prune_grace_iters": 2}
+
+
+def test_collect_winrates_reads_only_population_keys():
+    ids = {"main_red", "main_blue", "red_pop_v1", "blue_pop_v1"}
+    result = {"env_runners": {"league_wr_vs_red_pop_v1": 0.8, "noise": 1.0}}
+    assert L.collect_winrates(result, ids) == {"red_pop_v1": 0.8}
+
+
+def test_report_league_writes_winrates_and_pfsp_probs():
+    result = {}
+    ids = {"main_red", "main_blue", "blue_pop_v1", "blue_pop_v2"}
+    L.report_league(result, ids, {"blue_pop_v1": 0.9},
+                    {"pfsp_exponent": 2.0, "pfsp_uniform_floor": 0.0})
+    league = result["league"]
+    assert league["wr_vs_blue_pop_v1"] == 0.9
+    assert league["wr_vs_blue_pop_v2"] == L.WINRATE_DEFAULT   # unseen
+    total = league["pfsp_p_blue_pop_v1"] + league["pfsp_p_blue_pop_v2"]
+    assert abs(total - 1.0) < 1e-9
+    assert league["pfsp_p_blue_pop_v2"] > league["pfsp_p_blue_pop_v1"]
+
+
+def test_on_train_result_refreshes_mapping_fn_every_iteration():
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "blue_pop_v1"},
+                     iteration=5, league_cfg=_LEAGUE_CFG)
+    cb.on_algorithm_init(algorithm=algo)
+    before = algo.env_runner_group.refreshed
+    cb.on_train_result(algorithm=algo,
+                       result={"env_runners": {"red_score_rate": 0.0,
+                                               "blue_prevention_rate": 0.0}})
+    assert algo.env_runner_group.refreshed > before   # PFSP weights reinstalled
+
+
+def test_prune_candidate_picks_most_dominated():
+    pop = ["red_pop_v1", "red_pop_v2", "red_pop_v3"]
+    wr = {"red_pop_v1": 0.95, "red_pop_v2": 0.85, "red_pop_v3": 0.4}
+    assert L.prune_candidate(pop, wr, threshold=0.8) == "red_pop_v1"
+
+
+def test_prune_candidate_none_when_population_still_challenging():
+    pop = ["red_pop_v1", "red_pop_v2"]
+    wr = {"red_pop_v1": 0.6}   # v2 unseen -> WINRATE_DEFAULT (0.5)
+    assert L.prune_candidate(pop, wr, threshold=0.8) is None
 
 
 def test_callback_snapshots_red_when_threshold_cleared(monkeypatch):
@@ -164,6 +331,78 @@ def test_callback_respects_cooldown():
     cb.on_train_result(algorithm=algo,
                        result={"env_runners": {"red_score_rate": 0.95}})
     assert algo.added == []
+
+
+def _prune_cfg(**over):
+    return {**_LEAGUE_CFG, "population_cap": 1,
+            "min_iters_between_snapshots": 0, **over}
+
+
+def test_callback_prunes_most_dominated_at_cap(monkeypatch):
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "blue_pop_v1"},
+                     iteration=0, league_cfg=_prune_cfg())
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 1
+    cb.on_train_result(algorithm=algo, result={"env_runners": {
+        "blue_prevention_rate": 0.9,        # blue snapshot due, blue_pop at cap
+        "red_score_rate": 0.0,              # red side quiet
+        "league_wr_vs_blue_pop_v1": 0.95,   # v1 dominated -> prunable
+    }})
+    assert "blue_pop_v2" in algo.added                  # snapshot proceeded
+    assert "blue_pop_v1" in cb._pending_removal         # victim marked...
+    assert algo.removed == []                           # ...not yet removed
+
+
+def test_pending_removal_executes_after_grace(monkeypatch):
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "blue_pop_v1"},
+                     iteration=0, league_cfg=_prune_cfg(prune_grace_iters=2))
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 1
+    cb.on_train_result(algorithm=algo, result={"env_runners": {
+        "blue_prevention_rate": 0.9, "red_score_rate": 0.0,
+        "league_wr_vs_blue_pop_v1": 0.95}})
+    quiet = {"env_runners": {"blue_prevention_rate": 0.0, "red_score_rate": 0.0}}
+    algo.iteration = 2
+    cb.on_train_result(algorithm=algo, result=dict(quiet))   # grace not elapsed
+    assert algo.removed == []
+    algo.iteration = 3
+    cb.on_train_result(algorithm=algo, result=dict(quiet))   # 3 - 1 >= 2 -> due
+    assert algo.removed == ["blue_pop_v1"]
+    assert "blue_pop_v1" not in cb._pending_removal
+
+
+def test_no_snapshot_at_cap_when_no_member_is_dominated(monkeypatch):
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "blue_pop_v1"},
+                     iteration=0, league_cfg=_prune_cfg())
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 1
+    cb.on_train_result(algorithm=algo, result={"env_runners": {
+        "blue_prevention_rate": 0.9, "red_score_rate": 0.0,
+        "league_wr_vs_blue_pop_v1": 0.4}})   # still challenging -> keep
+    assert algo.added == []                  # Step-3 stop-at-cap preserved
+    assert cb._pending_removal == {}
+
+
+def test_snapshot_version_never_reused_after_prune(monkeypatch):
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue", "blue_pop_v1"},
+                     iteration=0, league_cfg=_prune_cfg())
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 1
+    cb.on_train_result(algorithm=algo, result={"env_runners": {
+        "blue_prevention_rate": 0.9, "red_score_rate": 0.0,
+        "league_wr_vs_blue_pop_v1": 0.95}})
+    # the active pop at snapshot time was empty (v1 pending), yet the version
+    # floor prevents recycling v1 for a brand-new policy
+    assert "blue_pop_v2" in algo.added
+    assert "blue_pop_v1" not in algo.added
 
 
 def test_callback_reconstructs_membership_and_refreshes_on_init():
