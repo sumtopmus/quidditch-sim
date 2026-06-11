@@ -6,7 +6,10 @@ hands the loop to Tune with the native W&B logger.
 """
 from __future__ import annotations
 
+from pathlib import Path
+
 import hydra
+from hydra.core.hydra_config import HydraConfig
 from hydra.utils import instantiate
 from omegaconf import DictConfig
 
@@ -34,11 +37,18 @@ def main(cfg: DictConfig) -> None:
     if cfg.tune.wandb.enabled:
         callbacks.append(WandbLoggerCallback(project=cfg.tune.wandb.project))
 
+    # Anchor Tune's output inside the Hydra run dir (runs/<run_name>/<ts>/),
+    # next to .hydra/ — without this, Tune defaults to ~/ray_results. Must be
+    # absolute (Tune rejects relative storage paths); hydra.job.chdir=false
+    # keeps cwd at the repo root, so resolve() yields the checked-out tree.
+    storage_path = Path(HydraConfig.get().runtime.output_dir).resolve()
+
     tuner = tune.Tuner(
         ppo_config.algo_class,
         param_space=ppo_config,
         run_config=RunConfig(
-            name=cfg.run_name,
+            name="tune",
+            storage_path=str(storage_path),
             stop={"num_env_steps_sampled_lifetime": int(cfg.algo.total_timesteps)},
             checkpoint_config=CheckpointConfig(
                 checkpoint_frequency=int(cfg.tune.checkpoint_frequency),
