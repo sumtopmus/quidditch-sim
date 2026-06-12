@@ -105,12 +105,19 @@ def rollout_battery(env, act_red, act_blue, *, n_episodes: int, seed: int) -> di
     return battery_metrics(acc)
 
 
-def module_action_fn(module):
-    """Wrap an RLModule into a deterministic obs->action callable.
+def module_action_fn(module, *, deterministic: bool = True, rng=None):
+    """Wrap an RLModule into an obs->action callable.
 
-    Uses forward_inference and takes the action distribution's mean (the first
-    half of action_dist_inputs for a DiagGaussian over the Box(4) action) — the
-    greedy/deterministic action. torch is imported lazily so the pure-aggregation
+    forward_inference emits action_dist_inputs = [mean, log_std] for a
+    DiagGaussian over the Box(4) action. With deterministic=True (default) the
+    action is the mean (greedy). With deterministic=False and a numpy Generator
+    `rng`, the action is sampled: mean + exp(log_std) * N(0, 1).
+
+    The eval battery samples (deterministic=False): from a FIXED start a mean
+    policy gives byte-identical episodes -> a binary score-rate that defeats the
+    graded asymmetric snapshot threshold. Sampling makes the metric a graded
+    fraction of the policy's true competence; a seeded `rng` keeps a given
+    policy's eval reproducible. torch is imported lazily so the pure-aggregation
     layer stays dependency-free.
     """
     import torch
@@ -120,10 +127,13 @@ def module_action_fn(module):
         obs_t = torch.as_tensor(np.asarray(obs, dtype=np.float32)).unsqueeze(0)
         with torch.no_grad():
             out = module.forward_inference({Columns.OBS: obs_t})
-        dist_inputs = out[Columns.ACTION_DIST_INPUTS][0]
+        dist_inputs = out[Columns.ACTION_DIST_INPUTS][0].cpu().numpy().astype(np.float32)
         action_dim = dist_inputs.shape[-1] // 2   # [mean, log_std]
         mean = dist_inputs[:action_dim]
-        return mean.cpu().numpy().astype(np.float32)
+        if deterministic or rng is None:
+            return mean
+        std = np.exp(dist_inputs[action_dim:2 * action_dim])
+        return (mean + std * rng.standard_normal(action_dim)).astype(np.float32)
 
     return _act
 
@@ -186,13 +196,19 @@ class EvalBatteryCallback(RLlibCallback):
 
     def _run_battery(self, algorithm, cfg: dict) -> dict:
         env = _build_eval_env(algorithm.config.env_config)
+        seed = int(cfg.get("eval_seed", 12345))
+        # Stochastic, seeded eval: a GRADED score-rate (which the asymmetric
+        # snapshot threshold needs), reproducible across evals of the same policy.
+        rng = np.random.default_rng(seed)
         try:
-            act_red = module_action_fn(algorithm.get_module(_MAIN_RED))
-            act_blue = module_action_fn(algorithm.get_module(_MAIN_BLUE))
+            act_red = module_action_fn(
+                algorithm.get_module(_MAIN_RED), deterministic=False, rng=rng)
+            act_blue = module_action_fn(
+                algorithm.get_module(_MAIN_BLUE), deterministic=False, rng=rng)
             return rollout_battery(
                 env, act_red, act_blue,
                 n_episodes=int(cfg.get("eval_episodes", 20)),
-                seed=int(cfg.get("eval_seed", 12345)),
+                seed=seed,
             )
         finally:
             close = getattr(env, "close", None)

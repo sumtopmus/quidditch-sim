@@ -115,6 +115,40 @@ def test_module_action_fn_returns_deterministic_mean():
     assert np.allclose(a, [0.0, 1.0, 2.0, 3.0])   # the mean, not a sample
 
 
+def test_module_action_fn_stochastic_sampling_is_graded_and_seeded():
+    """deterministic=False samples from the action distribution (mean + std*N(0,1)).
+
+    The fixed-start eval battery with a deterministic (mean) policy produces
+    byte-identical episodes -> a binary eval_red_score_rate, which defeats the
+    graded asymmetric snapshot threshold. Stochastic sampling makes the metric a
+    graded fraction of the policy's true competence; a seeded rng keeps it
+    reproducible across evals of the same policy.
+    """
+    import numpy as np
+    import torch
+    from ray.rllib.core.columns import Columns
+
+    class _FakeModule:
+        """mean=0, log_std=0 (std=1) -> samples are unit-Gaussian around 0."""
+        def forward_inference(self, batch):
+            n = batch[Columns.OBS].shape[0]
+            return {Columns.ACTION_DIST_INPUTS: torch.zeros(n, 8)}
+
+    m = _FakeModule()
+    obs = np.zeros(8, dtype=np.float32)
+    # deterministic (default) -> the mean (zeros).
+    assert np.allclose(EB.module_action_fn(m)(obs), np.zeros(4))
+    # stochastic with a seeded rng -> a sample, NOT the mean; same seed reproduces.
+    s1 = EB.module_action_fn(m, deterministic=False, rng=np.random.default_rng(0))(obs)
+    s2 = EB.module_action_fn(m, deterministic=False, rng=np.random.default_rng(0))(obs)
+    assert s1.shape == (4,)
+    assert not np.allclose(s1, np.zeros(4))    # sampled, not the mean
+    assert np.allclose(s1, s2)                 # seeded -> reproducible
+    # consecutive draws from one rng differ -> graded trajectories across episodes
+    fn = EB.module_action_fn(m, deterministic=False, rng=np.random.default_rng(1))
+    assert not np.allclose(fn(obs), fn(obs))
+
+
 import types
 
 
@@ -144,7 +178,7 @@ def test_eval_callback_runs_on_cadence_and_caches(monkeypatch):
     # Stub the env build + rollout so the test needs no MuJoCo.
     monkeypatch.setattr(EB, "_build_eval_env", lambda env_config: object())
     monkeypatch.setattr(EB, "rollout_battery", fake_battery)
-    monkeypatch.setattr(EB, "module_action_fn", lambda m: (lambda o: o))
+    monkeypatch.setattr(EB, "module_action_fn", lambda m, **kw: (lambda o: o))
 
     cb = EB.EvalBatteryCallback()
     algo = _eval_algo({"eval_enabled": True, "eval_interval_iters": 5,

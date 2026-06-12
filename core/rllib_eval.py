@@ -38,14 +38,20 @@ def _env_config_from_run(run_dir: Path) -> dict:
 def run_rllib_battery(checkpoint_dir: Path, run_dir: Path, *,
                       n_episodes: int, seed: int) -> dict:
     """Load both mains from the checkpoint and run the head-to-head battery."""
+    import numpy as np
+
     from envs.quidditch.rllib_env import make_team_env
     from core.rllib_checkpoint import load_rl_module
     from rllib.eval_battery import rollout_battery, module_action_fn
 
     env = make_team_env(_env_config_from_run(run_dir))
+    # Stochastic, seeded eval (matches the in-training battery) -> a graded rate.
+    rng = np.random.default_rng(seed)
     try:
-        red = module_action_fn(load_rl_module(checkpoint_dir, "main_red"))
-        blue = module_action_fn(load_rl_module(checkpoint_dir, "main_blue"))
+        red = module_action_fn(load_rl_module(checkpoint_dir, "main_red"),
+                               deterministic=False, rng=rng)
+        blue = module_action_fn(load_rl_module(checkpoint_dir, "main_blue"),
+                                deterministic=False, rng=rng)
         return rollout_battery(env, red, blue, n_episodes=n_episodes, seed=seed)
     finally:
         close = getattr(env, "close", None)
