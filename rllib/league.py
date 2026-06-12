@@ -378,7 +378,8 @@ class LeagueCallback(RLlibCallback):
                     float(self._cfg.get("prune_winrate_threshold", 0.8)))
             if should_snapshot(
                 metric=metric,
-                threshold=float(self._cfg["snapshot_threshold"]),
+                threshold=float(self._cfg.get(
+                    f"snapshot_threshold_{side}", self._cfg["snapshot_threshold"])),
                 iters_since_last=it - self._last_snapshot_iter[side],
                 cooldown=int(self._cfg["min_iters_between_snapshots"]),
                 pop_size=len(pop) - (1 if victim else 0),

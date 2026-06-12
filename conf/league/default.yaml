@@ -39,3 +39,9 @@ eval_enabled: true
 eval_interval_iters: 10
 eval_episodes: 20
 eval_seed: 12345
+
+# Per-side snapshot thresholds (Step 5a). Asymmetric roles need asymmetric bars:
+# the Step-4 run showed Red's score-rate rarely holds >= 0.7 against a competent
+# Blue, so Red never snapshotted. Absent keys fall back to snapshot_threshold.
+snapshot_threshold_red: 0.7
+snapshot_threshold_blue: 0.7

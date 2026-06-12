@@ -192,3 +192,49 @@ def test_eval_battery_callback_absent_when_disabled():
     cbs = config.callbacks_class
     cbs = list(cbs) if isinstance(cbs, (list, tuple)) else [cbs]
     assert EvalBatteryCallback not in cbs
+
+
+def test_curriculum_levers_and_schedules_thread_into_env_config():
+    from omegaconf import OmegaConf
+    from rllib.config_builder import build_ppo_config
+
+    cfg = _league_cfg()  # existing league-enabled inline cfg factory in this file
+    cfg = OmegaConf.merge(cfg, OmegaConf.create({"curriculum": {
+        "randomise_start": False, "episode_seconds": 30.0,
+        "red_start_pos": [0.5, 0.0, 2.0], "red_start_yaw": 0.0,
+        "red_action_scale": 0.6, "red_start_r_max": None,
+        "dense_scale_schedule": [[0, 1.0], [1000, 0.0]],
+        "red_action_scale_schedule": [[0, 0.6], [1000, 1.0]],
+        "red_start_r_max_schedule": None,
+    }}))
+    config = build_ppo_config(cfg)
+    ec = config.env_config
+    # Static lever lands in team_cfg (env construction reads it).
+    assert ec["team_cfg"]["red_action_scale"] == 0.6
+    # Schedules land in a dedicated curriculum block (the callback reads it).
+    assert ec["curriculum"]["dense_scale_schedule"] == [[0, 1.0], [1000, 0.0]]
+    assert ec["curriculum"]["red_action_scale_schedule"] == [[0, 0.6], [1000, 1.0]]
+
+
+def test_curriculum_callback_registered_when_schedule_present():
+    from omegaconf import OmegaConf
+    from rllib.config_builder import build_ppo_config
+    from rllib.curriculum import CurriculumCallback
+
+    cfg = _league_cfg()
+    cfg = OmegaConf.merge(cfg, OmegaConf.create({"curriculum": {
+        "randomise_start": False, "episode_seconds": 30.0,
+        "dense_scale_schedule": [[0, 1.0], [1000, 0.0]]}}))
+    cbs = build_ppo_config(cfg).callbacks_class
+    cbs = list(cbs) if isinstance(cbs, (list, tuple)) else [cbs]
+    assert CurriculumCallback in cbs
+
+
+def test_curriculum_callback_absent_without_schedule():
+    from rllib.config_builder import build_ppo_config
+    from rllib.curriculum import CurriculumCallback
+
+    cfg = _league_cfg()  # no curriculum schedules
+    cbs = build_ppo_config(cfg).callbacks_class
+    cbs = list(cbs) if isinstance(cbs, (list, tuple)) else [cbs]
+    assert CurriculumCallback not in cbs

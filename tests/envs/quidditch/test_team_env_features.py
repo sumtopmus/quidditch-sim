@@ -62,3 +62,37 @@ def test_take_down_fired_set_on_drone_drone_crash():
     assert infos["red_0"]["take_down_fired"] is True
     assert infos["blue_0"]["take_down_fired"] is True
     env.close()
+
+
+def test_red_action_scale_throttles_red_setpoint_delta():
+    """red_action_scale halves Red's setpoint movement but leaves Blue's full."""
+    import numpy as np
+    from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig, ACTION_SCALE
+
+    env = QuidditchTeamEnv(cfg=TeamConfig(randomise_red_start=False,
+                                          red_action_scale=0.5))
+    env.reset(seed=0)
+    sp_red0 = env._setpoint_red.copy()
+    sp_blue0 = env._setpoint_blue.copy()
+    a = np.ones(4, dtype=np.float32)
+    env.step({"red_0": a, "blue_0": a})
+    # Red moved by 0.5 * ACTION_SCALE; Blue by full ACTION_SCALE (x/y unclamped here).
+    assert np.allclose(env._setpoint_red[:2] - sp_red0[:2], 0.5 * ACTION_SCALE[:2])
+    assert np.allclose(env._setpoint_blue[:2] - sp_blue0[:2], ACTION_SCALE[:2])
+    env.close()
+
+
+def test_red_start_r_max_caps_random_disc():
+    """With randomise_red_start and a small r_max, every sampled start sits
+    within the cap (not the full 2.9 m disc)."""
+    import numpy as np
+    from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
+
+    env = QuidditchTeamEnv(cfg=TeamConfig(randomise_red_start=True,
+                                          red_start_r_max=0.5))
+    for seed in range(20):
+        pos, _ = env._sample_red_start() if False else (None, None)  # see note
+        env._np_random = np.random.default_rng(seed)
+        pos, _ = env._sample_red_start()
+        assert float(np.linalg.norm(pos[:2])) <= 0.5 + 1e-9
+    env.close()

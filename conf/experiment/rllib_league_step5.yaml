@@ -1,0 +1,21 @@
+# @package _global_
+# RLlib migration Step 5: league + curriculum + eval battery.
+#   - eval battery (5b) on: snapshots gate on clean eval_* metrics.
+#   - asymmetric snapshot thresholds: Red's bar lowered (it rarely held >=0.7).
+#   - dense->sparse reward anneal + Red action-authority ramp (league_anneal).
+run_name: rllib_league_step5
+
+defaults:
+  - override /obs: duel_v1_body_n1
+  - override /reward: team_selfplay_v1
+  - override /curriculum: league_anneal
+  - override /multiagent: red_blue_league
+  - override /league: default
+
+league:
+  snapshot_threshold_red: 0.5    # Red scores less often than Blue prevents
+  eval_enabled: true
+
+algo:
+  total_timesteps: 5_000_000
+seed: 42

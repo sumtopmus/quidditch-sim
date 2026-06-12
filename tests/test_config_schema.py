@@ -33,3 +33,13 @@ def test_top_level_config_has_description_field():
     cfg = OmegaConf.structured(Config)
     assert "description" in cfg
     assert cfg.description == ""
+
+
+def test_curriculum_schema_has_difficulty_levers_and_schedules():
+    from config_schema import CurriculumConfig
+    c = CurriculumConfig()
+    assert c.red_action_scale == 1.0
+    assert c.red_start_r_max is None
+    assert c.dense_scale_schedule is None
+    assert c.red_action_scale_schedule is None
+    assert c.red_start_r_max_schedule is None
