@@ -57,6 +57,24 @@ def _team_cfg_from(cfg: DictConfig) -> dict:
         if rsp is not None:
             out["red_start_pos"] = [float(v) for v in rsp]
         out["red_start_yaw"] = float(cur.get("red_start_yaw") or 0.0)
+        out["red_action_scale"] = float(cur.get("red_action_scale") or 1.0)
+        rrm = cur.get("red_start_r_max")
+        out["red_start_r_max"] = float(rrm) if rrm is not None else None
+    return out
+
+
+def _curriculum_dict_from(cfg: DictConfig) -> dict:
+    """Anneal schedules for CurriculumCallback. Plain Python (crosses the Ray
+    boundary into env_config). Empty when no curriculum group is composed."""
+    cur = cfg.get("curriculum")
+    if cur is None:
+        return {}
+    out: dict = {}
+    for key in ("dense_scale_schedule", "red_action_scale_schedule",
+                "red_start_r_max_schedule"):
+        sched = cur.get(key)
+        if sched is not None:
+            out[key] = [[float(t), float(v)] for t, v in sched]
     return out
 
 
@@ -125,6 +143,7 @@ def build_ppo_config(cfg: DictConfig, reward_stack=None) -> PPOConfig:
                 "team_cfg": _team_cfg_from(cfg),
                 "reward_stack": reward_stack,
                 "league": league_dict,
+                "curriculum": _curriculum_dict_from(cfg),
             },
         )
         .framework("torch")

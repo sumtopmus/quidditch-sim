@@ -90,6 +90,15 @@ class CurriculumConfig:
     # spawn [x, y, z] and yaw.  None → origin (legacy fixed-start behavior).
     red_start_pos: list[float] | None = None
     red_start_yaw: float = 0.0
+    # Difficulty levers (Step 5a) — static initial values; schedules below anneal
+    # them at runtime. red_start_r_max=None → full random-start disc.
+    red_action_scale: float = 1.0
+    red_start_r_max: float | None = None
+    # Anneal schedules as [[timestep, value], ...] (RLlib's schedule shape).
+    # None → no anneal (the static value above holds for the whole run).
+    dense_scale_schedule: list[list[float]] | None = None
+    red_action_scale_schedule: list[list[float]] | None = None
+    red_start_r_max_schedule: list[list[float]] | None = None
 
 
 @dataclass
