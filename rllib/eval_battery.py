@@ -48,9 +48,12 @@ def battery_metrics(acc: dict) -> dict:
     rate), takedown-rate, per-bucket terminal histogram, mean episode length."""
     n = acc["n"]
     score_rate = acc["scored"] / n if n else 0.0
+    # Honest prevention = fraction of episodes Red did NOT score. Computed
+    # directly from the complement count (n - scored)/n rather than 1 - score_rate
+    # so it is exact (no float rounding) and srate + prevention == 1.0 holds.
     out: dict[str, float] = {
         "eval_red_score_rate": score_rate,
-        "eval_blue_prevention_rate": (1.0 - score_rate) if n else 0.0,
+        "eval_blue_prevention_rate": ((n - acc["scored"]) / n) if n else 0.0,
         "eval_takedown_rate": (acc["take_down"] / n) if n else 0.0,
         "eval_mean_ep_len": (acc["len_sum"] / n) if n else 0.0,
         "eval_episodes": float(n),
@@ -58,3 +61,45 @@ def battery_metrics(acc: dict) -> dict:
     for bucket, count in acc["buckets"].items():
         out[f"eval_terminal_{bucket}"] = count
     return out
+
+
+import numpy as np
+
+
+# ── Deterministic head-to-head rollouts ─────────────────────────────────────
+def rollout_battery(env, act_red, act_blue, *, n_episodes: int, seed: int) -> dict:
+    """Play `n_episodes` deterministic episodes; aggregate into eval_* metrics.
+
+    `env` is a QuidditchMultiAgentEnv (RLlib MultiAgentEnv): step returns
+    (obs, rew, term, trunc, infos) dicts with an "__all__" whole-episode flag.
+    `act_red` / `act_blue` map an agent's obs array -> action array. A per-
+    episode seed derived from `seed` keeps the battery reproducible run-to-run.
+    """
+    acc = init_battery_acc()
+    rng = np.random.default_rng(seed)
+    for _ in range(n_episodes):
+        ep_seed = int(rng.integers(0, 2**31 - 1))
+        obs, _ = env.reset(seed=ep_seed)
+        length = 0
+        red_info: dict = {}
+        blue_info: dict = {}
+        while True:
+            actions = {}
+            if "red_0" in obs:
+                actions["red_0"] = act_red(obs["red_0"])
+            if "blue_0" in obs:
+                actions["blue_0"] = act_blue(obs["blue_0"])
+            obs, _, term, trunc, infos = env.step(actions)
+            length += 1
+            red_info = infos.get("red_0", red_info) or red_info
+            blue_info = infos.get("blue_0", blue_info) or blue_info
+            if term.get("__all__") or trunc.get("__all__"):
+                break
+        scored = bool(red_info.get("scored") or blue_info.get("scored"))
+        take_down = bool(
+            red_info.get("take_down_fired") or blue_info.get("take_down_fired")
+        )
+        bucket = _classify_terminal(red_info, blue_info)
+        fold_episode(acc, scored=scored, take_down=take_down,
+                     bucket=bucket, length=length)
+    return battery_metrics(acc)
