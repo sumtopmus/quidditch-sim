@@ -17,11 +17,34 @@ from ray import tune
 from ray.air.integrations.wandb import WandbLoggerCallback
 from ray.tune import RunConfig, CheckpointConfig
 
+import wandb
+
 from config_schema import register_configs
+from core.rllib_checkpoint import find_latest_checkpoint_dir
 from rllib.config_builder import build_ppo_config
 from rllib.runtime import ray_init_for_project
+from scripts._artifact_io import log_rllib_run_artifact
 
 register_configs()
+
+
+def _log_best_checkpoint(cfg: DictConfig, run_dir: Path) -> None:
+    """Log the run's latest RLlib checkpoint dir as `<run_name>:latest` so
+    `dsim promote` can alias it `:prod`. A short standalone wandb run holds the
+    artifact (Tune's per-trial runs aren't handed back). No-op when wandb off."""
+    if not cfg.tune.wandb.enabled:
+        return
+    ckpt = find_latest_checkpoint_dir(run_dir)
+    if ckpt is None:
+        return
+    run = wandb.init(project=cfg.tune.wandb.project, name=str(cfg.run_name),
+                     job_type="checkpoint", reinit=True)
+    try:
+        log_rllib_run_artifact(
+            run=run, run_dir=run_dir, cfg=cfg, checkpoint_dir=ckpt,
+            parent_chain_total=0, best_eval_reward=None)
+    finally:
+        run.finish()
 
 
 @hydra.main(version_base=None, config_path="../conf", config_name="config")
@@ -58,6 +81,7 @@ def main(cfg: DictConfig) -> None:
         ),
     )
     tuner.fit()
+    _log_best_checkpoint(cfg, storage_path)
 
 
 if __name__ == "__main__":

@@ -244,3 +244,44 @@ def test_promote_skips_model_doc_when_absent(tmp_path: Path) -> None:
     dest = models_root / "ppo_hoop_blue_5"
     assert (dest / "best_model.zip").exists()
     assert not (dest / "MODEL.md").exists()
+
+
+def _make_rllib_run_dir(tmp_path: Path, run_name: str) -> Path:
+    """A completed RLlib run: no best_model.zip, a Tune checkpoint dir instead."""
+    run_dir = tmp_path / "runs" / run_name / "20260611_130631"
+    ckpt = (run_dir / "tune" / "trial_x" / "checkpoint_000030"
+            / "learner_group" / "learner" / "rl_module")
+    for m in ("main_red", "main_blue", "blue_pop_v1"):
+        (ckpt / m).mkdir(parents=True)
+    hydra = run_dir / ".hydra"
+    hydra.mkdir(parents=True)
+    (hydra / "config.yaml").write_text(
+        f"run_name: {run_name}\nwandb:\n  project: drone-quidditch\n")
+    (hydra / "meta.yaml").write_text("git_hash: abc123\nparent_chain_total: 0\n")
+    return run_dir
+
+
+def test_promote_copies_rllib_checkpoint_dir(tmp_path: Path) -> None:
+    import json
+    from unittest.mock import MagicMock, patch
+    from scripts.promote import promote_run_dir
+
+    run_dir = _make_rllib_run_dir(tmp_path, "rllib_league_step5")
+    models_root = tmp_path / "models"
+
+    art = MagicMock(); art.version = "v0"; art.aliases = ["latest"]
+    api = MagicMock(); api.artifact.return_value = art
+
+    with patch("wandb.Api", return_value=api):
+        promote_run_dir(run_dir=run_dir, run_name="rllib_league_step5",
+                        models_root=models_root)
+
+    dest = models_root / "rllib_league_step5"
+    # Checkpoint dir copied (one module subdir suffices to prove the tree).
+    assert (dest / "checkpoint" / "learner_group" / "learner"
+            / "rl_module" / "main_blue").is_dir()
+    assert not (dest / "best_model.zip").exists()
+    meta = json.loads((dest / "_wandb_metadata.json").read_text())
+    assert meta["checkpoint_format"] == "rllib"
+    assert "blue_pop_v1" in meta["module_ids"]
+    assert "prod" in meta["aliases"]

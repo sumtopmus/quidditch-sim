@@ -51,8 +51,29 @@ def main(cfg: DictConfig) -> None:
         seed=int(cfg.eval.seed),
     )
 
+    from core.rllib_checkpoint import find_latest_checkpoint_dir, is_rllib_checkpoint
+    from pathlib import Path as _Path
+
+    learner_uri = str(learner.uri)
+    ckpt = (_Path(learner_uri) if is_rllib_checkpoint(learner_uri)
+            else find_latest_checkpoint_dir(_Path(learner_uri)))
+    if ckpt is not None:
+        from core.rllib_eval import run_rllib_battery
+        run_dir = ckpt
+        # Walk up to the run-ts dir that holds .hydra/ (checkpoint dirs nest
+        # under tune/<trial>/).
+        for parent in ckpt.parents:
+            if (parent / ".hydra" / "config.yaml").exists():
+                run_dir = parent
+                break
+        metrics = run_rllib_battery(
+            ckpt, run_dir,
+            n_episodes=int(cfg.eval.n_episodes), seed=int(cfg.eval.seed))
+        _print_rllib_summary(metrics)
+        return
+
     result = run_scenario(
-        learner_uri=str(learner.uri),
+        learner_uri=learner_uri,
         scenario=scenario,
         render=bool(cfg.eval.gui),
     )
@@ -68,6 +89,18 @@ def _opponent_spec_from_cfg(opp_cfg: DictConfig) -> str:
     # practice since every opponent YAML now carries `spec`).
     target = str(opp_cfg.get("_target_", "")) if hasattr(opp_cfg, "get") else ""
     return target.rsplit(".", 1)[-1].lower() if target else "unknown"
+
+
+def _print_rllib_summary(m: dict) -> None:
+    print("\n=== RLlib head-to-head (main_red vs main_blue) ===")
+    print(f"  red score-rate:        {m['eval_red_score_rate']:.2%}")
+    print(f"  blue prevention-rate:  {m['eval_blue_prevention_rate']:.2%}")
+    print(f"  take-down rate:        {m['eval_takedown_rate']:.2%}")
+    print(f"  mean episode length:   {m['eval_mean_ep_len']:.1f}")
+    print(f"  terminal buckets:")
+    for key, v in sorted(m.items()):
+        if key.startswith("eval_terminal_") and v:
+            print(f"    {key[len('eval_terminal_'):]:24s} {int(v)}")
 
 
 def _print_summary(result: ScenarioResult) -> None:

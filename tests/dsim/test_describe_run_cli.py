@@ -23,3 +23,25 @@ def test_describe_run_errors_without_model_md(tmp_path: Path) -> None:
                                  "--runs-dir", str(tmp_path / "runs")])
     assert result.exit_code == 2
     assert "render_model_doc" in result.output or "no such run" in result.output
+
+
+def test_describe_run_surfaces_rllib_module_provenance(tmp_path):
+    import json
+    from typer.testing import CliRunner
+    from dsim.cli import app
+
+    model_dir = tmp_path / "models" / "rllib_league_step5"
+    (model_dir / ".hydra").mkdir(parents=True)
+    (model_dir / ".hydra" / "config.yaml").write_text(
+        "run_name: rllib_league_step5\nobs:\n  name: DUEL_V1_BODY\n  n_stack: 1\n")
+    (model_dir / "_wandb_metadata.json").write_text(json.dumps({
+        "name": "rllib_league_step5", "version": "v0",
+        "checkpoint_format": "rllib",
+        "module_ids": ["main_red", "main_blue", "blue_pop_v1"],
+        "aliases": ["prod", "rllib_league_step5"],
+    }))
+
+    result = CliRunner().invoke(app, ["describe-run", str(model_dir)])
+    assert result.exit_code == 0
+    assert "rllib" in result.stdout
+    assert "blue_pop_v1" in result.stdout
