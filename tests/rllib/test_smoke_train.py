@@ -141,3 +141,78 @@ def test_league_snapshots_freezes_and_restores(tmp_path):
         assert snap_id in ids2, "snapshot module missing after restore"
     finally:
         algo2.stop()
+
+
+@pytest.mark.slow
+def test_league_pfsp_prunes_and_restores(tmp_path):
+    """cap=1 + zero thresholds: iter 1 snapshots v1; iter 2 snapshots v2 and
+    marks v1 pending (out of new matchups, module still present); iter 3
+    physically removes v1. League diagnostics appear in the result; the
+    surviving member round-trips a checkpoint."""
+    from omegaconf import OmegaConf
+    from rllib.config_builder import build_ppo_config
+    from rllib.league import RED_POP_RE, BLUE_POP_RE, population_members
+    from rllib.runtime import ray_init_for_project
+
+    ray_init_for_project()
+    cfg = OmegaConf.create({
+        "seed": 0,
+        "obs": {"name": "DUEL_V1_BODY", "n_stack": 1, "blocks": [
+            "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+            "UNIT_TO_GOAL", "SIGNED_DIST_NORM", "OPP_POS_REL", "OPP_VEL_REL_BODY",
+        ]},
+        "algo": {"lr": 5e-5, "gamma": 0.99, "lambda_": 0.95, "clip_param": 0.2,
+                 "entropy_coeff": 0.01, "num_epochs": 1, "minibatch_size": 64,
+                 "train_batch_size_per_learner": 256, "num_env_runners": 0,
+                 "total_timesteps": 256},
+        "multiagent": {"learner_id": "red_0",
+                       "policies_to_train": ["main_red", "main_blue"],
+                       "mapping": {"red_0": "main_red", "blue_0": "main_blue"},
+                       "modules": {"main_red": {"kind": "learned"},
+                                   "main_blue": {"kind": "learned"}}},
+        # Short episodes so several complete per 256-step batch -> metrics flow
+        # and no episode straddles the prune (120 steps << 256/iteration).
+        "curriculum": {"randomise_start": True, "episode_seconds": 1.0},
+        "league": {"enabled": True, "snapshot_threshold": 0.0,
+                   "min_iters_between_snapshots": 0, "population_cap": 1,
+                   "live_fraction": 0.5, "pfsp_exponent": 2.0,
+                   "pfsp_uniform_floor": 0.1, "prune_winrate_threshold": 0.0,
+                   "prune_grace_iters": 0},
+        "reward_stack": None,
+    })
+    algo = build_ppo_config(cfg).build_algo()
+    try:
+        algo.train()   # iter 1: at least one side snapshots v1
+        ids1 = set(algo.env_runner.module.keys())
+        assert population_members(ids1, RED_POP_RE) or \
+            population_members(ids1, BLUE_POP_RE), f"no snapshot after iter 1: {ids1}"
+
+        result2 = algo.train()   # iter 2: at cap -> v2 added, v1 marked pending
+        ids2 = set(algo.env_runner.module.keys())
+        capped = [(regex, population_members(ids2, regex))
+                  for regex in (RED_POP_RE, BLUE_POP_RE)
+                  if len(population_members(ids2, regex)) >= 2]
+        assert capped, f"expected a side holding v1 (pending) + v2: {ids2}"
+        regex, members = capped[0]
+        victim, survivor = members[0], members[-1]
+        league = result2.get("league", {})
+        assert any(k.startswith("pfsp_p_") for k in league), league
+        assert league.get("pending_removals", 0) >= 1
+
+        algo.train()   # iter 3: grace (0) elapsed -> victim physically removed
+        ids3 = set(algo.env_runner.module.keys())
+        assert victim not in ids3, f"{victim} not removed: {ids3}"
+        assert survivor in ids3
+
+        ckpt = algo.save(str(tmp_path / "ckpt")).checkpoint.path
+    finally:
+        algo.stop()
+
+    from ray.rllib.algorithms.algorithm import Algorithm
+    algo2 = Algorithm.from_checkpoint(ckpt)
+    try:
+        ids4 = set(algo2.env_runner.module.keys())
+        assert survivor in ids4, "surviving member missing after restore"
+        assert victim not in ids4, "pruned member resurrected by restore"
+    finally:
+        algo2.stop()

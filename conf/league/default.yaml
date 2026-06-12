@@ -1,13 +1,30 @@
-# Step-3 snapshot-population league knobs.
+# Snapshot-population league knobs (Steps 3+4).
 #   snapshot_threshold:          win-rate (red_score_rate / blue_prevention_rate)
 #                                a main must clear to freeze a snapshot.
 #   min_iters_between_snapshots: cooldown so a main doesn't snapshot every iter.
-#   population_cap:              max frozen members per side (stop when full;
-#                                pruning is Step 4).
+#   population_cap:              max frozen members per side. At cap, the most
+#                                dominated member is pruned to make room — or,
+#                                if none clears prune_winrate_threshold, no
+#                                snapshot is taken (Step-3 stop-at-cap).
 #   live_fraction:               P(main-vs-main episode); rest splits 50/50 into
-#                                red/blue exploits a uniform frozen opponent.
+#                                red/blue exploits a PFSP-sampled frozen member.
+#   pfsp_exponent:               p in P(o) ∝ (1 − winrate_vs_o)^p — concentrate
+#                                on opponents the main still loses to.
+#   pfsp_uniform_floor:          probability mass spread uniformly over the
+#                                population (anti-forgetting coverage).
+#   prune_winrate_threshold:     a member is "dominated" (prunable) once the
+#                                opposite main beats it at this rate.
+#   prune_grace_iters:           iterations between dropping a victim from the
+#                                mapping fn and physically removing its module.
+#                                Must satisfy: grace × train_batch_size_per_learner
+#                                ≥ episode length in env steps (in-flight episodes
+#                                keep their old matchup until they end).
 enabled: true
 snapshot_threshold: 0.7
 min_iters_between_snapshots: 20
 population_cap: 5
 live_fraction: 0.5
+pfsp_exponent: 2.0
+pfsp_uniform_floor: 0.1
+prune_winrate_threshold: 0.8
+prune_grace_iters: 2
