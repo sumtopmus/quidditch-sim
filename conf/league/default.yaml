@@ -28,3 +28,14 @@ pfsp_exponent: 2.0
 pfsp_uniform_floor: 0.1
 prune_winrate_threshold: 0.8
 prune_grace_iters: 2
+
+# Step-5b dedicated eval battery. When eval_enabled, EvalBatteryCallback runs a
+# deterministic main_red-vs-main_blue battery every eval_interval_iters and
+# writes clean eval_* metrics; the snapshot gate prefers them over the windowed
+# (NaN-prone, PFSP-confounded) in-training metrics.
+#   eval_interval_iters: cadence; keep <= min_iters_between_snapshots so a fresh
+#                        eval exists each time a snapshot could fire.
+eval_enabled: true
+eval_interval_iters: 10
+eval_episodes: 20
+eval_seed: 12345

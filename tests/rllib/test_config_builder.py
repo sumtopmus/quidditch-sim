@@ -158,3 +158,37 @@ def test_no_league_callback_when_league_absent():
     cbs = config.callbacks_class
     classes = cbs if isinstance(cbs, (list, tuple)) else [cbs]
     assert LeagueCallback not in classes
+
+
+def test_eval_battery_callback_registered_before_league_when_enabled():
+    from omegaconf import OmegaConf
+    from rllib.config_builder import build_ppo_config
+    from rllib.metrics import ScoreMetricsCallback
+    from rllib.eval_battery import EvalBatteryCallback
+    from rllib.league import LeagueCallback
+
+    cfg = _league_cfg()  # the file's existing league-enabled inline cfg factory
+    cfg = OmegaConf.merge(cfg, OmegaConf.create(
+        {"league": {"eval_enabled": True, "eval_interval_iters": 10,
+                    "eval_episodes": 4, "eval_seed": 0}}))
+    config = build_ppo_config(cfg)
+    cbs = config.callbacks_class
+    assert isinstance(cbs, (list, tuple))
+    names = [c.__name__ for c in cbs]
+    # Order matters: EvalBatteryCallback writes result["eval"] before the league
+    # gate reads it in the same on_train_result sweep.
+    assert names == ["ScoreMetricsCallback", "EvalBatteryCallback", "LeagueCallback"]
+    assert EvalBatteryCallback in cbs and LeagueCallback in cbs
+    assert ScoreMetricsCallback in cbs
+
+
+def test_eval_battery_callback_absent_when_disabled():
+    from rllib.config_builder import build_ppo_config
+    from rllib.eval_battery import EvalBatteryCallback
+
+    cfg = _league_cfg()
+    cfg.league.eval_enabled = False
+    config = build_ppo_config(cfg)
+    cbs = config.callbacks_class
+    cbs = list(cbs) if isinstance(cbs, (list, tuple)) else [cbs]
+    assert EvalBatteryCallback not in cbs

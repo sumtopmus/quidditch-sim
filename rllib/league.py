@@ -362,7 +362,12 @@ class LeagueCallback(RLlibCallback):
         active_ids = _algo_module_ids(algorithm) - set(self._pending_removal)
         winrates = collect_winrates(result, active_ids)
         for side, metric_name, main_id, regex in _SIDES:
-            metric = read_metric(result, metric_name)
+            # Prefer the dedicated eval-battery metric (clean, length-unconfounded,
+            # never NaN); fall back to the windowed in-training metric when the
+            # battery is disabled (Step-4 behavior, fully backward-compatible).
+            metric = read_metric(result, f"eval_{metric_name}")
+            if metric is None:
+                metric = read_metric(result, metric_name)
             if metric is None:
                 continue
             pop = population_members(active_ids, regex)

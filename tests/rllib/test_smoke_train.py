@@ -216,3 +216,48 @@ def test_league_pfsp_prunes_and_restores(tmp_path):
         assert victim not in ids4, "pruned member resurrected by restore"
     finally:
         algo2.stop()
+
+
+@pytest.mark.slow
+def test_eval_battery_runs_and_writes_metrics(tmp_path):
+    """A league run with the eval battery enabled writes clean eval_* metrics
+    into the train result, and the snapshot gate consumes them (threshold 0)."""
+    from omegaconf import OmegaConf
+    from rllib.config_builder import build_ppo_config
+    from rllib.eval_battery import read_eval
+    from rllib.runtime import ray_init_for_project
+
+    ray_init_for_project()
+    cfg = OmegaConf.create({
+        "seed": 0,
+        "obs": {"name": "DUEL_V1_BODY", "n_stack": 1, "blocks": [
+            "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+            "UNIT_TO_GOAL", "SIGNED_DIST_NORM", "OPP_POS_REL", "OPP_VEL_REL_BODY",
+        ]},
+        "algo": {"lr": 5e-5, "gamma": 0.99, "lambda_": 0.95, "clip_param": 0.2,
+                 "entropy_coeff": 0.01, "num_epochs": 1, "minibatch_size": 64,
+                 "train_batch_size_per_learner": 256, "num_env_runners": 0,
+                 "total_timesteps": 256},
+        "multiagent": {"learner_id": "red_0",
+                       "policies_to_train": ["main_red", "main_blue"],
+                       "mapping": {"red_0": "main_red", "blue_0": "main_blue"},
+                       "modules": {"main_red": {"kind": "learned"},
+                                   "main_blue": {"kind": "learned"}}},
+        "curriculum": {"randomise_start": True, "episode_seconds": 1.0},
+        "league": {"enabled": True, "snapshot_threshold": 0.0,
+                   "min_iters_between_snapshots": 0, "population_cap": 5,
+                   "live_fraction": 0.5,
+                   "eval_enabled": True, "eval_interval_iters": 1,
+                   "eval_episodes": 3, "eval_seed": 0},
+        "reward_stack": None,
+    })
+    algo = build_ppo_config(cfg).build_algo()
+    try:
+        result = algo.train()   # iter 1: battery runs, writes eval_* metrics
+        srate = read_eval(result, "eval_red_score_rate")
+        prev = read_eval(result, "eval_blue_prevention_rate")
+        assert srate is not None and 0.0 <= float(srate) <= 1.0
+        assert prev is not None and abs((srate + prev) - 1.0) < 1e-6
+        assert read_eval(result, "eval_episodes") == 3.0
+    finally:
+        algo.stop()

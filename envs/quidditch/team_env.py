@@ -489,12 +489,14 @@ class QuidditchTeamEnv(ParallelEnv):
 
         infos[self._red_id].update({
             "scored": scored, "drone_drone_crash": drone_drone_crash,
+            "take_down_fired": drone_drone_crash,
             "red_floor": red_floor, "red_wall_crash": red_wall_crash,
             "red_oob": red_oob, "step": self._step_count,
             "dist_red_to_hoop": dist_red,
         })
         infos[self._blue_id].update({
             "scored": scored, "drone_drone_crash": drone_drone_crash,
+            "take_down_fired": drone_drone_crash,
             "blue_floor": blue_floor, "blue_wall_crash": blue_wall_crash,
             "blue_oob": blue_oob, "step": self._step_count,
             "dist_b2r": dist_b2r,
@@ -563,9 +565,9 @@ class QuidditchTeamEnv(ParallelEnv):
         # on drone_drone_crash — see _enter_aftermath caller).
         infos: dict[str, dict[str, Any]] = {
             self._red_id:  {"aftermath": True, "drone_drone_crash": True,
-                            "step": self._step_count},
+                            "take_down_fired": True, "step": self._step_count},
             self._blue_id: {"aftermath": True, "drone_drone_crash": True,
-                            "step": self._step_count},
+                            "take_down_fired": True, "step": self._step_count},
         }
         return self._all_obs(), rewards, terminations, truncations, infos
 
