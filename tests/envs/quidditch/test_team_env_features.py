@@ -28,3 +28,37 @@ def test_feature_dict_obs_matches_legacy_dispatch(stem):
     obs_dict2, _ = env2.reset(seed=42)
     np.testing.assert_array_equal(learner_obs, obs_dict2["blue_0"])
     env2.close()
+
+
+def test_take_down_fired_set_on_drone_drone_crash():
+    """take_down_fired mirrors drone_drone_crash in BOTH agents' info dicts.
+
+    eval_core._classify_terminal and the eval battery's takedown-rate read this
+    key; before this fix the env never set it, so takedown-rate was always 0.
+    """
+    import numpy as np
+    from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
+
+    env = QuidditchTeamEnv(cfg=TeamConfig(randomise_red_start=False))
+    env.reset(seed=0)
+    # One ordinary step: no crash -> take_down_fired present and False.
+    zero = np.zeros(4, dtype=np.float32)
+    _, _, _, _, infos = env.step({"red_0": zero, "blue_0": zero})
+    assert infos["red_0"]["take_down_fired"] is False
+    assert infos["blue_0"]["take_down_fired"] is False
+    # Force a drone-drone crash flag and confirm both infos mirror it.
+    env._aftermath_steps_left = 0
+    env.reset(seed=0)
+    env.cfg.crash_aftermath_seconds = 0.0
+    # Drive the detector path directly: monkeypatch events() to report a ram.
+    import types
+    fake = types.SimpleNamespace(
+        solo_floor={"red_0": False, "blue_0": False},
+        wall={"red_0": 0.0, "blue_0": 0.0},
+        drone_drone=(0.0, 0.0, 99.0),  # rel speed >> crash_vel_thr
+    )
+    env._crash_detector.events = lambda f=fake: f  # type: ignore[assignment]
+    _, _, _, _, infos = env.step({"red_0": zero, "blue_0": zero})
+    assert infos["red_0"]["take_down_fired"] is True
+    assert infos["blue_0"]["take_down_fired"] is True
+    env.close()
