@@ -50,19 +50,31 @@ def _read_lifetime_steps(result: dict) -> float:
     return 0.0
 
 
-def _inner_team_env(runner):
-    """Reach the QuidditchTeamEnv from an env runner. RLlib's env runner holds
-    the QuidditchMultiAgentEnv at runner.env (single env per runner); ._inner is
-    the wrapped QuidditchTeamEnv. Returns None if the shape is unexpected."""
+def _inner_team_envs(runner) -> list:
+    """All live QuidditchTeamEnv instances reachable from an env runner.
+
+    The new-stack env runner holds a SyncVectorMultiAgentEnv at runner.env with
+    its sub-envs in .envs; each sub-env's .unwrapped is the QuidditchMultiAgentEnv
+    whose ._inner is the QuidditchTeamEnv. Falls back to a single (non-vector)
+    env at runner.env. Returns [] if the shape is unexpected (the push no-ops).
+    """
     env = getattr(runner, "env", None)
-    env = getattr(env, "unwrapped", env)
-    return getattr(env, "_inner", None)
+    if env is None:
+        return []
+    subs = getattr(env, "envs", None)
+    candidates = list(subs) if subs is not None else [env]
+    inners = []
+    for c in candidates:
+        c = getattr(c, "unwrapped", c)
+        inner = getattr(c, "_inner", None)
+        if inner is not None:
+            inners.append(inner)
+    return inners
 
 
 def _apply_to_team_envs(algorithm, fn) -> None:
     def _set(runner, _fn=fn):
-        inner = _inner_team_env(runner)
-        if inner is not None:
+        for inner in _inner_team_envs(runner):
             _fn(inner)
     algorithm.env_runner_group.foreach_env_runner(_set, local_env_runner=True)
 
