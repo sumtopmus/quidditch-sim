@@ -1,0 +1,19 @@
+# Step-5a league curriculum: the fixed airborne Red start from fixed_red_start,
+# plus dense->sparse reward anneal and a Red action-authority ramp.
+#   dense_scale_schedule: shaping is full early (bootstraps scoring/defending),
+#     annealed to zero by 3M steps so the learned policy holds on the true
+#     (sparse) objective — the same dense->sparse pattern the manual campaign used.
+#   red_action_scale_schedule: Red starts throttled (0.6) and ramps to full (1.0)
+#     by 3M steps, so Blue faces a progressively more agile attacker as the
+#     league matures (spec B5).
+# red_start_r_max_schedule left null: the league trains from the fixed airborne
+# start; switching to a randomised ground disc is a separate regime (see note).
+randomise_start: false
+episode_seconds: 30.0
+red_start_pos: [0.5, 0.0, 2.0]
+red_start_yaw: 0.0
+red_action_scale: 0.6
+red_start_r_max: null
+dense_scale_schedule: [[0, 1.0], [3_000_000, 0.0]]
+red_action_scale_schedule: [[0, 0.6], [3_000_000, 1.0]]
+red_start_r_max_schedule: null

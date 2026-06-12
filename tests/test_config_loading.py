@@ -32,3 +32,13 @@ def test_init_groups_compose(init_choice: str):
         overrides = ["+init.parent_run=y"]
     with hydra_compose(overrides=[f"init={init_choice}", *overrides]) as cfg:
         assert cfg.init.mode == init_choice
+
+
+def test_rllib_league_step5_experiment_composes():
+    from tests.conftest import hydra_compose
+    with hydra_compose(overrides=["+experiment=rllib_league_step5"]) as cfg:
+        assert cfg.curriculum.dense_scale_schedule == [[0, 1.0], [3_000_000, 0.0]]
+        assert cfg.curriculum.red_action_scale == 0.6
+        assert cfg.league.snapshot_threshold_red == 0.5
+        assert cfg.league.eval_enabled is True
+        assert cfg.reward._target_.endswith("RewardStack")
