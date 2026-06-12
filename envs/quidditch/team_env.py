@@ -95,6 +95,13 @@ class TeamConfig:
     # red_start_pos = explicit [x, y, z] spawn; None → origin (legacy behavior).
     red_start_pos: tuple[float, float, float] | None = None
     red_start_yaw: float = 0.0
+    # Difficulty levers (Step 5a, annealable via CurriculumCallback):
+    #   red_action_scale: multiplies Red's per-step setpoint delta (action
+    #     authority). 1.0 = full; lower = a slower/weaker attacker.
+    #   red_start_r_max: caps the random-start disc radius (only consulted when
+    #     randomise_red_start). None -> full START_SAMPLE_RADIUS (no cap).
+    red_action_scale: float = 1.0
+    red_start_r_max: float | None = None
     episode_seconds: float = EPISODE_SECONDS_DEFAULT
     # Eval-only: when > 0, a drone-drone ram does not terminate immediately.
     # Instead Red's motors are cut and the env keeps stepping for this many
@@ -338,6 +345,7 @@ class QuidditchTeamEnv(ParallelEnv):
         for agent_id, action in actions.items():
             delta = np.asarray(action, dtype=np.float32) * ACTION_SCALE
             if agent_id == self._red_id:
+                delta = delta * self.cfg.red_action_scale
                 self._setpoint_red += delta
                 self._setpoint_red[0] = np.clip(self._setpoint_red[0], -ARENA_RADIUS, ARENA_RADIUS)
                 self._setpoint_red[1] = np.clip(self._setpoint_red[1], -ARENA_RADIUS, ARENA_RADIUS)
@@ -606,7 +614,10 @@ class QuidditchTeamEnv(ParallelEnv):
             pos = np.array(fixed if fixed is not None else (0.0, 0.0, 0.0),
                            dtype=np.float64)
             return pos, float(self.cfg.red_start_yaw)
-        r = START_SAMPLE_RADIUS * float(np.sqrt(self._np_random.uniform(0.0, 1.0)))
+        r_max = START_SAMPLE_RADIUS
+        if self.cfg.red_start_r_max is not None:
+            r_max = min(r_max, float(self.cfg.red_start_r_max))
+        r = r_max * float(np.sqrt(self._np_random.uniform(0.0, 1.0)))
         theta = float(self._np_random.uniform(0.0, 2.0 * np.pi))
         pos = np.array([r * np.cos(theta), r * np.sin(theta), 0.0], dtype=np.float64)
         yaw = float(self._np_random.uniform(-np.pi, np.pi))
