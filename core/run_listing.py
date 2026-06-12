@@ -15,6 +15,8 @@ import re
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.rllib_checkpoint import find_latest_checkpoint_dir
+
 RUNS_DIR = Path("runs")
 _CKPT_STEPS_RE = re.compile(r"_(\d+)_steps\.zip$")
 
@@ -77,8 +79,6 @@ def resolve_trial(
 
 def resolve_checkpoint(trial_dir: Path, *, ckpt: str | None = None) -> Path:
     cks = Path(trial_dir) / "checkpoints"
-    if not cks.exists():
-        raise FileNotFoundError(f"no checkpoints/ under {trial_dir}")
     if ckpt is not None:
         p = cks / (ckpt if ckpt.endswith(".zip") else ckpt + ".zip")
         if not p.exists():
@@ -86,20 +86,23 @@ def resolve_checkpoint(trial_dir: Path, *, ckpt: str | None = None) -> Path:
         return p.resolve()
     p = _latest_checkpoint(trial_dir)
     if p is None:
-        raise FileNotFoundError(f"no .zip checkpoints under {cks}")
+        raise FileNotFoundError(
+            f"no .zip or RLlib checkpoints under {trial_dir}")
     return p
 
 
 def _latest_checkpoint(trial_dir: Path) -> Path | None:
     cks = Path(trial_dir) / "checkpoints"
-    if not cks.exists():
-        return None
     best: tuple[int, Path] | None = None
-    for f in cks.glob("*.zip"):
-        m = _CKPT_STEPS_RE.search(f.name)
-        if not m:
-            continue
-        steps = int(m.group(1))
-        if best is None or steps > best[0]:
-            best = (steps, f)
-    return best[1].resolve() if best else None
+    if cks.exists():
+        for f in cks.glob("*.zip"):
+            m = _CKPT_STEPS_RE.search(f.name)
+            if not m:
+                continue
+            steps = int(m.group(1))
+            if best is None or steps > best[0]:
+                best = (steps, f)
+    if best is not None:
+        return best[1].resolve()
+    # RLlib runs have no checkpoints/*.zip — find the directory checkpoint.
+    return find_latest_checkpoint_dir(trial_dir)
