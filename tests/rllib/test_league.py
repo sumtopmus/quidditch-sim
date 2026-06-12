@@ -471,3 +471,34 @@ def test_snapshot_falls_back_to_windowed_without_eval(monkeypatch):
     cb.on_train_result(algorithm=algo, result={
         "env_runners": {"red_score_rate": 0.8, "blue_prevention_rate": 0.1}})
     assert "red_pop_v1" in algo.added
+
+
+def _asym_cfg(**over):
+    return {**_LEAGUE_CFG, "snapshot_threshold_red": 0.4,
+            "snapshot_threshold_blue": 0.7, **over}
+
+
+def test_per_side_snapshot_threshold(monkeypatch):
+    """Red uses snapshot_threshold_red (0.4); Blue uses snapshot_threshold_blue
+    (0.7). A metric of 0.5 snapshots Red but not Blue."""
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue"}, iteration=25, league_cfg=_asym_cfg())
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 50
+    cb.on_train_result(algorithm=algo, result={"env_runners": {
+        "red_score_rate": 0.5, "blue_prevention_rate": 0.5}})
+    assert "red_pop_v1" in algo.added        # 0.5 >= 0.4 (red threshold)
+    assert "blue_pop_v1" not in algo.added   # 0.5 < 0.7 (blue threshold)
+
+
+def test_per_side_threshold_falls_back_to_shared(monkeypatch):
+    """Without per-side keys, both sides use the shared snapshot_threshold."""
+    monkeypatch.setattr(L, "_snapshot_spec", lambda algo, main_id: object())
+    cb = L.LeagueCallback()
+    algo = _FakeAlgo({"main_red", "main_blue"}, iteration=25, league_cfg=_LEAGUE_CFG)
+    cb.on_algorithm_init(algorithm=algo)
+    algo.iteration = 50
+    cb.on_train_result(algorithm=algo, result={"env_runners": {
+        "red_score_rate": 0.75, "blue_prevention_rate": 0.1}})
+    assert "red_pop_v1" in algo.added        # 0.75 >= shared 0.7
