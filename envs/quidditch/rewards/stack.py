@@ -74,14 +74,35 @@ class StepState:
     hoop_pos: np.ndarray = field(default_factory=lambda: np.zeros(3))
 
 
+# Dense SHAPING terms (annealed by dense_scale). The sparse OUTCOME terms
+# (ScoreEvent, TakeDown, CrashEvent) are never annealed — they encode the true
+# objective and must keep full magnitude through the dense->sparse transition.
+_DENSE_TERM_TYPES = frozenset({
+    "HoopApproachShaping", "HoopDistancePenalty", "HoopAnchor",
+    "ZeroSumDistMirror", "InterceptShaping", "GoalSideCone",
+    "ProximityGradedTag", "ClosingVelInTagZone", "TagEntryPulse",
+})
+
+
 @dataclass
 class RewardStack:
-    """Holds an ordered list of reward terms; accumulates per-agent rewards per step."""
+    """Ordered reward terms; accumulates per-agent rewards per step.
+
+    `dense_scale` (default 1.0, identity) multiplies the dense shaping terms
+    only — the Step-5a dense->sparse anneal. CurriculumCallback mutates it at
+    runtime via set_dense_scale. Sparse outcome terms are unaffected.
+    """
     terms: list[Any]
+    dense_scale: float = 1.0
+
+    def set_dense_scale(self, scale: float) -> None:
+        self.dense_scale = float(scale)
 
     def compute_step(self, state: StepState) -> dict[str, float]:
         totals: dict[str, float] = {a: 0.0 for a in state.agent_ids}
         for term in self.terms:
+            scale = (self.dense_scale
+                     if type(term).__name__ in _DENSE_TERM_TYPES else 1.0)
             for agent, r in term.compute(state).items():
-                totals[agent] += r
+                totals[agent] += scale * r
         return totals
