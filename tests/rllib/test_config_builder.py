@@ -214,3 +214,27 @@ def test_curriculum_levers_and_schedules_thread_into_env_config():
     # Schedules land in a dedicated curriculum block (the callback reads it).
     assert ec["curriculum"]["dense_scale_schedule"] == [[0, 1.0], [1000, 0.0]]
     assert ec["curriculum"]["red_action_scale_schedule"] == [[0, 0.6], [1000, 1.0]]
+
+
+def test_curriculum_callback_registered_when_schedule_present():
+    from omegaconf import OmegaConf
+    from rllib.config_builder import build_ppo_config
+    from rllib.curriculum import CurriculumCallback
+
+    cfg = _league_cfg()
+    cfg = OmegaConf.merge(cfg, OmegaConf.create({"curriculum": {
+        "randomise_start": False, "episode_seconds": 30.0,
+        "dense_scale_schedule": [[0, 1.0], [1000, 0.0]]}}))
+    cbs = build_ppo_config(cfg).callbacks_class
+    cbs = list(cbs) if isinstance(cbs, (list, tuple)) else [cbs]
+    assert CurriculumCallback in cbs
+
+
+def test_curriculum_callback_absent_without_schedule():
+    from rllib.config_builder import build_ppo_config
+    from rllib.curriculum import CurriculumCallback
+
+    cfg = _league_cfg()  # no curriculum schedules
+    cbs = build_ppo_config(cfg).callbacks_class
+    cbs = list(cbs) if isinstance(cbs, (list, tuple)) else [cbs]
+    assert CurriculumCallback not in cbs

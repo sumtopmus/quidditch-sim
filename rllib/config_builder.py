@@ -19,6 +19,7 @@ from envs.quidditch.rllib_modules import ScriptedRLModule
 from rllib.metrics import ScoreMetricsCallback
 from rllib.league import LeagueCallback, make_league_mapping_fn
 from rllib.eval_battery import EvalBatteryCallback
+from rllib.curriculum import CurriculumCallback
 
 _ENV_NAME = "quidditch_team"
 
@@ -121,6 +122,9 @@ def build_ppo_config(cfg: DictConfig, reward_stack=None) -> PPOConfig:
             callbacks = [ScoreMetricsCallback, EvalBatteryCallback, LeagueCallback]
         else:
             callbacks = [ScoreMetricsCallback, LeagueCallback]
+        if _curriculum_dict_from(cfg):
+            # Insert before LeagueCallback so curriculum + gating live together.
+            callbacks.insert(len(callbacks) - 1, CurriculumCallback)
     else:
         league_dict = None
 
