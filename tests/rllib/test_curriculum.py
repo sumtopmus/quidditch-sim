@@ -39,3 +39,24 @@ def test_default_dense_scale_is_identity():
     assert stack.dense_scale == 1.0
     out = stack.compute_step(_state(scored=False, prev=2.0, cur=1.0))
     assert abs(out["red_0"] - 2.0) < 1e-9
+
+
+import rllib.curriculum as C
+
+
+def test_scheduled_value_linear_interpolation():
+    sched = [[0, 1.0], [100, 0.0]]
+    assert C.scheduled_value(sched, 0) == 1.0
+    assert abs(C.scheduled_value(sched, 50) - 0.5) < 1e-9
+    assert C.scheduled_value(sched, 100) == 0.0
+
+
+def test_scheduled_value_clamps_outside_range():
+    sched = [[10, 0.5], [20, 1.0]]
+    assert C.scheduled_value(sched, 0) == 0.5     # before first knot -> first value
+    assert C.scheduled_value(sched, 999) == 1.0   # past last knot -> last value
+
+
+def test_scheduled_value_none_and_constant():
+    assert C.scheduled_value(None, 5) is None          # no schedule -> no override
+    assert C.scheduled_value([[0, 0.7]], 999) == 0.7   # single knot -> constant
