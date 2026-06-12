@@ -217,10 +217,14 @@ def resolve_parent(
     if meta is not None and meta.get("version") == version and meta.get("name") == parsed.name:
         if metadata_only and (committed / ".hydra" / "config.yaml").exists():
             return committed
+        # RLlib dir-artifact: the loadable path is the committed checkpoint/ dir.
+        ckpt_dir = committed / "checkpoint"
+        if ckpt_dir.is_dir():
+            return ckpt_dir if not metadata_only else committed
         cp = committed / "best_model.zip"
         if cp.exists():
             return cp if not metadata_only else committed
-        # Metadata pins but best_model.zip is missing — fall through to download.
+        # Metadata pins but no payload — fall through to download.
 
     if metadata_only:
         # Separate cache subdir so a later full download into <name>_<version>/
@@ -233,6 +237,9 @@ def resolve_parent(
     # Download into the gitignored cache (full).
     cache_dir = Path(models_root) / ".cache" / f"{parsed.name}_{version}"
     art.download(root=str(cache_dir))
+    ckpt_dir = cache_dir / "checkpoint"
+    if ckpt_dir.is_dir():
+        return ckpt_dir
     return cache_dir / "best_model.zip"
 
 
@@ -286,6 +293,52 @@ def log_run_artifact(
         },
     )
     art.add_file(str(model_path), name="best_model.zip")
+    if hydra_dir.exists():
+        art.add_dir(str(hydra_dir), name=".hydra")
+    model_doc = run_dir / "MODEL.md"
+    if model_doc.exists():
+        art.add_file(str(model_doc), name="MODEL.md")
+    run.log_artifact(art, aliases=["latest"])
+
+
+def log_rllib_run_artifact(
+    run: Any,
+    run_dir: Path,
+    cfg: Any,
+    checkpoint_dir: Path,
+    parent_chain_total: int,
+    best_eval_reward: float | None,
+) -> None:
+    """Log an RLlib run's checkpoint DIRECTORY as a wandb artifact.
+
+    Parallel to log_run_artifact (the SB3 .zip path) but adds the checkpoint dir
+    (art.add_dir(..., name="checkpoint")) instead of a single best_model.zip.
+    Named cfg.run_name + aliased :latest, so promote's <run_name>:latest lookup
+    and the :prod aliasing flow work unchanged. No-op when run is None/disabled.
+    """
+    if run is None or getattr(run, "disabled", False):
+        return
+    run_dir = Path(run_dir)
+    checkpoint_dir = Path(checkpoint_dir)
+    if not checkpoint_dir.is_dir():
+        return
+    art = wandb.Artifact(
+        name=str(cfg.run_name),
+        type="model",
+        metadata={
+            "obs_spec":           str(cfg.obs.name),
+            "n_stack":            int(cfg.obs.n_stack),
+            "learner_id":         cfg.env.get("learner_id"),
+            "init_mode":          str(cfg.init.mode),
+            "parent_uri":         cfg.init.parent,
+            "parent_chain_total": int(parent_chain_total),
+            "best_eval_reward":   best_eval_reward,
+            "model_kind":         "rllib",
+            "checkpoint_format":  "rllib",
+        },
+    )
+    art.add_dir(str(checkpoint_dir), name="checkpoint")
+    hydra_dir = run_dir / ".hydra"
     if hydra_dir.exists():
         art.add_dir(str(hydra_dir), name=".hydra")
     model_doc = run_dir / "MODEL.md"
