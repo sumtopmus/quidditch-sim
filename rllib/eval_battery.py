@@ -126,3 +126,75 @@ def module_action_fn(module):
         return mean.cpu().numpy().astype(np.float32)
 
     return _act
+
+
+from ray.rllib.callbacks.callbacks import RLlibCallback
+
+_MAIN_RED = "main_red"
+_MAIN_BLUE = "main_blue"
+
+
+def read_eval(result: dict, name: str):
+    """Recursively find flat eval key `name` in the (nested) result dict.
+
+    The league gate reads eval_* metrics this way (same recursive shape as
+    league.read_metric), tolerating wherever the eval block is nested.
+    """
+    if name in result and isinstance(result[name], (int, float)):
+        return result[name]
+    for v in result.values():
+        if isinstance(v, dict):
+            found = read_eval(v, name)
+            if found is not None:
+                return found
+    return None
+
+
+def _build_eval_env(env_config: dict):
+    """Build a no-render eval env from the live env_config. Imported lazily so
+    the pure layers don't pull MuJoCo. Mirrors training's env exactly (same obs
+    blocks, team_cfg, reward stack) so eval is on-distribution."""
+    from envs.quidditch.rllib_env import make_team_env
+    return make_team_env(dict(env_config))
+
+
+class EvalBatteryCallback(RLlibCallback):
+    """Runs the dedicated eval battery on a cadence and writes clean eval_*
+    metrics into the train result.
+
+    Built and stepped on the driver (same in-process pattern as the slow smoke
+    tests). The battery plays deterministic main_red-vs-main_blue episodes — a
+    controlled head-to-head, NOT the PFSP matchup mix the windowed metrics see —
+    so the snapshot/promotion gate keys off a stable, length-unconfounded signal.
+    Cached metrics are re-written every iteration so the gate always sees the
+    latest eval even between cadence boundaries.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._last_eval: dict = {}
+
+    def on_train_result(self, *, algorithm, result, **kwargs) -> None:
+        cfg = dict(algorithm.config.env_config.get("league", {}))
+        if not cfg.get("eval_enabled", False):
+            return
+        it = int(algorithm.iteration)
+        interval = int(cfg.get("eval_interval_iters", 20))
+        if it <= 1 or (interval > 0 and it % interval == 0) or not self._last_eval:
+            self._last_eval = self._run_battery(algorithm, cfg)
+        result.setdefault("eval", {}).update(self._last_eval)
+
+    def _run_battery(self, algorithm, cfg: dict) -> dict:
+        env = _build_eval_env(algorithm.config.env_config)
+        try:
+            act_red = module_action_fn(algorithm.get_module(_MAIN_RED))
+            act_blue = module_action_fn(algorithm.get_module(_MAIN_BLUE))
+            return rollout_battery(
+                env, act_red, act_blue,
+                n_episodes=int(cfg.get("eval_episodes", 20)),
+                seed=int(cfg.get("eval_seed", 12345)),
+            )
+        finally:
+            close = getattr(env, "close", None)
+            if callable(close):
+                close()

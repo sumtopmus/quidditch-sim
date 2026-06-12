@@ -113,3 +113,70 @@ def test_module_action_fn_returns_deterministic_mean():
     assert isinstance(a, np.ndarray)
     assert a.shape == (4,)
     assert np.allclose(a, [0.0, 1.0, 2.0, 3.0])   # the mean, not a sample
+
+
+import types
+
+
+def _eval_algo(league_cfg, modules=("main_red", "main_blue")):
+    """Minimal Algorithm stand-in for EvalBatteryCallback: exposes env_config,
+    iteration, and get_module."""
+    return types.SimpleNamespace(
+        iteration=1,
+        config=types.SimpleNamespace(env_config={
+            "learner_id": "red_0",
+            "obs_blocks": ["ANG_VEL"],
+            "team_cfg": {},
+            "reward_stack": None,
+            "league": league_cfg,
+        }),
+        get_module=lambda mid=None: object(),
+    )
+
+
+def test_eval_callback_runs_on_cadence_and_caches(monkeypatch):
+    calls = {"n": 0}
+
+    def fake_battery(env, act_red, act_blue, *, n_episodes, seed):
+        calls["n"] += 1
+        return {"eval_red_score_rate": 0.3, "eval_blue_prevention_rate": 0.7}
+
+    # Stub the env build + rollout so the test needs no MuJoCo.
+    monkeypatch.setattr(EB, "_build_eval_env", lambda env_config: object())
+    monkeypatch.setattr(EB, "rollout_battery", fake_battery)
+    monkeypatch.setattr(EB, "module_action_fn", lambda m: (lambda o: o))
+
+    cb = EB.EvalBatteryCallback()
+    algo = _eval_algo({"eval_enabled": True, "eval_interval_iters": 5,
+                       "eval_episodes": 4, "eval_seed": 0})
+
+    # iter 1: always evaluates.
+    r1 = {}
+    algo.iteration = 1
+    cb.on_train_result(algorithm=algo, result=r1)
+    assert calls["n"] == 1
+    assert EB.read_eval(r1, "eval_red_score_rate") == 0.3
+
+    # iter 3: not on cadence -> no new battery, but cached metrics still written.
+    r3 = {}
+    algo.iteration = 3
+    cb.on_train_result(algorithm=algo, result=r3)
+    assert calls["n"] == 1                                   # not re-run
+    assert EB.read_eval(r3, "eval_blue_prevention_rate") == 0.7  # cached
+
+    # iter 10: 10 % 5 == 0 hits a cadence boundary -> re-run.
+    r10 = {}
+    algo.iteration = 10
+    cb.on_train_result(algorithm=algo, result=r10)
+    assert calls["n"] == 2
+
+
+def test_eval_callback_disabled_is_noop(monkeypatch):
+    monkeypatch.setattr(EB, "_build_eval_env",
+                        lambda env_config: (_ for _ in ()).throw(AssertionError))
+    cb = EB.EvalBatteryCallback()
+    algo = _eval_algo({"eval_enabled": False})
+    result = {}
+    algo.iteration = 1
+    cb.on_train_result(algorithm=algo, result=result)   # must not build an env
+    assert "eval" not in result
