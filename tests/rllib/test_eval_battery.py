@@ -93,3 +93,23 @@ def test_rollout_battery_aggregates_outcomes():
     assert m["eval_terminal_timeout"] == 1
     assert m["eval_terminal_drone_drone_crash"] == 1
     assert abs(m["eval_mean_ep_len"] - (3 + 5 + 2) / 3) < 1e-9
+
+
+def test_module_action_fn_returns_deterministic_mean():
+    import numpy as np
+    import torch
+    from ray.rllib.core.columns import Columns
+
+    class _FakeModule:
+        """Emits action_dist_inputs = [mean(4), log_std(4)] for a 1-row batch."""
+        def forward_inference(self, batch):
+            n = batch[Columns.OBS].shape[0]
+            mean = torch.arange(4, dtype=torch.float32).repeat(n, 1)  # [0,1,2,3]
+            log_std = torch.zeros(n, 4)
+            return {Columns.ACTION_DIST_INPUTS: torch.cat([mean, log_std], dim=1)}
+
+    fn = EB.module_action_fn(_FakeModule())
+    a = fn(np.zeros(8, dtype=np.float32))
+    assert isinstance(a, np.ndarray)
+    assert a.shape == (4,)
+    assert np.allclose(a, [0.0, 1.0, 2.0, 3.0])   # the mean, not a sample

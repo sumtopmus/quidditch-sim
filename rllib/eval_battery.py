@@ -103,3 +103,26 @@ def rollout_battery(env, act_red, act_blue, *, n_episodes: int, seed: int) -> di
         fold_episode(acc, scored=scored, take_down=take_down,
                      bucket=bucket, length=length)
     return battery_metrics(acc)
+
+
+def module_action_fn(module):
+    """Wrap an RLModule into a deterministic obs->action callable.
+
+    Uses forward_inference and takes the action distribution's mean (the first
+    half of action_dist_inputs for a DiagGaussian over the Box(4) action) — the
+    greedy/deterministic action. torch is imported lazily so the pure-aggregation
+    layer stays dependency-free.
+    """
+    import torch
+    from ray.rllib.core.columns import Columns
+
+    def _act(obs):
+        obs_t = torch.as_tensor(np.asarray(obs, dtype=np.float32)).unsqueeze(0)
+        with torch.no_grad():
+            out = module.forward_inference({Columns.OBS: obs_t})
+        dist_inputs = out[Columns.ACTION_DIST_INPUTS][0]
+        action_dim = dist_inputs.shape[-1] // 2   # [mean, log_std]
+        mean = dist_inputs[:action_dim]
+        return mean.cpu().numpy().astype(np.float32)
+
+    return _act
