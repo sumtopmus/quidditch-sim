@@ -27,6 +27,8 @@ from pathlib import Path
 import wandb
 from omegaconf import OmegaConf
 
+from core.rllib_checkpoint import find_latest_checkpoint_dir, module_ids
+
 
 @dataclass(frozen=True)
 class PromoteResult:
@@ -84,10 +86,12 @@ def _find_run_artifact(run_name: str, timestamp: str,
 def promote_run_dir(run_dir: Path, run_name: str, models_root: Path) -> PromoteResult:
     """Two-step promote: alias the artifact, copy + pin into models/."""
     run_dir = Path(run_dir).resolve()
-    src = run_dir / "best_model.zip"
-    if not src.exists():
+    zip_src = run_dir / "best_model.zip"
+    rllib_ckpt = None if zip_src.exists() else find_latest_checkpoint_dir(run_dir)
+    if not zip_src.exists() and rllib_ckpt is None:
         raise FileNotFoundError(
-            f"{src} not found — was eval triggered, or did training crash early?"
+            f"{zip_src} not found and no RLlib checkpoint under {run_dir} — "
+            "was eval triggered, or did training crash early?"
         )
 
     timestamp = run_dir.name
@@ -104,8 +108,20 @@ def promote_run_dir(run_dir: Path, run_name: str, models_root: Path) -> PromoteR
     dest = Path(models_root) / run_name
     dest.mkdir(parents=True, exist_ok=True)
     copied: list[str] = []
-    shutil.copy2(src, dest / "best_model.zip")
-    copied.append("best_model.zip")
+    checkpoint_format = "zip"
+    promoted_modules: list[str] = []
+    if zip_src.exists():
+        shutil.copy2(zip_src, dest / "best_model.zip")
+        copied.append("best_model.zip")
+    else:
+        # RLlib directory checkpoint: copy the whole tree into models/<run>/checkpoint/.
+        checkpoint_format = "rllib"
+        promoted_modules = sorted(module_ids(rllib_ckpt))
+        ckpt_dest = dest / "checkpoint"
+        if ckpt_dest.exists():
+            shutil.rmtree(ckpt_dest)
+        shutil.copytree(rllib_ckpt, ckpt_dest)
+        copied.append("checkpoint/")
     hydra_src = run_dir / ".hydra"
     if hydra_src.exists():
         hydra_dest = dest / ".hydra"
@@ -128,6 +144,8 @@ def promote_run_dir(run_dir: Path, run_name: str, models_root: Path) -> PromoteR
         "project":  _str_or_none(getattr(art, "project", None)),
         "aliases":  list(art.aliases),
         "logged_by_run_id": f"{run_name}_{timestamp}",
+        "checkpoint_format": checkpoint_format,
+        "module_ids": promoted_modules,
     }
     (dest / "_wandb_metadata.json").write_text(json.dumps(metadata, indent=2))
     copied.append("_wandb_metadata.json")

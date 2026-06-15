@@ -1,0 +1,216 @@
+"""Dedicated, deterministic eval battery for the RLlib league (Step 5b).
+
+Three layers, mirroring rllib/metrics.py:
+  1. Pure aggregation (init/fold/finalize) — unit-tested, no RLlib deps.
+  2. rollout_battery(env, act_red, act_blue, ...) — deterministic head-to-head
+     rollouts on a QuidditchMultiAgentEnv; takes two obs->action callables.
+  3. EvalBatteryCallback — runs the battery on a cadence inside on_train_result
+     and writes flat eval_* keys into the train result.
+
+Why a dedicated battery: Step 4 gates snapshots on RLlib's WINDOWED
+red_score_rate / blue_prevention_rate, which emit NaN when a window drains and
+are confounded by the PFSP matchup mix. The battery plays a fixed number of
+deterministic main_red-vs-main_blue episodes and reports clean, length-
+unconfounded metrics. "Honest prevention" = fraction of episodes Red did NOT
+score — a binary per-episode question, independent of episode length.
+"""
+from __future__ import annotations
+
+from core.eval_core import TERMINAL_BUCKETS, _classify_terminal
+
+
+# ── Pure aggregation ────────────────────────────────────────────────────────
+def init_battery_acc() -> dict:
+    """Fresh battery accumulator."""
+    return {
+        "n": 0,
+        "scored": 0,
+        "take_down": 0,
+        "len_sum": 0,
+        "buckets": {b: 0 for b in TERMINAL_BUCKETS},
+    }
+
+
+def fold_episode(
+    acc: dict, *, scored: bool, take_down: bool, bucket: str, length: int
+) -> None:
+    """Fold one finished episode's outcome into the accumulator (in place)."""
+    acc["n"] += 1
+    acc["scored"] += 1 if scored else 0
+    acc["take_down"] += 1 if take_down else 0
+    acc["len_sum"] += int(length)
+    if bucket in acc["buckets"]:
+        acc["buckets"][bucket] += 1
+
+
+def battery_metrics(acc: dict) -> dict:
+    """Flat eval_* metrics. Red score-rate, honest Blue prevention (1 - score-
+    rate), takedown-rate, per-bucket terminal histogram, mean episode length."""
+    n = acc["n"]
+    score_rate = acc["scored"] / n if n else 0.0
+    # Honest prevention = fraction of episodes Red did NOT score. Computed
+    # directly from the complement count (n - scored)/n rather than 1 - score_rate
+    # so it is exact (no float rounding) and srate + prevention == 1.0 holds.
+    out: dict[str, float] = {
+        "eval_red_score_rate": score_rate,
+        "eval_blue_prevention_rate": ((n - acc["scored"]) / n) if n else 0.0,
+        "eval_takedown_rate": (acc["take_down"] / n) if n else 0.0,
+        "eval_mean_ep_len": (acc["len_sum"] / n) if n else 0.0,
+        "eval_episodes": float(n),
+    }
+    for bucket, count in acc["buckets"].items():
+        out[f"eval_terminal_{bucket}"] = count
+    return out
+
+
+import numpy as np
+
+
+# ── Deterministic head-to-head rollouts ─────────────────────────────────────
+def rollout_battery(env, act_red, act_blue, *, n_episodes: int, seed: int) -> dict:
+    """Play `n_episodes` deterministic episodes; aggregate into eval_* metrics.
+
+    `env` is a QuidditchMultiAgentEnv (RLlib MultiAgentEnv): step returns
+    (obs, rew, term, trunc, infos) dicts with an "__all__" whole-episode flag.
+    `act_red` / `act_blue` map an agent's obs array -> action array. A per-
+    episode seed derived from `seed` keeps the battery reproducible run-to-run.
+    """
+    acc = init_battery_acc()
+    rng = np.random.default_rng(seed)
+    for _ in range(n_episodes):
+        ep_seed = int(rng.integers(0, 2**31 - 1))
+        obs, _ = env.reset(seed=ep_seed)
+        length = 0
+        red_info: dict = {}
+        blue_info: dict = {}
+        while True:
+            actions = {}
+            if "red_0" in obs:
+                actions["red_0"] = act_red(obs["red_0"])
+            if "blue_0" in obs:
+                actions["blue_0"] = act_blue(obs["blue_0"])
+            obs, _, term, trunc, infos = env.step(actions)
+            length += 1
+            red_info = infos.get("red_0", red_info) or red_info
+            blue_info = infos.get("blue_0", blue_info) or blue_info
+            if term.get("__all__") or trunc.get("__all__"):
+                break
+        scored = bool(red_info.get("scored") or blue_info.get("scored"))
+        take_down = bool(
+            red_info.get("take_down_fired") or blue_info.get("take_down_fired")
+        )
+        bucket = _classify_terminal(red_info, blue_info)
+        fold_episode(acc, scored=scored, take_down=take_down,
+                     bucket=bucket, length=length)
+    return battery_metrics(acc)
+
+
+def module_action_fn(module, *, deterministic: bool = True, rng=None):
+    """Wrap an RLModule into an obs->action callable.
+
+    forward_inference emits action_dist_inputs = [mean, log_std] for a
+    DiagGaussian over the Box(4) action. With deterministic=True (default) the
+    action is the mean (greedy). With deterministic=False and a numpy Generator
+    `rng`, the action is sampled: mean + exp(log_std) * N(0, 1).
+
+    The eval battery samples (deterministic=False): from a FIXED start a mean
+    policy gives byte-identical episodes -> a binary score-rate that defeats the
+    graded asymmetric snapshot threshold. Sampling makes the metric a graded
+    fraction of the policy's true competence; a seeded `rng` keeps a given
+    policy's eval reproducible. torch is imported lazily so the pure-aggregation
+    layer stays dependency-free.
+    """
+    import torch
+    from ray.rllib.core.columns import Columns
+
+    def _act(obs):
+        obs_t = torch.as_tensor(np.asarray(obs, dtype=np.float32)).unsqueeze(0)
+        with torch.no_grad():
+            out = module.forward_inference({Columns.OBS: obs_t})
+        dist_inputs = out[Columns.ACTION_DIST_INPUTS][0].cpu().numpy().astype(np.float32)
+        action_dim = dist_inputs.shape[-1] // 2   # [mean, log_std]
+        mean = dist_inputs[:action_dim]
+        if deterministic or rng is None:
+            return mean
+        std = np.exp(dist_inputs[action_dim:2 * action_dim])
+        return (mean + std * rng.standard_normal(action_dim)).astype(np.float32)
+
+    return _act
+
+
+from ray.rllib.callbacks.callbacks import RLlibCallback
+
+_MAIN_RED = "main_red"
+_MAIN_BLUE = "main_blue"
+
+
+def read_eval(result: dict, name: str):
+    """Recursively find flat eval key `name` in the (nested) result dict.
+
+    The league gate reads eval_* metrics this way (same recursive shape as
+    league.read_metric), tolerating wherever the eval block is nested.
+    """
+    if name in result and isinstance(result[name], (int, float)):
+        return result[name]
+    for v in result.values():
+        if isinstance(v, dict):
+            found = read_eval(v, name)
+            if found is not None:
+                return found
+    return None
+
+
+def _build_eval_env(env_config: dict):
+    """Build a no-render eval env from the live env_config. Imported lazily so
+    the pure layers don't pull MuJoCo. Mirrors training's env exactly (same obs
+    blocks, team_cfg, reward stack) so eval is on-distribution."""
+    from envs.quidditch.rllib_env import make_team_env
+    return make_team_env(dict(env_config))
+
+
+class EvalBatteryCallback(RLlibCallback):
+    """Runs the dedicated eval battery on a cadence and writes clean eval_*
+    metrics into the train result.
+
+    Built and stepped on the driver (same in-process pattern as the slow smoke
+    tests). The battery plays deterministic main_red-vs-main_blue episodes — a
+    controlled head-to-head, NOT the PFSP matchup mix the windowed metrics see —
+    so the snapshot/promotion gate keys off a stable, length-unconfounded signal.
+    Cached metrics are re-written every iteration so the gate always sees the
+    latest eval even between cadence boundaries.
+    """
+
+    def __init__(self):
+        super().__init__()
+        self._last_eval: dict = {}
+
+    def on_train_result(self, *, algorithm, result, **kwargs) -> None:
+        cfg = dict(algorithm.config.env_config.get("league", {}))
+        if not cfg.get("eval_enabled", False):
+            return
+        it = int(algorithm.iteration)
+        interval = int(cfg.get("eval_interval_iters", 20))
+        if it <= 1 or (interval > 0 and it % interval == 0) or not self._last_eval:
+            self._last_eval = self._run_battery(algorithm, cfg)
+        result.setdefault("eval", {}).update(self._last_eval)
+
+    def _run_battery(self, algorithm, cfg: dict) -> dict:
+        env = _build_eval_env(algorithm.config.env_config)
+        seed = int(cfg.get("eval_seed", 12345))
+        # Stochastic, seeded eval: a GRADED score-rate (which the asymmetric
+        # snapshot threshold needs), reproducible across evals of the same policy.
+        rng = np.random.default_rng(seed)
+        try:
+            act_red = module_action_fn(
+                algorithm.get_module(_MAIN_RED), deterministic=False, rng=rng)
+            act_blue = module_action_fn(
+                algorithm.get_module(_MAIN_BLUE), deterministic=False, rng=rng)
+            return rollout_battery(
+                env, act_red, act_blue,
+                n_episodes=int(cfg.get("eval_episodes", 20)),
+                seed=seed,
+            )
+        finally:
+            close = getattr(env, "close", None)
+            if callable(close):
+                close()

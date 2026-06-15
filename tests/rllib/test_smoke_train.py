@@ -216,3 +216,159 @@ def test_league_pfsp_prunes_and_restores(tmp_path):
         assert victim not in ids4, "pruned member resurrected by restore"
     finally:
         algo2.stop()
+
+
+@pytest.mark.slow
+def test_eval_battery_runs_and_writes_metrics(tmp_path):
+    """A league run with the eval battery enabled writes clean eval_* metrics
+    into the train result, and the snapshot gate consumes them (threshold 0)."""
+    from omegaconf import OmegaConf
+    from rllib.config_builder import build_ppo_config
+    from rllib.eval_battery import read_eval
+    from rllib.runtime import ray_init_for_project
+
+    ray_init_for_project()
+    cfg = OmegaConf.create({
+        "seed": 0,
+        "obs": {"name": "DUEL_V1_BODY", "n_stack": 1, "blocks": [
+            "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+            "UNIT_TO_GOAL", "SIGNED_DIST_NORM", "OPP_POS_REL", "OPP_VEL_REL_BODY",
+        ]},
+        "algo": {"lr": 5e-5, "gamma": 0.99, "lambda_": 0.95, "clip_param": 0.2,
+                 "entropy_coeff": 0.01, "num_epochs": 1, "minibatch_size": 64,
+                 "train_batch_size_per_learner": 256, "num_env_runners": 0,
+                 "total_timesteps": 256},
+        "multiagent": {"learner_id": "red_0",
+                       "policies_to_train": ["main_red", "main_blue"],
+                       "mapping": {"red_0": "main_red", "blue_0": "main_blue"},
+                       "modules": {"main_red": {"kind": "learned"},
+                                   "main_blue": {"kind": "learned"}}},
+        "curriculum": {"randomise_start": True, "episode_seconds": 1.0},
+        "league": {"enabled": True, "snapshot_threshold": 0.0,
+                   "min_iters_between_snapshots": 0, "population_cap": 5,
+                   "live_fraction": 0.5,
+                   "eval_enabled": True, "eval_interval_iters": 1,
+                   "eval_episodes": 3, "eval_seed": 0},
+        "reward_stack": None,
+    })
+    algo = build_ppo_config(cfg).build_algo()
+    try:
+        result = algo.train()   # iter 1: battery runs, writes eval_* metrics
+        srate = read_eval(result, "eval_red_score_rate")
+        prev = read_eval(result, "eval_blue_prevention_rate")
+        assert srate is not None and 0.0 <= float(srate) <= 1.0
+        assert prev is not None and abs((srate + prev) - 1.0) < 1e-6
+        assert read_eval(result, "eval_episodes") == 3.0
+    finally:
+        algo.stop()
+
+
+@pytest.mark.slow
+def test_curriculum_anneal_reaches_env(tmp_path):
+    """CurriculumCallback pushes the scheduled dense_scale + red_action_scale
+    onto the live env. With a schedule that hits 0 almost immediately, after one
+    iteration the local env runner's reward stack reports the annealed value."""
+    from omegaconf import OmegaConf
+    from rllib.config_builder import build_ppo_config
+    from rllib.runtime import ray_init_for_project
+
+    ray_init_for_project()
+    cfg = OmegaConf.create({
+        "seed": 0,
+        "obs": {"name": "DUEL_V1_BODY", "n_stack": 1, "blocks": [
+            "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+            "UNIT_TO_GOAL", "SIGNED_DIST_NORM", "OPP_POS_REL", "OPP_VEL_REL_BODY",
+        ]},
+        "algo": {"lr": 5e-5, "gamma": 0.99, "lambda_": 0.95, "clip_param": 0.2,
+                 "entropy_coeff": 0.01, "num_epochs": 1, "minibatch_size": 64,
+                 "train_batch_size_per_learner": 256, "num_env_runners": 0,
+                 "total_timesteps": 256},
+        "multiagent": {"learner_id": "red_0",
+                       "policies_to_train": ["main_red", "main_blue"],
+                       "mapping": {"red_0": "main_red", "blue_0": "main_blue"},
+                       "modules": {"main_red": {"kind": "learned"},
+                                   "main_blue": {"kind": "learned"}}},
+        # dense_scale drops to 0 by step 1; red_action_scale ramps 0.5 -> 1.0.
+        "curriculum": {"randomise_start": True, "episode_seconds": 1.0,
+                       "red_action_scale": 0.5,
+                       "dense_scale_schedule": [[0, 1.0], [1, 0.0]],
+                       "red_action_scale_schedule": [[0, 0.5], [10_000, 1.0]]},
+        "league": {"enabled": True, "snapshot_threshold": 0.0,
+                   "min_iters_between_snapshots": 0, "population_cap": 5,
+                   "live_fraction": 0.5},
+        "reward_stack": None,
+    })
+    algo = build_ppo_config(cfg).build_algo()
+    try:
+        algo.train()  # one iteration -> CurriculumCallback.on_train_result fired
+        from rllib.curriculum import _inner_team_envs
+        # The new-stack runner wraps envs in a SyncVectorMultiAgentEnv; reach the
+        # live QuidditchTeamEnv(s) via the same seam the callback pushes through.
+        inners = _inner_team_envs(algo.env_runner)
+        assert inners, "could not reach the live QuidditchTeamEnv on the runner"
+        inner = inners[0]
+        assert inner._reward_stack.dense_scale == 0.0     # annealed to zero
+        assert inner.cfg.red_action_scale > 0.5           # ramped up off the floor
+    finally:
+        algo.stop()
+
+
+@pytest.mark.slow
+def test_eval_team_battery_loads_from_checkpoint_dir(tmp_path):
+    """Train a tiny league, save a checkpoint, then load both mains from the
+    on-disk checkpoint dir and run the battery — the Step-5c eval path."""
+    from pathlib import Path
+    from omegaconf import OmegaConf
+    from rllib.config_builder import build_ppo_config
+    from rllib.runtime import ray_init_for_project
+    from core.rllib_checkpoint import load_rl_module
+    from rllib.eval_battery import rollout_battery, module_action_fn
+    from envs.quidditch.rllib_env import make_team_env
+
+    ray_init_for_project()
+    cfg = OmegaConf.create({
+        "seed": 0,
+        "obs": {"name": "DUEL_V1_BODY", "n_stack": 1, "blocks": [
+            "ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
+            "UNIT_TO_GOAL", "SIGNED_DIST_NORM", "OPP_POS_REL", "OPP_VEL_REL_BODY",
+        ]},
+        "algo": {"lr": 5e-5, "gamma": 0.99, "lambda_": 0.95, "clip_param": 0.2,
+                 "entropy_coeff": 0.01, "num_epochs": 1, "minibatch_size": 64,
+                 "train_batch_size_per_learner": 256, "num_env_runners": 0,
+                 "total_timesteps": 256},
+        "multiagent": {"learner_id": "red_0",
+                       "policies_to_train": ["main_red", "main_blue"],
+                       "mapping": {"red_0": "main_red", "blue_0": "main_blue"},
+                       "modules": {"main_red": {"kind": "learned"},
+                                   "main_blue": {"kind": "learned"}}},
+        "curriculum": {"randomise_start": True, "episode_seconds": 1.0},
+        "reward_stack": None,
+    })
+    algo = build_ppo_config(cfg).build_algo()
+    try:
+        algo.train()
+        ckpt = algo.save(str(tmp_path / "ckpt")).checkpoint.path
+    finally:
+        algo.stop()
+
+    # A direct algo.save writes the checkpoint dir at the given path (the
+    # checkpoint_<N> naming is a Tune-only convention); the returned path IS the
+    # RLlib checkpoint dir. find_latest_checkpoint_dir's checkpoint_<N> discovery
+    # is exercised by the synthetic core/run-listing tests; here we load from the
+    # real Ray-produced checkpoint via the same is_rllib_checkpoint detection.
+    from core.rllib_checkpoint import is_rllib_checkpoint
+    found = Path(ckpt)
+    assert is_rllib_checkpoint(found)
+    env = make_team_env({"learner_id": "red_0",
+                         "obs_blocks": list(cfg.obs.blocks),
+                         "team_cfg": {"randomise_red_start": True,
+                                      "episode_seconds": 1.0},
+                         "reward_stack": None})
+    try:
+        red = module_action_fn(load_rl_module(found, "main_red"))
+        blue = module_action_fn(load_rl_module(found, "main_blue"))
+        m = rollout_battery(env, red, blue, n_episodes=2, seed=0)
+    finally:
+        env.close()
+    assert 0.0 <= m["eval_red_score_rate"] <= 1.0
+    assert abs(m["eval_red_score_rate"] + m["eval_blue_prevention_rate"] - 1.0) < 1e-6

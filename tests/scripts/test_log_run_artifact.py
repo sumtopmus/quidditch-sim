@@ -187,3 +187,54 @@ def test_log_run_artifact_skips_model_doc_when_absent(tmp_path: Path) -> None:
     add_calls = art.add_file.call_args_list
     file_names = [c.kwargs.get("name") for c in add_calls]
     assert "MODEL.md" not in file_names
+
+
+def _make_rllib_run(tmp_path: Path) -> tuple[Path, Path]:
+    run_dir = tmp_path / "runs" / "rllib_league_step5" / "20260611_130631"
+    ckpt = run_dir / "tune" / "trial_x" / "checkpoint_000030"
+    (ckpt / "learner_group" / "learner" / "rl_module" / "main_blue").mkdir(parents=True)
+    hydra = run_dir / ".hydra"; hydra.mkdir(parents=True)
+    (hydra / "config.yaml").write_text("run_name: rllib_league_step5\n")
+    return run_dir, ckpt
+
+
+def _rllib_cfg() -> "OmegaConf":
+    return OmegaConf.create({
+        "run_name": "rllib_league_step5",
+        "obs": {"name": "DUEL_V1_BODY", "n_stack": 1},
+        "env": {"learner_id": "red_0"},
+        "init": {"mode": "scratch", "parent": None},
+    })
+
+
+def test_log_rllib_run_artifact_adds_checkpoint_dir(tmp_path: Path) -> None:
+    from scripts._artifact_io import log_rllib_run_artifact
+
+    run_dir, ckpt = _make_rllib_run(tmp_path)
+    run = MagicMock(); run.disabled = False
+    art = MagicMock()
+    with patch("wandb.Artifact", return_value=art) as mock_art_cls:
+        log_rllib_run_artifact(run=run, run_dir=run_dir, cfg=_rllib_cfg(),
+                               checkpoint_dir=ckpt, parent_chain_total=0,
+                               best_eval_reward=0.55)
+
+    # Artifact named after run_name (so promote's <run_name>:latest lookup works).
+    assert mock_art_cls.call_args.kwargs["name"] == "rllib_league_step5"
+    assert mock_art_cls.call_args.kwargs["metadata"]["checkpoint_format"] == "rllib"
+    # The checkpoint dir is added (not a single file).
+    add_dir_names = [c.kwargs.get("name") for c in art.add_dir.call_args_list]
+    assert "checkpoint" in add_dir_names
+    aliases = run.log_artifact.call_args.kwargs.get("aliases")
+    assert aliases == ["latest"]
+
+
+def test_log_rllib_run_artifact_noop_when_run_disabled(tmp_path: Path) -> None:
+    from scripts._artifact_io import log_rllib_run_artifact
+
+    run_dir, ckpt = _make_rllib_run(tmp_path)
+    run = MagicMock(); run.disabled = True
+    with patch("wandb.Artifact") as mock_art_cls:
+        log_rllib_run_artifact(run=run, run_dir=run_dir, cfg=_rllib_cfg(),
+                               checkpoint_dir=ckpt, parent_chain_total=0,
+                               best_eval_reward=None)
+    mock_art_cls.assert_not_called()
