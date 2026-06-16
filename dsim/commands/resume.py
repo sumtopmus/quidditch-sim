@@ -1,8 +1,6 @@
 """dsim resume — resume a training run from its latest checkpoint."""
 from __future__ import annotations
 
-import subprocess
-import sys
 from pathlib import Path
 
 import typer
@@ -40,12 +38,11 @@ def run(
                    err=True)
         raise typer.Exit(code=2)
 
-    cmd = [
-        sys.executable, "-m", "scripts.train",
-        f"+experiment={parent_exp}",
-        "init=resume",
-        f"init.parent_run={run_name}",
-        f"run_name={run_name}",
-    ]
-    typer.echo(f"$ {' '.join(cmd)}")
-    raise typer.Exit(code=subprocess.call(cmd))
+    typer.echo(
+        f"error: `dsim resume` is not yet supported on the RLlib path.\n"
+        f"  RLlib runs resume via ray.tune Tuner.restore, which is not wired\n"
+        f"  into scripts/train.py yet (tracked as a follow-up). Start a fresh\n"
+        f"  run with:  make train EXP={parent_exp}",
+        err=True,
+    )
+    raise typer.Exit(code=2)
