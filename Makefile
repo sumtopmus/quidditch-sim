@@ -25,7 +25,7 @@ PYTHON   := $(UV_RUN) python
 # it only for targets that open the interactive viewer.
 MJPYTHON := $(UV_RUN) mjpython
 
-.PHONY: help install clean test test-fast test-warm tui train train-rllib
+.PHONY: help install clean test test-fast test-warm tui train
 
 .DEFAULT_GOAL := help
 
@@ -65,7 +65,3 @@ tui: ## 🖼  Open the controller TUI (Slice 2; subprocess slots use mjpython wh
 train: ## 🚀 Launch a training run  EXP=<name> [OVERRIDES="key=val key=val"]
 	@test -n "$(EXP)" || { echo "ERROR: EXP=<experiment-name> required (ls conf/experiment/)"; exit 1; }
 	@$(PYTHON) -m scripts.train +experiment=$(EXP) $(OVERRIDES)
-
-train-rllib: ## 🚀 Launch an RLlib+Tune run  EXP=<name> [OVERRIDES="key=val"]
-	@test -n "$(EXP)" || { echo "ERROR: EXP=<experiment-name> required"; exit 1; }
-	@$(PYTHON) -m scripts.train_rllib +experiment=$(EXP) $(OVERRIDES)

@@ -1,4 +1,4 @@
-"""Step-5c: train_rllib logs the RLlib checkpoint dir as a :latest artifact."""
+"""Step-5c: scripts.train logs the RLlib checkpoint dir as a :latest artifact."""
 from __future__ import annotations
 
 from pathlib import Path
@@ -18,7 +18,7 @@ def _cfg() -> "OmegaConf":
 
 
 def test_log_best_checkpoint_logs_latest_artifact(tmp_path: Path) -> None:
-    from scripts.train_rllib import _log_best_checkpoint
+    from scripts.train import _log_best_checkpoint
 
     run_dir = tmp_path / "runs" / "rllib_league_step5" / "20260611_130631"
     ckpt = run_dir / "tune" / "trial_x" / "checkpoint_000030"
@@ -26,8 +26,8 @@ def test_log_best_checkpoint_logs_latest_artifact(tmp_path: Path) -> None:
     (run_dir / ".hydra").mkdir(parents=True)
 
     fake_run = MagicMock(); fake_run.disabled = False
-    with patch("scripts.train_rllib.wandb") as wb, \
-         patch("scripts.train_rllib.log_rllib_run_artifact") as log_art:
+    with patch("scripts.train.wandb") as wb, \
+         patch("scripts.train.log_rllib_run_artifact") as log_art:
         wb.init.return_value = fake_run
         _log_best_checkpoint(_cfg(), run_dir)
 
@@ -38,12 +38,12 @@ def test_log_best_checkpoint_logs_latest_artifact(tmp_path: Path) -> None:
 
 
 def test_log_best_checkpoint_noop_when_wandb_disabled(tmp_path: Path) -> None:
-    from scripts.train_rllib import _log_best_checkpoint
+    from scripts.train import _log_best_checkpoint
 
     run_dir = tmp_path / "runs" / "x" / "20260611_130631"
     (run_dir / "tune" / "trial_x" / "checkpoint_000010"
      / "learner_group" / "learner" / "rl_module" / "main_red").mkdir(parents=True)
     cfg = _cfg(); cfg.tune.wandb.enabled = False
-    with patch("scripts.train_rllib.log_rllib_run_artifact") as log_art:
+    with patch("scripts.train.log_rllib_run_artifact") as log_art:
         _log_best_checkpoint(cfg, run_dir)
     log_art.assert_not_called()
