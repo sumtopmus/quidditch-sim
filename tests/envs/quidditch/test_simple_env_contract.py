@@ -1,22 +1,25 @@
-"""SB3 env-checker contract + zero-action smoke episode for QuidditchSimpleEnv.
+"""Gymnasium env-checker contract + zero-action smoke episode for
+QuidditchSimpleEnv.
 
-Ported from parts 1 & 2 of scripts/check_env.py.
+Ported from parts 1 & 2 of scripts/check_env.py.  (The checker was SB3's
+stable_baselines3.common.env_checker until the SB3 retirement in migration
+Step 6; gymnasium's own checker now guards the Gym API contract.)
 """
 from __future__ import annotations
 
 import numpy as np
 import pytest
-from stable_baselines3.common.env_checker import check_env
+from gymnasium.utils.env_checker import check_env
 
 from envs.quidditch.simple_env import QuidditchSimpleEnv
 
 pytestmark = pytest.mark.slow
 
 
-def test_sb3_check_env_passes() -> None:
+def test_gym_check_env_passes() -> None:
     env = QuidditchSimpleEnv(render_mode=None, randomise_start=False)
     try:
-        check_env(env, warn=True)
+        check_env(env, skip_render_check=True)
     finally:
         env.close()
 
