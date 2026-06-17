@@ -296,24 +296,38 @@ from scripts._render_model_doc import (
 
 
 def test_section_env_config_renders_team_fields():
-    out = _section_env_config(_ctx_for_section())
+    ctx = _ctx_for_section()
+    # RLlib shape: learner via multiagent, physics via env.team_env_params.
+    ctx["cfg"].multiagent = {"learner_id": "blue_0"}
+    ctx["cfg"].env = {"team_env_params": {
+        "tag_radius": 0.3, "crash_vel_thr": 1.0,
+        "midpoint_alpha": 0.5, "walls_collide": True}}
+    out = _section_env_config(ctx)
     assert "## Env config" in out
     assert "BeelineRed" in out  # opponent short name
-    assert "blue_0" in out  # learner_id
-    assert "30.0 s" in out  # episode_seconds
+    assert "blue_0" in out  # learner_id (from cfg.multiagent)
     assert "fixed_start" in out  # curriculum
     assert "0.3 m" in out  # tag_radius
     assert "1.0 m/s" in out  # crash_vel_thr
+    assert "Walls collide" in out
 
 
-def test_section_hyperparams_renders_trainer_fields():
-    out = _section_hyperparams(_ctx_for_section())
+def test_section_hyperparams_renders_algo_fields():
+    ctx = _ctx_for_section()
+    ctx["cfg"].algo = {
+        "lr": 3e-4, "total_timesteps": 10_000_000,
+        "minibatch_size": 256, "num_epochs": 10, "gamma": 0.99,
+        "lambda_": 0.95, "entropy_coeff": 0.0, "clip_param": 0.2,
+        "train_batch_size_per_learner": 8192,
+    }
+    out = _section_hyperparams(ctx)
     assert "## Training hyperparams" in out
     assert "PPO" in out
     assert "lr:** 0.0003" in out or "lr:** 3e-4" in out
     assert "10,000,000" in out
-    assert "n_envs:** 8" in out
-    assert "batch_size:** 256" in out
+    assert "minibatch_size:** 256" in out
+    assert "num_epochs:** 10" in out
+    assert "train_batch_size_per_learner:** 8192" in out
 
 
 def test_section_eval_results_renders_best_kind():

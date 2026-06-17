@@ -305,60 +305,58 @@ def _opponent_short(cfg) -> str:
 def _section_env_config(ctx: dict[str, Any]) -> str:
     cfg = ctx["cfg"]
     hydra_yaml = ctx["hydra_yaml"]
+    # RLlib records the learner via cfg.multiagent.learner_id; cfg.env now holds
+    # only the team physics thresholds (team_env_params).
     learner = "drone_0"
+    ma = cfg.get("multiagent", None) if hasattr(cfg, "get") else None
+    if ma is not None and hasattr(ma, "get"):
+        learner = ma.get("learner_id", "drone_0")
+    params = None
     if hasattr(cfg, "env") and cfg.env is not None and hasattr(cfg.env, "get"):
-        learner = cfg.env.get("learner_id", "drone_0")
-    team_cfg = None
-    if hasattr(cfg, "env") and cfg.env is not None and hasattr(cfg.env, "get"):
-        team_cfg = cfg.env.get("team_cfg", None)
+        params = cfg.env.get("team_env_params", None)
     curriculum = _curriculum_choice(hydra_yaml)
     opp = _opponent_short(cfg)
 
     lines = ["## Env config", ""]
     lines.append(f"- **Opponent:** `{opp}`  ·  **Learner:** `{learner}`")
-    if team_cfg:
-        episode = team_cfg.get("episode_seconds", "(unknown)")
-        lines.append(f"- **Episode:** {episode} s  ·  **Curriculum:** `{curriculum}`")
-        tag_r = team_cfg.get("tag_radius", None)
-        crash_thr = team_cfg.get("crash_vel_thr", None)
+    lines.append(f"- **Curriculum:** `{curriculum}`")
+    if params:
+        tag_r = params.get("tag_radius", None)
+        crash_thr = params.get("crash_vel_thr", None)
         if tag_r is not None and crash_thr is not None:
             lines.append(f"- **Tag radius:** {tag_r} m  ·  **Crash velocity threshold:** {crash_thr} m/s")
-        midpoint = team_cfg.get("midpoint_alpha", None)
-        aftermath = team_cfg.get("crash_aftermath_seconds", None)
-        if midpoint is not None or aftermath is not None:
-            lines.append(f"- **Midpoint α:** {midpoint}  ·  **Crash aftermath:** {aftermath} s")
-    else:
-        lines.append(f"- **Curriculum:** `{curriculum}`")
+        midpoint = params.get("midpoint_alpha", None)
+        walls = params.get("walls_collide", None)
+        if midpoint is not None or walls is not None:
+            lines.append(f"- **Midpoint α:** {midpoint}  ·  **Walls collide:** {walls}")
     return "\n".join(lines)
 
 
 def _section_hyperparams(ctx: dict[str, Any]) -> str:
     cfg = ctx["cfg"]
-    # Legacy migrated configs don't carry `trainer` — render an explanatory
-    # note rather than raising.
-    t = cfg.get("trainer", None) if hasattr(cfg, "get") else None
-    if t is None:
+    # Legacy migrated configs don't carry `algo` — render an explanatory note
+    # rather than raising.
+    a = cfg.get("algo", None) if hasattr(cfg, "get") else None
+    if a is None:
         return (
             "## Training hyperparams\n\n"
-            "_(legacy migrated config — trainer hyperparams not recorded in "
+            "_(legacy migrated config — RLlib `algo` hyperparams not recorded in "
             ".hydra/config.yaml; see run_info.toml for legacy `[training].*` "
             "fields.)_"
         )
-    total = int(t.total_timesteps)
-    n_envs: Any = "(unknown)"
-    if hasattr(cfg, "env") and cfg.env is not None and hasattr(cfg.env, "get"):
-        n_envs = cfg.env.get("n_envs", "(unknown)")
+    total = int(a.get("total_timesteps", 0))
     return "\n".join([
         "## Training hyperparams",
         "",
-        f"- **Algorithm:** PPO  ·  **lr:** {t.lr}  ·  **total_timesteps:** {total:,}",
-        f"- **n_envs:** {n_envs}  ·  "
-        f"**batch_size:** {t.get('batch_size', '(unknown)')}  ·  "
-        f"**n_epochs:** {t.get('n_epochs', '(unknown)')}",
-        f"- **gamma:** {t.get('gamma', '(unknown)')}  ·  "
-        f"**gae_lambda:** {t.get('gae_lambda', '(unknown)')}  ·  "
-        f"**ent_coef:** {t.get('ent_coef', '(unknown)')}  ·  "
-        f"**clip_range:** {t.get('clip_range', '(unknown)')}",
+        f"- **Algorithm:** PPO (RLlib new stack)  ·  **lr:** {a.get('lr', '(unknown)')}  ·  "
+        f"**total_timesteps:** {total:,}",
+        f"- **train_batch_size_per_learner:** {a.get('train_batch_size_per_learner', '(unknown)')}  ·  "
+        f"**minibatch_size:** {a.get('minibatch_size', '(unknown)')}  ·  "
+        f"**num_epochs:** {a.get('num_epochs', '(unknown)')}",
+        f"- **gamma:** {a.get('gamma', '(unknown)')}  ·  "
+        f"**lambda_:** {a.get('lambda_', '(unknown)')}  ·  "
+        f"**entropy_coeff:** {a.get('entropy_coeff', '(unknown)')}  ·  "
+        f"**clip_param:** {a.get('clip_param', '(unknown)')}",
     ])
 
 
