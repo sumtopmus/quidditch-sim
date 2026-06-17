@@ -2,13 +2,6 @@
 from __future__ import annotations
 
 
-def test_trainer_config_defaults():
-    from config_schema import TrainerConfig
-    c = TrainerConfig()
-    assert c.n_steps == 1024
-    assert 0.0 < c.lr < 1.0
-
-
 def test_init_config_mode_values():
     from config_schema import InitConfig
     # scratch is the only init mode after the SB3 retirement (Step 6).

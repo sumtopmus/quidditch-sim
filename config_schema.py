@@ -1,8 +1,8 @@
 """Structured Hydra config dataclasses.
 
-The schemas here cover the *data-only* groups (trainer, eval, init,
-curriculum, obs).  Instantiated groups (env factories, opponents, reward
-terms) use _target_ instantiation — the Python class itself is the schema.
+The schemas here cover the *data-only* groups (eval, init, curriculum, obs).
+Instantiated groups (opponents, reward terms) use _target_ instantiation —
+the Python class itself is the schema.
 
 `register_configs()` registers everything with Hydra's ConfigStore so YAML
 files in conf/ are validated against these schemas at compose time.
@@ -14,20 +14,6 @@ from dataclasses import dataclass, field
 from typing import Any
 
 from hydra.core.config_store import ConfigStore
-
-
-@dataclass
-class TrainerConfig:
-    """PPO hyperparameters (matches stable_baselines3.PPO __init__)."""
-    n_steps: int = 1024
-    batch_size: int = 512
-    n_epochs: int = 6
-    lr: float = 5e-5
-    gamma: float = 0.99
-    gae_lambda: float = 0.95
-    clip_range: float = 0.2
-    ent_coef: float = 0.01
-    total_timesteps: int = 20_000_000
 
 
 @dataclass
@@ -117,7 +103,6 @@ class Config:
     run_name: str = "_adhoc"
     seed: int = 42
     description: str = ""
-    trainer: TrainerConfig = field(default_factory=TrainerConfig)
     eval: EvalConfig = field(default_factory=EvalConfig)
     init: InitConfig = field(default_factory=InitConfig)
     curriculum: CurriculumConfig = field(default_factory=CurriculumConfig)
@@ -135,7 +120,6 @@ def register_configs() -> None:
     because ConfigStore.store overwrites by (group, name).
     """
     cs = ConfigStore.instance()
-    cs.store(group="trainer",    name="schema", node=TrainerConfig)
     cs.store(group="eval",       name="schema", node=EvalConfig)
     cs.store(group="init",       name="schema", node=InitConfig)
     cs.store(group="curriculum", name="schema", node=CurriculumConfig)

@@ -9,7 +9,7 @@ from tests.conftest import hydra_compose
 def test_default_compose_succeeds():
     with hydra_compose() as cfg:
         assert cfg.run_name == "_adhoc"
-        assert cfg.trainer.lr > 0
+        assert cfg.algo.lr > 0
         assert cfg.env.team_env_params.tag_radius == 0.3
 
 
