@@ -1,6 +1,6 @@
 # Drone Quidditch Sim
 
-A reinforcement learning project that trains quadcopter drones to fly through a goal hoop — and, in the team variant, to chase down an opposing drone — in a simplified analogue of Quidditch. Built on [MuJoCo](https://mujoco.org/) physics with a vendored Crazyflie 2 model from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie), and trained with Stable-Baselines3 PPO. Experiments are composed with [Hydra](https://hydra.cc/) and tracked in [Weights & Biases](https://wandb.ai/).
+A reinforcement learning project that trains quadcopter drones to fly through a goal hoop — and, in the team variant, to chase down an opposing drone — in a simplified analogue of Quidditch. Built on [MuJoCo](https://mujoco.org/) physics with a vendored Crazyflie 2 model from [MuJoCo Menagerie](https://github.com/google-deepmind/mujoco_menagerie), and trained with [Ray RLlib](https://docs.ray.io/en/latest/rllib/index.html) PPO (new API stack) + Ray Tune. Experiments are composed with [Hydra](https://hydra.cc/) and tracked in [Weights & Biases](https://wandb.ai/).
 
 **Current status:** The single-drone "fly through a hoop" milestone is reached, and work has moved to **1v1 team play** (a Blue drone defending its hoop against a Red attacker). The stack runs on MuJoCo (migrated from PyFlyt/PyBullet on 2026-04-24): a generic `core/` infrastructure layer (`World` + per-drone `Quadrotor` views, MJCF composition primitives) plus a sport-specific `envs/quidditch/` package holding both `QuidditchSimpleEnv` (single-agent) and `QuidditchTeamEnv` (PettingZoo 1v1). The project tooling was rebuilt in three ML-infra passes: **Hydra config** (TOML/argparse retired → `conf/` group tree + `make train EXP=<name>`), **W&B integration** (TensorBoard retired → online experiment tracking + a model-artifact registry), and a **`dsim` Typer CLI** for inspection and dispatch. The toolchain is **uv**, not conda. Dynamics canary: `make test` runs a pytest suite whose scoring fingerprint asserts `SCORED at step 434 / total reward 7.3837`.
 
@@ -95,7 +95,7 @@ The reward function above is the single-agent stack (`conf/reward/single_agent.y
 
 ## Team play (1v1)
 
-The second milestone pits two drones against each other: a **Red** attacker trying to score through the hoop and a **Blue** defender trying to stop it. This runs through `QuidditchTeamEnv` (a PettingZoo `ParallelEnv`) wrapped by `OpponentControlledEnv` (an SB3 single-agent shim that drives one side with a frozen/scripted opponent so a standard PPO learner trains against it).
+The second milestone pits two drones against each other: a **Red** attacker trying to score through the hoop and a **Blue** defender trying to stop it. This runs through `QuidditchTeamEnv` (a PettingZoo `ParallelEnv`), trained directly as a multi-agent environment by RLlib (new API stack) — each side is a policy, and scripted opponents are mounted as frozen `RLModule`s (`envs/quidditch/rllib_modules.py`).
 
 **Scoring & events:**
 
@@ -104,9 +104,9 @@ The second milestone pits two drones against each other: a **Red** attacker tryi
 - **Score** — Red flying through the hoop scores +10 (zero-summed against Blue).
 - **Crash aftermath** — under `--gui`, drone-drone-crash termination is deferred a few seconds (`crash_aftermath_seconds`) and the loser's motors are cut so the impact is legible on video; training defaults to 0 s (immediate termination, byte-identical canary).
 
-**Opponents** (`conf/opponent/`, classes in `envs/quidditch/opponents.py`): `beeline_red` / `beeline_blue` (scripted straight-line), `intercepter_blue` (predicts and cuts off the target), `frozen` (a promoted checkpoint, used as a fixed sparring partner), `mixture` (league-style weighted random per episode), and `none`.
+**Opponents** (`conf/opponent/`, classes in `envs/quidditch/opponents.py`): `beeline_red` / `beeline_blue` (scripted straight-line), `intercepter_blue` (predicts and cuts off the target), and `none`. Frozen self-play snapshots are managed inside the RLlib league, not via these scripted-opponent configs.
 
-**Observations** are richer than the single-agent 16-d vector and are composed from named blocks (`conf/obs/*.yaml`, `obs.blocks`): `duel_v1_body` (22-d, opponent in body frame, unstacked), `duel_v2_world` (25-d, opponent in world frame — the default), and `duel_v3_body_ego` (25-d, fully body-frame ego-centric). The two current specs are frame-stacked (`obs.n_stack = 3`, so the policy sees a 75-d input). Because the obs layout is a persisted, named structure, loading a checkpoint validates its obs spec against the current one (`core/obs_compat.py`) and refuses a silent mismatch unless you opt into input-layer surgery.
+**Observations** are richer than the single-agent 16-d vector and are composed from named blocks (`conf/obs/*.yaml`, `obs.blocks`): `duel_v1_body` (22-d, opponent in body frame, unstacked), `duel_v2_world` (25-d, opponent in world frame — the default), and `duel_v3_body_ego` (25-d, fully body-frame ego-centric). The two current specs are frame-stacked (`obs.n_stack = 3`, so the policy sees a 75-d input). Because the obs layout is a persisted, named structure, loading a checkpoint validates its obs spec against the current one (`core/obs_compat.py`) and refuses a silent mismatch.
 
 ---
 
@@ -124,7 +124,7 @@ The second milestone pits two drones against each other: a **Red** attacker tryi
 # 1. Clone this repo
 git clone <this-repo-url>
 
-# 2. Sync the uv environment (Python 3.13 + MuJoCo + SB3 + imageio)
+# 2. Sync the uv environment (Python 3.13 + MuJoCo + Ray RLlib + imageio)
 make install
 
 # 3. Sanity-check the env
@@ -134,7 +134,7 @@ make test-fast      # unit tests only (skips @pytest.mark.slow integration runs)
 
 `make install` is idempotent — `uv sync` creates `.venv/` on first run and updates it on subsequent runs based on `uv.lock`. Run anything in the venv with `uv run <cmd>` (or `make`/`dsim`, which wrap it). Configuration lives in the git-tracked `conf/` tree — there is no local config to seed.
 
-> **macOS OpenMP:** training spawns multiple SB3 envs via `SubprocVecEnv`; on macOS, multiple copies of `libomp` can coexist across Python distributions and cause a duplicate-init abort. `scripts/train.py` (and the `eval_*` scripts) set `KMP_DUPLICATE_LIB_OK=TRUE` at import time to suppress it. No user action required.
+> **macOS OpenMP:** training spawns multiple Ray env-runner processes; on macOS, multiple copies of `libomp` can coexist across Python distributions and cause a duplicate-init abort. `KMP_DUPLICATE_LIB_OK=TRUE` is propagated to the Ray workers via `ray.init(runtime_env=...)` (see `rllib/runtime.py`), so the guard reaches every env-runner. No user action required.
 >
 > **macOS viewer:** the interactive MuJoCo passive viewer needs `mjpython` (it owns the Cocoa main thread). Use `uv run mjpython demo/menu.py` for demos; headless rendering and training use plain `python`.
 
@@ -146,9 +146,9 @@ Three command surfaces, by purpose:
 
 | Purpose | Surface | Examples |
 |---|---|---|
-| Inspection / read-only / one-shot dispatch | **`dsim`** (Typer) | `dsim inventory`, `dsim obs-preflight --parent X --child-obs Y`, `dsim lineage --target ...`, `dsim list-runs`, `dsim resume <run-name>`, `dsim promote <run-name>`, `dsim describe-run <run-name>`, `dsim obs-specs`, `dsim sweep create <name>` |
-| Composable runs (training, eval, battery, sweep) | **Hydra apps** (`python -m scripts.X`) | `python -m scripts.train +experiment=blue_v5`, `python -m scripts.eval_team +eval_team=default +learner=blue learner.uri=<uri> opponent=beeline_red`, `python -m scripts.eval_battery +eval_battery=default eval_battery.candidate=<uri>`, `python -m scripts.eval_solo +eval_solo=default eval_solo.model_uri=<uri>` |
-| Chores (install, test, train one-off, TUI) | **`make`** | `make install`, `make test`, `make test-fast`, `make test-warm MODEL=<x>`, `make train EXP=blue_v5`, `make tui` |
+| Inspection / read-only / one-shot dispatch | **`dsim`** (Typer) | `dsim inventory`, `dsim obs-preflight --parent X --child-obs Y`, `dsim lineage --target ...`, `dsim list-runs`, `dsim resume <run-name>` (RLlib resume not yet wired — fails fast), `dsim promote <run-name>`, `dsim describe-run <run-name>`, `dsim obs-specs` |
+| Composable runs (training, eval) | **Hydra apps** (`python -m scripts.X`) | `python -m scripts.train +experiment=rllib_league_step5`, `python -m scripts.eval_team +eval_team=default +learner=red learner.uri=<checkpoint-dir>` |
+| Chores (install, test, train one-off, TUI) | **`make`** | `make install`, `make test`, `make test-fast`, `make train EXP=rllib_league_step5`, `make tui` |
 
 Inspection and dispatch went to `dsim` for discoverability (`dsim --help` lists everything). Hydra apps cover anything with composable configs. Make is reserved for true chores plus the one-off `make train EXP=X` muscle-memory shortcut.
 
@@ -158,15 +158,15 @@ Inspection and dispatch went to `dsim` for discoverability (`dsim --help` lists 
 |---|---|
 | `make demo` | TUI -> Demo task (Slice 2); or `mjpython demo/menu.py <key>` directly |
 | `make camera-test CAM=<x>` | TUI -> Camera Test (Slice 2); or `python demo/camera_test.py --cam <x>` |
-| `make eval` | `python -m scripts.eval_solo +eval_solo=default eval_solo.model_uri=<uri>` |
-| `make eval-team LEARNER=… BLUE=… RED=… GUI=1` | `python -m scripts.eval_team +eval_team=default +learner=<side> learner.uri=<uri> opponent=<choice> eval.gui=true` |
+| `make eval` | Retired — the single-agent eval path was removed with the SB3 path (Step 6) |
+| `make eval-team LEARNER=… BLUE=… RED=… GUI=1` | `python -m scripts.eval_team +eval_team=default +learner=<side> learner.uri=<checkpoint-dir>` |
 | `make resume RUN_NAME=…` | `dsim resume <run-name>` |
 | `make lineage RUN_NAME=…` | `dsim lineage --target models/ppo_hoop_<name>_*/best_model` |
 | `make promote RUN_NAME=…` | `dsim promote <run-name>` |
 | `make list-runs` | `dsim list-runs` |
 | `make obs-specs` | `dsim obs-specs` |
 | `make describe-run RUN_NAME=…` | `dsim describe-run <run-name>` |
-| `make sweep SWEEP=…` / `sweep-agents ID=… N=…` | `dsim sweep create <name>` / `dsim sweep agents <id> --n N` |
+| `make sweep SWEEP=…` / `sweep-agents ID=… N=…` | Retired — hyperparameter sweeps run via Ray Tune (`tune` config group) inside `scripts/train.py` |
 
 ---
 
@@ -184,11 +184,10 @@ python -m scripts.train +experiment=blue_v7     # the same thing, no make wrappe
 ls conf/experiment/                             # list available experiments
 ```
 
-`init.mode` selects how the run starts: `scratch` (fresh policy), `pretrain` (continue from a parent checkpoint with a compatible obs spec), `resume` (continue an interrupted run), or `warm_start` (load a parent and surgery its input layer to a new obs spec). The parent (`init.parent`) accepts a filesystem path or a `wandb://run:alias` URI.
+`init.mode` is `scratch` only — the RLlib league always starts from a fresh policy (the SB3 `pretrain`/`resume`/`warm_start` modes and parent loading were retired in Step 6).
 
 Training artifacts land in `runs/<run_name>/<timestamp>/`:
-- `best_model.zip` / `final_model.zip` — best checkpoint by eval reward, and the last snapshot
-- `checkpoints/` — periodic model snapshots
+- `tune/<trial>/checkpoint_NNNNNN/` — Ray Tune checkpoint dirs (the best one is logged as the `:latest` W&B artifact)
 - `videos/` — multi-camera episode clips, logged to W&B
 - `.hydra/{config,overrides,hydra}.yaml` — the fully-composed config (Hydra-written; the config snapshot)
 - `.hydra/meta.yaml` — git hash, parent lineage edge, and final eval stats
@@ -199,24 +198,21 @@ Training artifacts land in `runs/<run_name>/<timestamp>/`:
 
 ### Evaluate
 
-Three Hydra eval apps:
+`scripts.eval_team` loads an RLlib checkpoint and runs the native
+main_red-vs-main_blue battery:
 
 ```bash
-# Single-agent: fly-through-the-hoop score/crash/timeout rates
-python -m scripts.eval_solo +eval_solo=default \
-    eval_solo.model_uri=models/ppo_hoop_rand_start_*/best_model eval.gui=true
-
-# 1v1 team: route one side through the learner, the other through an opponent
+# 1v1 team: load a checkpoint dir, run the RLlib head-to-head battery
 python -m scripts.eval_team +eval_team=default \
-    learner=blue learner.uri=models/ppo_hoop_blue_4_*/best_model \
-    opponent=beeline_red eval.gui=true
-
-# Battery: run a candidate against a fixed suite of scenarios → a report
-python -m scripts.eval_battery +eval_battery=default \
-    eval_battery.candidate=models/ppo_hoop_blue_4_*/best_model
+    +learner=red learner.uri=runs/rllib_league_step5/<ts>/tune/<trial>/checkpoint_NNN \
+    eval.n_episodes=20
 ```
 
-Model URIs accept filesystem paths or `wandb://run:alias`. Eval prints per-side score / crash / timeout / take-down rates, mean reward ± std, and steps-to-score.
+`learner.uri` is an RLlib checkpoint dir (or a run dir whose latest checkpoint
+is auto-discovered). Eval prints per-side score / prevention / take-down rates,
+mean episode length, and the terminal-cause buckets. (The SB3 single-agent
+eval and the standalone battery script were retired in Step 6; the battery
+now runs inside `eval_team` via `rllib/eval_battery.py`.)
 
 ### Inspect, promote, resume — `dsim`
 
@@ -227,13 +223,11 @@ dsim describe-run <run-name>   # render a run's MODEL.md spec sheet
 dsim obs-specs                 # block-by-block layout of every named obs spec
 dsim obs-preflight --parent <uri> --child-obs <name>   # will a load/surgery succeed?
 dsim lineage --target <path-or-uri>                    # walk the parent chain
-dsim resume <run-name>         # continue an interrupted run
-dsim promote <run-name>        # promote a run's best_model into models/ + alias the W&B artifact
-dsim sweep create <name>       # create a W&B sweep controller from sweeps/<name>.yaml
-dsim sweep agents <id> --n N   # launch N sweep agents
+dsim resume <run-name>         # (RLlib Tuner.restore not yet wired — fails fast)
+dsim promote <run-name>        # promote a run's best checkpoint into models/ + alias the W&B artifact
 ```
 
-Promoting copies `best_model.zip` + `.hydra/` + `MODEL.md` into `models/<run-name>/` (git-tracked) and moves the `:prod` alias on the W&B artifact. Then commit the new `models/<run-name>/` directory.
+Promoting copies the run's best checkpoint (an RLlib `checkpoint/` dir, or a legacy `best_model.zip`) + `.hydra/` + `MODEL.md` into `models/<run-name>/` (git-tracked) and moves the `:prod` alias on the W&B artifact. Then commit the new `models/<run-name>/` directory.
 
 ### Demos & camera
 
@@ -252,24 +246,26 @@ There is no TOML config and no local working copy — everything is the git-trac
 
 | Group | Choices (`conf/<group>/`) | What it sets |
 |---|---|---|
-| `trainer` | `ppo`, `ppo_finetune` | PPO hyperparameters + `total_timesteps` |
-| `env` | `simple`, `team` | which env factory + `n_envs` |
+| `algo` | `ppo_rllib` | RLlib PPO hyperparameters + `total_timesteps` |
+| `multiagent` | `red_solo`, `red_blue_selfplay`, `red_blue_league` | policy mapping + per-module specs |
+| `tune` | `default` | Ray Tune run config (checkpointing, W&B logger) |
+| `league` | `disabled`, `default` | self-play snapshot league (PFSP) |
+| `env` | `team` | team physics thresholds (`team_env_params`) |
 | `obs` | `simple`, `duel_v1_body`, `duel_v2_world`, `duel_v3_body_ego` | obs blocks + frame-stack depth |
 | `reward` | `single_agent`, `team_v1…v4_*` | the `RewardStack` of terms |
-| `opponent` | `none`, `beeline_red/blue`, `intercepter_blue`, `frozen`, `mixture` | the sparring partner (team only) |
+| `opponent` | `none`, `beeline_red/blue`, `intercepter_blue` | scripted sparring partner (team only) |
 | `curriculum` | `fixed_start`, `random_start` | start randomisation + episode length |
-| `init` | `scratch`, `pretrain`, `resume`, `warm_start` | how the policy is initialised |
+| `init` | `scratch` | always scratch (SB3 parent-loading modes retired in Step 6) |
 | `eval` | `default`, `fast` | eval cadence + episode count |
 | `wandb` | `default` | W&B project / tags / verbosity |
 | `learner` | `blue`, `red` | which side the eval-team learner controls |
 | `local` | (gitignored) | optional per-machine hardware tunings |
 
-Group defaults are validated against `@dataclass` schemas in `config_schema.py` at compose time. Env factories, opponents, and reward terms are `_target_`-instantiated, so adding one is a YAML edit plus a class — no entrypoint changes.
+Group defaults are validated against `@dataclass` schemas in `config_schema.py` at compose time. Opponents and reward terms are `_target_`-instantiated, so adding one is a YAML edit plus a class — no entrypoint changes.
 
 ```yaml
-# conf/config.yaml — the default stack (a team run vs a scripted Red)
+# conf/config.yaml — the default stack (a team run on the RLlib new stack)
 defaults:
-  - trainer: ppo
   - env: team
   - obs: duel_v2_world
   - reward: team_v2
@@ -278,12 +274,16 @@ defaults:
   - init: scratch
   - curriculum: random_start
   - wandb: default
+  - algo: ppo_rllib       # RLlib PPO hyperparameters
+  - multiagent: red_solo  # policy mapping / module specs
+  - tune: default         # Ray Tune run config
+  - league: disabled      # self-play snapshot league (off by default)
 ```
 
 **Tuning notes carried from prior runs:**
-- `ent_coef = 0.05` caused instability — the entropy bonus dominated the sparse hoop reward. Kept at 0.01.
-- `n_steps = 2048` with 8 envs gave too few policy updates per run; 1024 doubled update frequency and stabilised learning.
-- Training uses `SubprocVecEnv` (parallel workers) for rollout and a single-worker eval env — the SB3 type-mismatch warning is intentional and suppressed.
+- A large entropy bonus caused instability — it dominated the sparse hoop reward. `algo.entropy_coeff` is kept at 0.01 and annealed toward 0 (`entropy_coeff_schedule`).
+- Too few policy updates per run stalls learning; the RLlib path tunes the rollout/update balance via `algo.train_batch_size_per_learner` and `algo.num_epochs`.
+- Training parallelises rollouts across Ray env-runners (`algo.num_env_runners`); the learner trains on the aggregated batch (`algo.train_batch_size_per_learner`).
 
 ---
 
@@ -297,9 +297,10 @@ repo/
 │   ├── quadrotor.py            Quadrotor — per-drone view bound to a World
 │   ├── mjcf/                   composition primitives (fragment, document, meshes, camera)
 │   ├── drone/cf2x.py           cf2x_assets() + cf2x_fragment(prefix, ...)
-│   ├── policies/warm_start.py  input-layer surgery for obs-spec changes
 │   ├── obs_compat.py           obs-spec compatibility check / preflight
-│   ├── eval_core.py            shared episode-loop + metrics for the eval apps
+│   ├── eval_core.py            eval result dataclasses + terminal-cause buckets
+│   ├── rllib_checkpoint.py     RLlib checkpoint discovery/detection
+│   ├── rllib_eval.py           RLlib head-to-head battery runner
 │   ├── eval_report.py          battery report rendering
 │   ├── inventory.py            on-disk run/model discovery
 │   ├── lineage.py              parent-chain walkers (local + W&B DAG)
@@ -315,31 +316,29 @@ repo/
 │       ├── tagging.py          TagDistanceScorer (proximity tag, team play)
 │       ├── crash.py            CrashDetector (drone-drone / wall take-downs)
 │       ├── obs_spec.py         named ObsBlock/ObsSpec, YAML-driven composition
-│       ├── env_factories.py    SimpleEnvFactory, TeamEnvFactory (_target_-instantiated)
-│       ├── opponents.py        scripted / frozen / mixture opponents
+│       ├── opponents.py        scripted opponents (Beeline*, Intercepter*, Zero)
+│       ├── rllib_env.py        make_team_env — registers "quidditch_team" for RLlib
+│       ├── rllib_modules.py    learned + scripted RLModules (new API stack)
 │       ├── rewards/            RewardStack + composable reward terms
-│       ├── simple_env.py       QuidditchSimpleEnv (single-agent)
-│       └── team_env.py         QuidditchTeamEnv + OpponentControlledEnv (1v1)
+│       ├── simple_env.py       QuidditchSimpleEnv (single-agent; obs-spec unit tests)
+│       └── team_env.py         QuidditchTeamEnv — PettingZoo ParallelEnv (1v1)
 ├── scripts/                    Hydra apps + run-lifecycle helpers
-│   ├── train.py                unified PPO entrypoint (init.mode dispatch)
-│   ├── eval_solo.py            single-agent eval
-│   ├── eval_team.py            1v1 learner-vs-opponent eval
-│   ├── eval_battery.py         candidate-vs-scenario-suite report
+│   ├── train.py                RLlib + Ray Tune training entrypoint (canonical)
+│   ├── eval_team.py            1v1 RLlib head-to-head eval (loads a checkpoint)
 │   ├── promote.py / lineage.py model promotion + lineage backing scripts
-│   ├── callbacks.py            checkpoint + W&B video callbacks
-│   ├── _wandb_init.py / _artifact_io.py   W&B init + artifact registry
+│   ├── _artifact_io.py         W&B artifact registry (resolve_parent, log_*_artifact)
 │   └── _render_model_doc.py    MODEL.md generator
 ├── dsim/                       Typer CLI (inspection + dispatch); `dsim --help`
 │   ├── cli.py                  command wiring
 │   └── commands/               inventory, list-runs, describe-run, lineage, resume,
-│                               promote, obs-specs, obs-preflight, sweep
+│                               promote, obs-specs, obs-preflight
 ├── conf/                       Hydra config group tree (git-tracked)
 │   ├── config.yaml             default group choices
-│   ├── trainer/ env/ obs/ reward/ opponent/ curriculum/ init/ eval/ wandb/
-│   ├── experiment/             one YAML per run (red_v1, blue_v4, blue_v5, blue_v7, canary_*)
-│   ├── learner/ eval_solo/ eval_team/ eval_battery/
+│   ├── env/ obs/ reward/ opponent/ curriculum/ init/ eval/ wandb/
+│   ├── algo/ multiagent/ tune/ league/   RLlib + Ray Tune config groups
+│   ├── experiment/             one YAML per run (rllib_red_skeleton, rllib_selfplay, rllib_league*)
+│   ├── learner/ eval_team/
 │   └── camera/default.yaml     scene + per-drone follow cameras
-├── sweeps/                     W&B sweep YAMLs (wandb owns the schema)
 ├── demo/                       hover / waypoint / takedown / score-through-tag + menu
 ├── assets/cf2x/               Menagerie cf2 visual + collision meshes (Apache 2.0)
 ├── docs/superpowers/           per-feature spec + plan docs
@@ -366,17 +365,17 @@ repo/
 
 **Scene composition:** [core/mjcf/](core/mjcf/) provides `SceneFragment` (MJCF chunks + binary asset bytes) and `build_mjcf(opts, fragments)` (string concat under one `<mujoco>` root). No file `<include>` directives, no temp files — all MJCF assembly happens in memory at sim-init via `MjModel.from_xml_string(xml, assets=...)`. Adding a second drone is a one-line fragment append — which is exactly how the team env builds its 1v1 scene.
 
-**Team env:** [envs/quidditch/team_env.py](envs/quidditch/team_env.py) — `QuidditchTeamEnv` is a PettingZoo `ParallelEnv` with Red and Blue sharing one `MjModel` (two `Quadrotor` views; two MjModels can't share a contact world). `OpponentControlledEnv` wraps it into a standard single-agent Gym env by driving the non-learner side with a scripted/frozen opponent, so a vanilla SB3 PPO learner trains against it. Collisions are enabled here (the 32 cf2 collision hulls are opt-in via `with_collision_meshes=True` / `with_collisions=True`, bitmask `1`; hoop and arena-wall stay phase-through on bit `0`); the single-drone path leaves them off and stays byte-identical.
+**Team env:** [envs/quidditch/team_env.py](envs/quidditch/team_env.py) — `QuidditchTeamEnv` is a PettingZoo `ParallelEnv` with Red and Blue sharing one `MjModel` (two `Quadrotor` views; two MjModels can't share a contact world). RLlib trains it directly as a multi-agent env: `envs/quidditch/rllib_env.py:make_team_env` registers it as `"quidditch_team"`, and `envs/quidditch/rllib_modules.py` provides the learned and scripted `RLModule`s. Collisions are enabled here (the 32 cf2 collision hulls are opt-in via `with_collision_meshes=True` / `with_collisions=True`, bitmask `1`; hoop and arena-wall stay phase-through on bit `0`); the single-drone path leaves them off and stays byte-identical.
 
-**Obs specs:** [envs/quidditch/obs_spec.py](envs/quidditch/obs_spec.py) — obs layouts are named `ObsSpec`s composed from `ObsBlock`s, declared as `blocks: [...]` lists in `conf/obs/*.yaml` and built at env construction. The spec persists with each checkpoint, so loading validates the parent's obs spec against the current one ([core/obs_compat.py](core/obs_compat.py)) and strict-refuses a silent mismatch; `init=warm_start` is the explicit escape that surgeries matched columns of the input layer and small-inits the rest.
+**Obs specs:** [envs/quidditch/obs_spec.py](envs/quidditch/obs_spec.py) — obs layouts are named `ObsSpec`s composed from `ObsBlock`s, declared as `blocks: [...]` lists in `conf/obs/*.yaml` and built at env construction. The spec persists with each checkpoint, so loading validates the parent's obs spec against the current one ([core/obs_compat.py](core/obs_compat.py)) and strict-refuses a silent mismatch.
 
 **Hoop scoring:** [envs/quidditch/scoring.py](envs/quidditch/scoring.py) — `GeomDistanceScorer.overlaps()` returns an `(N drones × M hoops)` boolean matrix from `mujoco.mj_geomDistance` between each drone's invisible probe sphere and each hoop's invisible score tube. The earlier signed-distance plane crossing was replaced because `mj_geomDistance` is the right primitive for "is this geom inside that geom" and doesn't involve the contact solver. (A first MuJoCo-era attempt used a `<contact><pair>` with `solimp="0 0 ..."` to read overlap from contact reports; it pinned the drone at the tube boundary with ~0.1 N residual force.)
 
-**Config & experiment tracking:** runs are composed by Hydra from the `conf/` group tree (validated against `@dataclass` schemas in `config_schema.py`) and tracked in W&B. The fully-resolved config is saved to each run's `.hydra/`, and promoted models are registered as W&B artifacts (`<run_name>:prod`) whose lineage DAG is walkable via `dsim lineage`. Env factories, opponents, and reward terms are `_target_`-instantiated, so the config tree is the extension surface.
+**Config & experiment tracking:** runs are composed by Hydra from the `conf/` group tree (validated against `@dataclass` schemas in `config_schema.py`) and tracked in W&B. The fully-resolved config is saved to each run's `.hydra/`, and promoted models are registered as W&B artifacts (`<run_name>:prod`) whose lineage DAG is walkable via `dsim lineage`. Opponents and reward terms are `_target_`-instantiated, so the config tree is the extension surface.
 
 **Camera:** the fixed scene camera (`eye` + `lookat`) and per-drone follow cameras live in `conf/camera/default.yaml`, loaded directly via PyYAML (cameras aren't an experiment axis, so they're outside Hydra composition). The same config drives the live viewer pose and the offscreen renderer for training videos. `python demo/camera_test.py` renders a hover flight through the scene camera without launching a training run.
 
-**macOS OpenMP:** `scripts/train.py` (and the `eval_*` scripts + `tests/conftest.py`) set `KMP_DUPLICATE_LIB_OK=TRUE` at import time to suppress the libomp double-init abort that can occur on macOS Apple Silicon when SB3's `SubprocVecEnv` spawns workers and multiple `libomp` copies are loaded.
+**macOS OpenMP:** `rllib/runtime.py` sets `KMP_DUPLICATE_LIB_OK=TRUE` and propagates it to every Ray env-runner via `ray.init(runtime_env={"env_vars": ...})` (and `tests/conftest.py` sets it for the suite), suppressing the libomp double-init abort that can occur on macOS Apple Silicon when worker processes load multiple `libomp` copies.
 
 ---
 

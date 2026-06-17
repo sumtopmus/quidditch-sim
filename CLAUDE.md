@@ -4,10 +4,10 @@
 
 Three surfaces by purpose:
 - `dsim <cmd>` — Typer CLI for inspection (inventory, lineage, list-runs,
-  obs-preflight, obs-specs, describe-run) and dispatch (resume, promote,
-  sweep). Single binary; `dsim --help` lists all.
+  obs-preflight, obs-specs, describe-run) and dispatch (resume, promote).
+  Single binary; `dsim --help` lists all.
 - `python -m scripts.<name>` — Hydra apps for composable runs:
-  `train`, `eval_team`, `eval_solo`, `eval_battery`.
+  `train` (RLlib + Ray Tune), `eval_team`.
 - `make <target>` — chores only: `install`, `clean`, `test*`, `tui`, `train`.
 
 See `README.md` "CLI surface" section for the migration map.
