@@ -10,7 +10,7 @@ def test_default_compose_succeeds():
     with hydra_compose() as cfg:
         assert cfg.run_name == "_adhoc"
         assert cfg.trainer.lr > 0
-        assert cfg.env._target_.endswith("Factory")
+        assert cfg.env.team_env_params.tag_radius == 0.3
 
 
 @pytest.mark.parametrize("name", [

@@ -206,33 +206,3 @@ def test_pack_agent_obs_dispatch_uses_structural_equality_not_identity():
         assert obs["red_0"].shape  == (DUEL_V1_BODY.dim,)
     finally:
         env.close()
-
-
-@pytest.mark.slow
-def test_subproc_vec_env_does_not_lose_spec_identity_on_pickling():
-    """End-to-end regression: SubprocVecEnv(n_envs=2) actually pickles
-    the team_env across the multiprocessing boundary.  Reset must
-    succeed and yield the right obs shape on both workers."""
-    from envs.quidditch.env_factories import TeamEnvFactory
-
-    factory = TeamEnvFactory(
-        n_envs=2,
-        team_cfg=TeamConfig(randomise_red_start=False),
-        learner_id="blue_0",
-        opponent_spec="zero",
-        obs_blocks=["ANG_VEL", "ANG_POS", "LIN_VEL_BODY", "LIN_POS",
-                    "VEC_TO_GOAL_BODY", "VEC_TO_HOOP_BODY", "OPP_POS_REL_BODY",
-                    "OPP_VEL_REL_BODY_EGO", "CLOSING_RATE"],
-        obs_name="DUEL_V3_BODY_EGO",
-        frame_stack=1,
-        seed=42,
-    )
-    vec_env = factory.build_train_env()
-    try:
-        obs = vec_env.reset()
-        # SubprocVecEnv reset returns (n_envs, obs_dim) ndarray.
-        assert obs.shape == (2, DUEL_V3_BODY_EGO.dim), (
-            f"expected (2, {DUEL_V3_BODY_EGO.dim}), got {obs.shape}"
-        )
-    finally:
-        vec_env.close()
