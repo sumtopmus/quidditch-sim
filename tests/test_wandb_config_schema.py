@@ -3,7 +3,7 @@ from tests.conftest import hydra_compose
 
 
 def test_wandb_default_composes() -> None:
-    with hydra_compose(experiment="canary_team") as cfg:
+    with hydra_compose() as cfg:
         assert cfg.wandb.project == "drone-quidditch"
         assert cfg.wandb.entity_override is None
         assert list(cfg.wandb.tags_extra) == []
@@ -13,7 +13,7 @@ def test_wandb_default_composes() -> None:
 
 def test_wandb_config_in_defaults_list() -> None:
     """conf/config.yaml's defaults list must include `wandb: default`."""
-    with hydra_compose(experiment="canary_single") as cfg:
+    with hydra_compose() as cfg:
         # If `wandb: default` weren't in defaults, cfg.wandb wouldn't exist.
         assert "wandb" in cfg
         assert cfg.wandb.project == "drone-quidditch"

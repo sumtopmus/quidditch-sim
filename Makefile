@@ -25,7 +25,7 @@ PYTHON   := $(UV_RUN) python
 # it only for targets that open the interactive viewer.
 MJPYTHON := $(UV_RUN) mjpython
 
-.PHONY: help install clean test test-fast test-warm tui train
+.PHONY: help install clean test test-fast tui train
 
 .DEFAULT_GOAL := help
 
@@ -54,10 +54,6 @@ test: ## ✅ Full test suite (unit + integration)
 
 test-fast: ## ⚡ Unit tests only (skip @pytest.mark.slow)
 	@$(PYTHON) -m pytest -m "not slow"
-
-test-warm: ## ✅ Warm-start integration test  MODEL=<run-name>
-	@test -n "$(MODEL)" || { echo "ERROR: MODEL=<run-name> required (see 'dsim inventory')"; exit 1; }; \
-	 MODEL="$(MODEL)" $(PYTHON) -m pytest tests/core/policies/test_warm_start.py
 
 tui: ## 🖼  Open the controller TUI (Slice 2; subprocess slots use mjpython when needed)
 	@$(PYTHON) -m dsim tui

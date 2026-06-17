@@ -83,7 +83,7 @@ def hydra_compose(experiment: str | None = None, overrides: list[str] | None = N
     """Compose a Hydra config without running @hydra.main.
 
     Usage:
-        with hydra_compose(experiment="canary_team") as cfg:
+        with hydra_compose(experiment="rllib_league_step5") as cfg:
             stack = instantiate(cfg.reward)
 
     Each call uses a fresh Hydra context (initialize() is idempotent only when

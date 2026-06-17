@@ -286,7 +286,7 @@ def log_run_artifact(
             "n_stack":            int(cfg.obs.n_stack),
             "learner_id":         cfg.env.get("learner_id"),
             "init_mode":          str(cfg.init.mode),
-            "parent_uri":         cfg.init.parent,
+            "parent_uri":         None,  # always scratch (SB3 lineage retired, Step 6)
             "parent_chain_total": int(parent_chain_total),
             "best_eval_reward":   best_eval_reward,
             "model_kind":         model_kind,
@@ -330,7 +330,7 @@ def log_rllib_run_artifact(
             "n_stack":            int(cfg.obs.n_stack),
             "learner_id":         cfg.env.get("learner_id"),
             "init_mode":          str(cfg.init.mode),
-            "parent_uri":         cfg.init.parent,
+            "parent_uri":         None,  # always scratch (SB3 lineage retired, Step 6)
             "parent_chain_total": int(parent_chain_total),
             "best_eval_reward":   best_eval_reward,
             "model_kind":         "rllib",

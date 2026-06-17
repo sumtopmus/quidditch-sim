@@ -51,35 +51,12 @@ class EvalConfig:
 
 @dataclass
 class InitConfig:
-    """Mutex enforced by Hydra group choice (one conf/init/*.yaml at a time).
+    """Pure-scratch league: training always starts from random init.
 
-    Per-mode validity:
-      - scratch:    all parent fields null
-      - pretrain:   parent required; obs_surgery=False
-      - resume:     parent_run required; parent_checkpoint optional
-      - warm_start: parent required; obs_surgery=True
+    (Pre-RLlib SB3 modes — pretrain/resume/warm_start, parent loading, and the
+    `:latest`-alias ban — were retired with the SB3 path in migration Step 6.)
     """
     mode: str = "scratch"
-    parent: str | None = None
-    parent_run: str | None = None
-    parent_checkpoint: str | None = None
-    obs_surgery: bool = False
-    new_dim_init_scale: float = 0.01  # only used when mode=warm_start
-
-    def __post_init__(self) -> None:
-        # Ban `:latest` alias in committed configs.  `:latest` shifts as new
-        # versions land; a checked-in lineage parent must pin a stable alias
-        # (`:prod`, `:<run_name>`) or an immutable version (`:v3`).  Schema-
-        # level rejection prevents the footgun of a parent's meaning drifting
-        # under a `git pull` from someone else's promote.
-        if self.mode != "scratch" and self.parent is not None:
-            is_wandb = self.parent.startswith(("wandb://", "wandb-artifact://"))
-            if is_wandb and self.parent.endswith(":latest"):
-                raise ValueError(
-                    f"init.parent={self.parent!r}: `:latest` is banned in "
-                    f"committed configs.  Pin a stable alias (`:prod`, "
-                    f"`:<run_name>`) or an immutable version (`:v<N>`)."
-                )
 
 
 @dataclass

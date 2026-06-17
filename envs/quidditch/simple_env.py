@@ -293,8 +293,8 @@ class QuidditchSimpleEnv(gym.Env):
         """Pack obs from feature dict under self._spec.
 
         Slots [0:16] are contractually frozen — team_env mirrors the same
-        encoding for slots 0:15 (+ signed_dist_norm at slot 15) so
-        warm_start_ppo_by_spec can copy the input layer by name.
+        encoding for slots 0:15 (+ signed_dist_norm at slot 15) so the two
+        envs share an identical named input-layer encoding.
         """
         return obs_spec.pack(self._spec, self._build_features())
 

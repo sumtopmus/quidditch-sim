@@ -7,7 +7,7 @@ as `attacker` and the other as `defender` via constructor kwargs.
 Phase 2 design: see docs/superpowers/specs/2026-05-06-team-play-design.md.
 
 Observation (22 floats per agent — slots 0:16 byte-for-byte compatible
-with simple_env._obs so warm_start_ppo_by_spec can copy the input layer):
+with simple_env._obs, sharing an identical named input-layer encoding):
     [0:3]   angular velocity  — body frame, rad/s
     [3:6]   attitude euler    — ground frame, rad
     [6:9]   linear velocity   — body frame, m/s

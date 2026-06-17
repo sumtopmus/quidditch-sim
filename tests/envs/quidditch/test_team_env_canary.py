@@ -23,11 +23,12 @@ pytestmark = pytest.mark.slow
 
 
 def test_team_v2_stack_instantiates_via_hydra():
-    """Hydra composes the canary YAML, instantiates the reward stack, and its
-    term-by-term composition matches the team_v2 expected list.  The full
-    forward-simulation canary below asserts the per-step reward fingerprint.
+    """Hydra composes the default config (reward: team_v2), instantiates the
+    reward stack, and its term-by-term composition matches the team_v2 expected
+    list.  The full forward-simulation canary below asserts the per-step reward
+    fingerprint.
     """
-    with hydra_compose(experiment="canary_team") as cfg:
+    with hydra_compose() as cfg:
         stack = instantiate(cfg.reward, _convert_="all")
     expected = [
         "TagEntryPulse", "ProximityGradedTag", "ClosingVelInTagZone",

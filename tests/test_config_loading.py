@@ -14,24 +14,19 @@ def test_default_compose_succeeds():
 
 
 @pytest.mark.parametrize("name", [
-    "canary_single", "canary_team",
-    "red_v1", "blue_v4", "blue_v5",
+    "rllib_red_skeleton", "rllib_selfplay",
+    "rllib_league", "rllib_league_step5",
 ])
 def test_experiment_composes(name: str):
     with hydra_compose(experiment=name) as cfg:
         assert cfg.run_name
-        assert cfg.trainer.total_timesteps > 0
+        assert cfg.algo.total_timesteps > 0
 
 
-@pytest.mark.parametrize("init_choice", ["scratch", "pretrain", "resume", "warm_start"])
-def test_init_groups_compose(init_choice: str):
-    overrides: list[str] = []
-    if init_choice in ("pretrain", "warm_start"):
-        overrides = ["+init.parent=x"]
-    elif init_choice == "resume":
-        overrides = ["+init.parent_run=y"]
-    with hydra_compose(overrides=[f"init={init_choice}", *overrides]) as cfg:
-        assert cfg.init.mode == init_choice
+def test_init_groups_compose():
+    # scratch is the only init mode after the SB3 retirement (Step 6).
+    with hydra_compose(overrides=["init=scratch"]) as cfg:
+        assert cfg.init.mode == "scratch"
 
 
 def test_rllib_league_step5_experiment_composes():
