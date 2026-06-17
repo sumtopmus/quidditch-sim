@@ -1,7 +1,9 @@
 """Behavior contract for core.eval_core.
 
-Pure-function tests (no real env) on the helpers, plus a slow integration
-test running 1 episode against zero_red.
+Pure-function tests (no real env) on the surviving helpers: _classify_terminal
+and the immutable result dataclasses. (The SB3 run_scenario episode loop was
+retired in migration Step 6; the RLlib battery is covered by
+tests/rllib/test_eval_battery.py.)
 """
 from __future__ import annotations
 
@@ -44,33 +46,3 @@ def test_scenario_spec_is_immutable() -> None:
                      randomise_start=False, n_episodes=1)
     with pytest.raises(Exception):
         s.n_episodes = 2  # type: ignore[misc]
-
-
-@pytest.mark.slow
-def test_run_scenario_produces_episode_results() -> None:
-    """Slow integration: 1 episode against zero_red w/ a scripted learner."""
-    from core.eval_core import ScenarioSpec, run_scenario, TERMINAL_BUCKETS
-
-    spec = ScenarioSpec(
-        opponent="zero",
-        opponent_model_path=None,
-        randomise_start=False,
-        n_episodes=1,
-        crash_aftermath_seconds=0.0,
-        deterministic=True,
-        learner_id="blue_0",
-        seed=42,
-    )
-    result = run_scenario(
-        learner_uri="scripted:beeline_blue",
-        scenario=spec,
-        render=False,
-    )
-
-    assert result.scenario == spec
-    assert len(result.episodes) == 1
-    ep = result.episodes[0]
-    assert ep.length > 0
-    assert ep.terminal_cause in TERMINAL_BUCKETS
-    assert 0.0 <= result.win_rate <= 1.0
-    assert isinstance(result.terminal_cause_counts, dict)
