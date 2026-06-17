@@ -1,8 +1,8 @@
 """Single source of truth for observation layouts.
 
-Each obs construction site (simple_env, team_env, OpponentControlledEnv) builds
-its array via the ObsSpec declared here.  The spec is also serialized into
-run_info.toml's [obs] block so load-time tools can detect shape changes.
+Each obs construction site (simple_env, team_env) builds its array via the
+ObsSpec declared here.  The spec is also serialized into run_info.toml's [obs]
+block so load-time tools can detect shape changes.
 
 See docs/superpowers/specs/2026-05-12-obs-spec-design.md for rationale.
 """

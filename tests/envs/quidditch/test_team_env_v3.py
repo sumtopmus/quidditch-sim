@@ -9,7 +9,6 @@ import pytest
 
 from envs.quidditch.constants import HOOP_CENTER, REWARD_LOOKAHEAD_S
 from envs.quidditch.obs_spec import load_obs_yaml
-from envs.quidditch.opponents import OpponentControlledEnv, from_spec
 from envs.quidditch.team_env import QuidditchTeamEnv, TeamConfig
 from tests.conftest import set_body_state
 
@@ -125,55 +124,6 @@ def test_v3_future_red_dist_updates_step_over_step():
         # and consecutive steps generally differ under PID-driven motion.
         assert d0 >= 0.0
         assert d1 >= 0.0
-    finally:
-        env.close()
-
-
-def test_oce_passes_through_v3_blue_obs_without_re_augmentation():
-    """OCE around a v3 team env emits the 25-d blue obs as-is."""
-    team = QuidditchTeamEnv(
-        cfg=TeamConfig(randomise_red_start=False),
-        learner_id="blue_0", learner_spec=DUEL_V3_BODY_EGO,
-    )
-    env = OpponentControlledEnv(team, learner_id="blue_0",
-                                 opponent=from_spec("zero"))
-    try:
-        obs, _ = env.reset(seed=0)
-        assert env.observation_space.shape == (DUEL_V3_BODY_EGO.dim,)
-        assert obs.shape == (DUEL_V3_BODY_EGO.dim,)
-        assert obs.dtype == np.float32
-    finally:
-        env.close()
-
-
-@pytest.mark.slow
-def test_blue_v4_round_trip_through_new_in_env_packer():
-    """blue_v4 was trained under DUEL_V2_WORLD (formerly built by OCE's
-    augmenter, now built by team_env's per-agent packer).  Round-trip
-    one predict() call to confirm shape + math stays compatible.
-    """
-    from pathlib import Path
-    from stable_baselines3 import PPO
-
-    from envs.quidditch.opponents import FrameStackWrapper
-
-    model_path = Path("models/ppo_hoop_blue_4_20260511_202612/best_model")
-    if not model_path.with_suffix(".zip").exists():
-        pytest.skip(f"blue_v4 checkpoint not found at {model_path}")
-
-    team = QuidditchTeamEnv(
-        cfg=TeamConfig(randomise_red_start=False),
-        learner_id="blue_0", learner_spec=DUEL_V2_WORLD,
-    )
-    env = OpponentControlledEnv(team, learner_id="blue_0",
-                                 opponent=from_spec("zero"))
-    env = FrameStackWrapper(env, n_stack=3)
-    try:
-        obs, _ = env.reset(seed=0)
-        assert obs.shape == (DUEL_V2_WORLD.dim * 3,)
-        model = PPO.load(str(model_path))
-        action, _ = model.predict(obs, deterministic=True)
-        assert np.asarray(action).shape == (4,)
     finally:
         env.close()
 
