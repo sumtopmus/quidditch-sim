@@ -4,8 +4,6 @@
 #   dsim --help                            inspection + dispatch (Typer CLI)
 #   python -m scripts.train +experiment=X  Hydra entrypoint (composable)
 #   python -m scripts.eval_team  …         Hydra entrypoint
-#   python -m scripts.eval_battery …       Hydra entrypoint
-#   python -m scripts.eval_solo  …         Hydra entrypoint
 #   make tui                               opens the controller TUI (Slice 2)
 
 EXP        ?=
@@ -37,8 +35,6 @@ help: ## 📋 Show targets + pointers to dsim and Hydra entrypoints
 	@echo "  dsim --help                              List dsim subcommands"
 	@echo "  python -m scripts.eval_team +eval_team=default +learner=blue \\"
 	@echo "      learner.uri=<…> opponent=beeline_red"
-	@echo "  python -m scripts.eval_battery +eval_battery=default \\"
-	@echo "      eval_battery.candidate=<uri>"
 	@echo ""
 
 install: ## ⚙️  Sync the uv-managed venv from pyproject.toml + uv.lock
