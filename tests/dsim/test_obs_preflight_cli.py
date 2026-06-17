@@ -29,7 +29,7 @@ def test_compatible_exits_zero(tmp_path: Path) -> None:
     assert "compatible" in result.output
 
 
-def test_surgery_required_exits_one(tmp_path: Path) -> None:
+def test_incompatible_obs_exits_one(tmp_path: Path) -> None:
     p = _make_parent(tmp_path, "DUEL_V1_BODY", 1)
     runner = CliRunner()
     result = runner.invoke(app, [
@@ -37,7 +37,7 @@ def test_surgery_required_exits_one(tmp_path: Path) -> None:
         "--child-obs", "DUEL_V2_WORLD", "--child-n-stack", "3",
     ])
     assert result.exit_code == 1
-    assert "surgery required" in result.output
+    assert "incompatible" in result.output
 
 
 def test_missing_parent_exits_two(tmp_path: Path) -> None:

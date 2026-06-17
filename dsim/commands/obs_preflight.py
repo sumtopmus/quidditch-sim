@@ -1,9 +1,10 @@
 """dsim obs-preflight — check parent ↔ child obs-spec compat without loading weights.
 
 Exit codes:
-    0 — compatible (no surgery needed)
-    1 — incompatible but surgery would resolve (warm_start required)
-    2 — incompatible AND the diff suggests something else is wrong
+    0 — compatible (the parent's obs spec matches the child's)
+    1 — incompatible (the obs specs differ — input-layer surgery would have been
+        needed, but the SB3 warm_start path was retired in Step 6)
+    2 — the diff suggests something else is wrong
        (e.g. unknown spec name, missing parent .hydra/)
 """
 from __future__ import annotations
@@ -54,7 +55,10 @@ def run(
     cons.print(table)
 
     if report.compatible:
-        cons.print("[green]compatible[/] — init.mode=pretrain will load cleanly.")
+        cons.print("[green]compatible[/] — the parent's obs spec matches the child's.")
         raise typer.Exit(code=0)
-    cons.print("[yellow]surgery required[/] — set init.mode=warm_start.")
+    cons.print(
+        "[yellow]incompatible[/] — the obs specs differ. Input-layer surgery "
+        "would have been needed; the SB3 warm_start path was retired in Step 6."
+    )
     raise typer.Exit(code=1)

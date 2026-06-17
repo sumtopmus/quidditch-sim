@@ -499,8 +499,8 @@ def test_cli_writes_model_doc_to_run_dir(tmp_path: Path):
 
 
 # ─── Graceful degradation for legacy migrated configs ────────────────────────
-# `scripts/migrate_legacy_models.py` produced minimal `.hydra/config.yaml` for
-# the 7 legacy promoted models — only {run_name, seed, obs, init}.  The
+# The 7 legacy promoted models carry a minimal hand-written `.hydra/config.yaml`
+# — only {run_name, seed, obs, init}.  The
 # renderer must not raise when trainer/reward/env/opponent/curriculum are
 # absent; it must render a clear "legacy migrated config — X not recorded"
 # note instead.

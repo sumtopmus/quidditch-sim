@@ -5,8 +5,8 @@ inventory() walks models/<name>/ (vendored) and optionally models/.cache/<name>/
 _wandb_metadata.json via core.run_context.load_run_context, and returns a
 list[ModelInfo] sorted by short_name then trial timestamp descending.
 
-Legacy migrated models (.hydra/config.yaml hand-written by
-scripts/migrate_legacy_models.py) are handled the same way; their obs_spec
+Legacy migrated models (with a hand-written, minimal .hydra/config.yaml) are
+handled the same way; their obs_spec
 field may be missing or sparse, which inventory() reports as obs_spec="?"
 (string sentinel, not None — keeps the table renderer simple).
 """

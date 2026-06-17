@@ -4,7 +4,7 @@ preflight(parent_uri, child_obs_name, child_n_stack) -> PreflightReport
 - Resolves parent_uri to its obs spec WITHOUT loading the model
 - Returns a structured report (no print, no sys.exit)
 - compatible=False ⇒ check_obs_compat would strict-raise
-- surgery_required=True ⇒ would need init.mode=warm_start
+- surgery_required=True ⇒ obs specs differ (input-layer surgery would be needed)
 """
 from __future__ import annotations
 
@@ -45,7 +45,7 @@ def test_preflight_n_stack_mismatch_is_incompatible(tmp_path: Path) -> None:
 
 
 def test_preflight_spec_change_is_surgery_required(tmp_path: Path) -> None:
-    """Different obs specs (e.g. V1_BODY → V2_WORLD) need warm_start."""
+    """Different obs specs (e.g. V1_BODY → V2_WORLD) are flagged surgery_required."""
     from core.obs_compat import preflight
     parent = _make_parent(tmp_path, obs_name="DUEL_V1_BODY", n_stack=1)
     report = preflight(str(parent), child_obs_name="DUEL_V2_WORLD", child_n_stack=3)

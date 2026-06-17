@@ -76,9 +76,10 @@ class ObsConfig:
 class WandbConfig:
     """W&B integration knobs.
 
-    Read at runtime by scripts/_wandb_init.py.  Defaults target this
-    project's wandb workspace; an experiment YAML can override tags_extra
-    for ad-hoc filtering.
+    Read at runtime by scripts/_artifact_io.py (artifact project resolution);
+    the RLlib training run's live W&B logging is configured from cfg.tune.wandb.
+    Defaults target this project's wandb workspace; an experiment YAML can
+    override tags_extra for ad-hoc filtering.
     """
     project: str = "drone-quidditch"
     entity_override: str | None = None         # null → WANDB_ENTITY env / default

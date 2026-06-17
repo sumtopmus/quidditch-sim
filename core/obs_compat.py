@@ -45,7 +45,7 @@ class ObsBlockDiff:
 @dataclass(frozen=True)
 class PreflightReport:
     compatible: bool                # would NOT strict-raise
-    surgery_required: bool          # init.mode=warm_start would be needed
+    surgery_required: bool          # obs specs differ (input-layer surgery would be needed)
     diff: list[ObsBlockDiff]
     parent_spec_name: str
     child_spec_name: str

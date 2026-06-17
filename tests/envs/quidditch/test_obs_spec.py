@@ -105,7 +105,7 @@ def test_augmented_obs_dim_is_25():
 
 
 def test_simple_env_obs_is_prefix_of_team_env_obs():
-    # warm_start_ppo (16->22) depends on this prefix relationship.
+    # Cross-env obs compatibility (16->22) depends on this prefix relationship.
     n = len(SIMPLE_ENV_OBS.blocks)
     assert DUEL_V1_BODY.blocks[:n] == SIMPLE_ENV_OBS.blocks
 
